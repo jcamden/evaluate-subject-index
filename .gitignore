@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+.venv/
+evaluation-state.json
+page-map.json
+chunk-manifest.json
+candidate-locator-CHUNK-*.json
+candidate-locator-routing-exceptions.json
+source-chunk-inventory.json

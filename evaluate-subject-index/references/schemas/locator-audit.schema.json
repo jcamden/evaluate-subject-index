@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "locator-audit.schema.json",
+  "title": "Locator audit batch",
+  "type": "object",
+  "required": ["schema_version", "evaluation_id", "candidate_sha256", "chunk_id", "expected_locator_ids", "judgments", "completion"],
+  "properties": {
+    "schema_version": {"const": "locator-audit-v1"},
+    "evaluation_id": {"type": "string"},
+    "candidate_sha256": {"type": "string"},
+    "chunk_id": {"type": "string", "pattern": "^CHUNK-"},
+    "expected_locator_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "judgments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["locator_id", "path_id", "complete_heading_path", "document_page", "source_page_label", "judgment", "evidence_summary", "confidence", "error_codes", "severity"],
+        "properties": {
+          "locator_id": {"type": "string", "pattern": "^LOC-"},
+          "path_id": {"type": "string", "pattern": "^PATH-"},
+          "complete_heading_path": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "document_page": {"type": "integer"},
+          "source_page_label": {"type": "string"},
+          "judgment": {"enum": ["supported", "partially_supported", "unsupported", "uninspectable"]},
+          "evidence_summary": {"type": "string"},
+          "confidence": {"enum": ["high", "medium", "low"]},
+          "error_codes": {"type": "array", "items": {"enum": ["SEL", "CON", "STA", "LOC_POS", "HED", "SUB", "XRF", "DEN", "MEC"]}},
+          "severity": {"enum": ["none", "cosmetic", "minor", "major", "critical"]}
+        },
+        "additionalProperties": true
+      }
+    },
+    "completion": {
+      "type": "object",
+      "required": ["expected", "judged", "unique", "complete"],
+      "properties": {
+        "expected": {"type": "integer", "minimum": 0},
+        "judged": {"type": "integer", "minimum": 0},
+        "unique": {"type": "boolean"},
+        "complete": {"type": "boolean"}
+      }
+    }
+  },
+  "additionalProperties": true
+}

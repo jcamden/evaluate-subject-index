@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "evaluation-result.schema.json",
+  "title": "Scored subject index evaluation",
+  "type": "object",
+  "required": ["schema_version", "evaluation_id", "candidate", "provenance", "audit_scope", "scorecard", "total_score", "interpretation", "metrics", "critical_gates", "defect_counts", "comparison_key", "limitations"],
+  "properties": {
+    "schema_version": {"const": "subject-index-evaluation-result-v3"},
+    "evaluation_id": {"type": "string"},
+    "candidate": {"type": "object", "required": ["label", "sha256"], "additionalProperties": true},
+    "provenance": {
+      "type": "object",
+      "required": ["source_sha256", "policy_sha256", "benchmark_sha256", "rubric_version"],
+      "properties": {
+        "source_sha256": {"type": "string"},
+        "policy_sha256": {"type": "string"},
+        "benchmark_sha256": {"type": "string"},
+        "rubric_version": {"const": "subject-index-rubric-v3"}
+      }
+    },
+    "audit_scope": {"type": "object", "required": ["mode", "complete"], "additionalProperties": true},
+    "scorecard": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "required": ["dimension_id", "label", "weight", "rating", "points", "rationale", "evidence_ids"],
+        "properties": {
+          "dimension_id": {"enum": ["meaningful_coverage", "editorial_selectivity", "conceptual_stance_fidelity", "page_reference_reliability", "findability_navigation", "mechanics_consistency"]},
+          "label": {"type": "string"},
+          "weight": {"type": "number"},
+          "rating": {"type": "number", "minimum": 0, "maximum": 5},
+          "points": {"type": "number", "minimum": 0},
+          "rationale": {"type": "string"},
+          "evidence_ids": {"type": "array", "items": {"type": "string"}},
+          "subscores": {"type": "object"}
+        }
+      }
+    },
+    "total_score": {"type": "number", "minimum": 0, "maximum": 100},
+    "interpretation": {"type": "string"},
+    "metrics": {"type": "object"},
+    "density": {
+      "type": "object",
+      "required": ["status", "fit_rating", "selectivity_points_contributed"],
+      "properties": {
+        "status": {"enum": ["scored", "descriptive_only"]},
+        "fit_rating": {"type": ["number", "null"]},
+        "selectivity_points_contributed": {"type": ["number", "null"], "minimum": 0, "maximum": 5}
+      }
+    },
+    "critical_gates": {"type": "array", "items": {"type": "object"}},
+    "defect_counts": {"type": "object"},
+    "comparison_key": {"type": "object"},
+    "limitations": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": true
+}

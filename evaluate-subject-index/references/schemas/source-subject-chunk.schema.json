@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "source-subject-chunk.schema.json",
+  "title": "Source subject discovery chunk",
+  "type": "object",
+  "required": ["schema_version", "evaluation_id", "chunk", "candidate_blindness", "page_review", "subjects", "exclusions", "uncertainties"],
+  "properties": {
+    "schema_version": {"const": "source-subject-chunk-v1"},
+    "evaluation_id": {"type": "string"},
+    "chunk": {
+      "type": "object",
+      "required": ["chunk_id", "chapter_labels", "owned_document_pages", "context_document_pages"],
+      "properties": {
+        "chunk_id": {"type": "string", "pattern": "^CHUNK-"},
+        "chapter_labels": {"type": "array", "items": {"type": "string"}},
+        "owned_document_pages": {"type": "array", "items": {"type": "integer"}},
+        "context_document_pages": {"type": "array", "items": {"type": "integer"}}
+      }
+    },
+    "candidate_blindness": {"enum": ["preserved", "compromised", "not_claimed"]},
+    "page_review": {
+      "type": "object",
+      "required": ["expected_owned_pages", "reviewed_owned_pages", "complete"],
+      "properties": {
+        "expected_owned_pages": {"type": "integer", "minimum": 0},
+        "reviewed_owned_pages": {"type": "integer", "minimum": 0},
+        "complete": {"type": "boolean"}
+      }
+    },
+    "subjects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["local_subject_id", "label", "priority", "meaning", "stance", "acceptable_access", "evidence"],
+        "properties": {
+          "local_subject_id": {"type": "string"},
+          "label": {"type": "string"},
+          "priority": {"enum": ["essential", "major", "optional", "exclude_by_default"]},
+          "meaning": {"type": "string"},
+          "stance": {"type": "string"},
+          "acceptable_access": {"type": "array", "items": {"type": "string"}},
+          "relationships": {"type": "array", "items": {"type": "object"}},
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["document_page", "source_page_label", "locator_class", "evidence_summary"],
+              "properties": {
+                "document_page": {"type": "integer"},
+                "source_page_label": {"type": ["string", "null"]},
+                "locator_class": {"enum": ["principal", "supporting", "synthesis_or_conclusion", "incidental"]},
+                "evidence_summary": {"type": "string"}
+              }
+            }
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "exclusions": {"type": "array", "items": {"type": "object"}},
+    "uncertainties": {"type": "array", "items": {"type": "object"}}
+  },
+  "additionalProperties": true
+}

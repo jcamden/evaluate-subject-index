@@ -1,0 +1,13 @@
+{
+  "ratings": {
+    "meaningful_coverage": 4.5,
+    "conceptual_stance_fidelity": 4.0,
+    "page_reference_reliability": 4.5,
+    "findability_navigation": 4.0,
+    "mechanics_consistency": 5.0
+  },
+  "editorial_selectivity_subscores": {
+    "substantive_selectivity_rating": 4.0,
+    "density_fit_rating": 3.0
+  }
+}

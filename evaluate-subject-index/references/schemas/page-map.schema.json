@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "page-map.schema.json",
+  "title": "Expanded document-page to source-label map",
+  "type": "object",
+  "required": ["schema_version", "source_sha256", "document_page_count", "document_page_basis", "pages", "validation", "page_map_sha256"],
+  "properties": {
+    "schema_version": {"const": "page-map-v1"},
+    "source_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "document_page_count": {"type": "integer", "minimum": 1},
+    "document_page_basis": {"const": "one_based_inclusive"},
+    "pages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["document_page", "source_page_label", "normalized_locator_key", "label_style", "mapping_id", "in_evaluation_scope", "accepts_index_locators"],
+        "properties": {
+          "document_page": {"type": "integer", "minimum": 1},
+          "source_page_label": {"type": ["string", "null"]},
+          "normalized_locator_key": {"type": ["string", "null"]},
+          "label_style": {"type": "string"},
+          "mapping_id": {"type": "string"},
+          "in_evaluation_scope": {"type": "boolean"},
+          "accepts_index_locators": {"type": "boolean"}
+        },
+        "additionalProperties": true
+      }
+    },
+    "validation": {
+      "type": "object",
+      "required": ["all_document_pages_covered", "unique_indexable_locator_keys"],
+      "properties": {
+        "all_document_pages_covered": {"const": true},
+        "unique_indexable_locator_keys": {"const": true}
+      }
+    },
+    "page_map_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,14 @@
+interface:
+  display_name: Evaluate Subject Index
+  short_description: Run source-grounded subject-index evaluations
+  default_prompt: Use $evaluate-subject-index help to show the evaluation workflow
+    and required inputs.
+  icon_small: assets/icon.svg
+  icon_large: assets/icon.svg
+policy:
+  products:
+  - chatgpt
+  - codex
+  - api
+  - atlas
+  allow_implicit_invocation: true

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "page-map-input.schema.json",
+  "title": "Compact document-page to source-label map",
+  "type": "object",
+  "required": ["schema_version", "source_sha256", "document_page_count", "segments"],
+  "properties": {
+    "schema_version": {"const": "page-map-input-v1"},
+    "source_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "document_page_count": {"type": "integer", "minimum": 1},
+    "document_page_basis": {"const": "one_based_inclusive"},
+    "segments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["mapping_id", "mode", "document_page_range", "in_evaluation_scope", "accepts_index_locators"],
+        "properties": {
+          "mapping_id": {"type": "string", "minLength": 1},
+          "mode": {"enum": ["sequence", "explicit"]},
+          "document_page_range": {
+            "type": "array",
+            "prefixItems": [{"type": "integer", "minimum": 1}, {"type": "integer", "minimum": 1}],
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "label_style": {"enum": ["arabic", "roman_lower", "roman_upper", "alpha_lower", "alpha_upper", "literal", "unlabeled"]},
+          "label_start": {"type": "string"},
+          "prefix": {"type": "string"},
+          "suffix": {"type": "string"},
+          "labels": {"type": "array", "items": {"type": ["string", "null"]}},
+          "in_evaluation_scope": {"type": "boolean"},
+          "accepts_index_locators": {"type": "boolean"}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

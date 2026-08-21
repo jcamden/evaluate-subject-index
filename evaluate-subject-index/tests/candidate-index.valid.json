@@ -1,0 +1,64 @@
+{
+  "schema_version": "candidate-index-v1",
+  "candidate_id": "candidate-test",
+  "candidate_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "page_map_sha256": "32844a5664f8af36ae5ecdf6851b9aa4c9195f8b7cdea51fbf4553bc6f4ebcb5",
+  "records": [
+    {
+      "record_id": "REC-001",
+      "record_type": "page_bearing",
+      "path_id": "PATH-001",
+      "heading_path": ["Revolution", "economic causes"],
+      "locator_assignments": [
+        {
+          "locator_id": "LOC-001",
+          "displayed_locator": "1, 4",
+          "source_page_label": "1",
+          "normalized_locator_key": "1",
+          "document_page": 5,
+          "mapping_status": "resolved",
+          "range_id": null
+        },
+        {
+          "locator_id": "LOC-002",
+          "displayed_locator": "1, 4",
+          "source_page_label": "4",
+          "normalized_locator_key": "4",
+          "document_page": 8,
+          "mapping_status": "resolved",
+          "range_id": null
+        }
+      ]
+    },
+    {
+      "record_id": "REC-002",
+      "record_type": "page_bearing",
+      "path_id": "PATH-002",
+      "heading_path": ["Appendix material"],
+      "locator_assignments": [
+        {
+          "locator_id": "LOC-003",
+          "displayed_locator": "A-1",
+          "source_page_label": "A-1",
+          "normalized_locator_key": "a-1",
+          "document_page": 9,
+          "mapping_status": "resolved",
+          "range_id": null
+        }
+      ]
+    },
+    {
+      "record_id": "REC-003",
+      "record_type": "cross_reference",
+      "path_id": "PATH-003",
+      "heading_path": ["Economic origins"],
+      "locator_assignments": [],
+      "cross_reference": {"type": "see", "target": "Revolution—economic causes"}
+    }
+  ],
+  "normalization": {
+    "record_count": 3,
+    "expanded_locator_assignment_count": 3,
+    "unresolved_locator_count": 0
+  }
+}

@@ -1,0 +1,50 @@
+name: Validate
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Parse JSON schemas and fixtures
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          files = list(Path("evaluate-subject-index/references/schemas").glob("*.json"))
+          files += list(Path("evaluate-subject-index/tests").glob("*.json"))
+          for path in files:
+              json.loads(path.read_text(encoding="utf-8"))
+          print(f"Parsed {len(files)} JSON files")
+          PY
+      - name: Compile deterministic helpers
+        run: |
+          python -m py_compile evaluate-subject-index/scripts/*.py
+      - name: Exercise page mapping and chunk routing
+        run: |
+          python evaluate-subject-index/scripts/page_chunk_cli.py expand-page-map \
+            --input evaluate-subject-index/tests/page-map-input.valid.json \
+            --output /tmp/page-map.json
+          python evaluate-subject-index/scripts/page_chunk_cli.py validate-chunks \
+            --input evaluate-subject-index/tests/chunk-manifest.input.json \
+            --page-map /tmp/page-map.json \
+            --output /tmp/chunk-manifest.json
+          python evaluate-subject-index/scripts/page_chunk_cli.py filter-candidate \
+            --candidate evaluate-subject-index/tests/candidate-index.valid.json \
+            --page-map /tmp/page-map.json \
+            --chunks /tmp/chunk-manifest.json \
+            --output-dir /tmp/locator-packets
+      - name: Exercise score arithmetic
+        run: |
+          python evaluate-subject-index/scripts/score_cli.py scorecard \
+            --input evaluate-subject-index/tests/scorecard.valid.json

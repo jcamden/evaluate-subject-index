@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "evaluation-state.schema.json",
+  "title": "Subject index evaluation state",
+  "type": "object",
+  "required": ["schema_version", "evaluation_id", "source", "configuration", "stages", "artifacts", "blockers"],
+  "properties": {
+    "schema_version": {"const": "subject-index-evaluation-state-v2"},
+    "evaluation_id": {"type": "string", "minLength": 1},
+    "created_at": {"type": "string"},
+    "updated_at": {"type": "string"},
+    "source": {
+      "type": "object",
+      "required": ["title", "filename", "sha256", "document_page_span"],
+      "properties": {
+        "title": {"type": "string"},
+        "filename": {"type": "string"},
+        "sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+        "document_page_span": {
+          "type": "array",
+          "prefixItems": [{"type": "integer"}, {"type": "integer"}],
+          "minItems": 2,
+          "maxItems": 2
+        }
+      },
+      "additionalProperties": true
+    },
+    "candidate": {"type": ["object", "null"]},
+    "configuration": {
+      "type": "object",
+      "required": ["audit_mode", "index_type", "intended_readership", "output_format"],
+      "properties": {
+        "audit_mode": {"enum": ["full", "pilot"]},
+        "index_type": {"const": "subject_index"},
+        "intended_readership": {"type": "string"},
+        "output_format": {"const": "json"}
+      },
+      "additionalProperties": true
+    },
+    "stages": {
+      "type": "object",
+      "minProperties": 14,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["status", "updated_at", "notes"],
+        "properties": {
+          "status": {"enum": ["not_started", "in_progress", "completed", "blocked"]},
+          "updated_at": {"type": ["string", "null"]},
+          "notes": {"type": "array", "items": {"type": "string"}}
+        },
+        "additionalProperties": true
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["stage", "artifact_type", "path", "sha256"],
+        "properties": {
+          "stage": {"type": "string"},
+          "artifact_type": {"type": "string"},
+          "path": {"type": "string"},
+          "sha256": {"type": ["string", "null"]}
+        },
+        "additionalProperties": true
+      }
+    },
+    "blockers": {"type": "array", "items": {"type": "object"}}
+  },
+  "additionalProperties": true
+}

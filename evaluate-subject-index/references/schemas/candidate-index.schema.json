@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "candidate-index.schema.json",
+  "title": "Normalized subject index candidate",
+  "type": "object",
+  "required": ["schema_version", "candidate_id", "candidate_sha256", "page_map_sha256", "records", "normalization"],
+  "properties": {
+    "schema_version": {"const": "candidate-index-v1"},
+    "candidate_id": {"type": "string"},
+    "candidate_sha256": {"type": "string"},
+    "page_map_sha256": {"type": "string"},
+    "records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["record_id", "record_type", "path_id", "heading_path", "locator_assignments"],
+        "properties": {
+          "record_id": {"type": "string"},
+          "record_type": {"enum": ["page_bearing", "container", "cross_reference"]},
+          "path_id": {"type": "string", "pattern": "^PATH-"},
+          "heading_path": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "locator_assignments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["locator_id", "displayed_locator", "source_page_label", "normalized_locator_key", "document_page", "mapping_status"],
+              "properties": {
+                "locator_id": {"type": "string", "pattern": "^LOC-"},
+                "displayed_locator": {"type": "string"},
+                "source_page_label": {"type": "string"},
+                "normalized_locator_key": {"type": "string"},
+                "document_page": {"type": ["integer", "null"]},
+                "mapping_status": {"enum": ["resolved", "unresolved", "ambiguous"]},
+                "range_id": {"type": ["string", "null"]}
+              },
+              "additionalProperties": true
+            }
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "normalization": {"type": "object"}
+  },
+  "additionalProperties": true
+}

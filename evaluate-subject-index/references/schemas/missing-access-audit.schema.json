@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "missing-access-audit.schema.json",
+  "title": "Missing access audit batch",
+  "type": "object",
+  "required": ["schema_version", "evaluation_id", "benchmark_sha256", "candidate_sha256", "chunk_id", "expected_subject_ids", "subject_judgments", "completion"],
+  "properties": {
+    "schema_version": {"const": "missing-access-audit-v1"},
+    "evaluation_id": {"type": "string"},
+    "benchmark_sha256": {"type": "string"},
+    "candidate_sha256": {"type": "string"},
+    "chunk_id": {"type": "string", "pattern": "^CHUNK-"},
+    "expected_subject_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "subject_judgments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["subject_id", "priority", "coverage", "direct_access", "cross_reference_access", "stance_preserved", "matched_path_ids", "expected_document_pages", "found_document_pages", "missed_document_pages", "severity", "confidence"],
+        "properties": {
+          "subject_id": {"type": "string", "pattern": "^SUBJ-"},
+          "priority": {"enum": ["essential", "major", "optional"]},
+          "coverage": {"enum": ["complete", "partial", "missing", "uninspectable"]},
+          "direct_access": {"type": "boolean"},
+          "cross_reference_access": {"type": "boolean"},
+          "stance_preserved": {"enum": ["yes", "partly", "no", "not_applicable", "uninspectable"]},
+          "matched_path_ids": {"type": "array", "items": {"type": "string"}},
+          "expected_document_pages": {"type": "array", "items": {"type": "integer"}},
+          "found_document_pages": {"type": "array", "items": {"type": "integer"}},
+          "missed_document_pages": {"type": "array", "items": {"type": "integer"}},
+          "severity": {"enum": ["none", "minor", "major", "critical"]},
+          "confidence": {"enum": ["high", "medium", "low"]}
+        },
+        "additionalProperties": true
+      }
+    },
+    "reader_task_results": {"type": "array", "items": {"type": "object"}},
+    "completion": {
+      "type": "object",
+      "required": ["expected", "judged", "complete"],
+      "properties": {
+        "expected": {"type": "integer", "minimum": 0},
+        "judged": {"type": "integer", "minimum": 0},
+        "complete": {"type": "boolean"}
+      }
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "evaluation-policy.schema.json",
+  "title": "Subject index evaluation policy",
+  "type": "object",
+  "required": ["schema_version", "policy_id", "source_scope", "audience", "audit_design", "content_policies", "density_profile", "critical_gates", "rubric"],
+  "properties": {
+    "schema_version": {"const": "subject-index-evaluation-policy-v1"},
+    "policy_id": {"type": "string"},
+    "source_scope": {
+      "type": "object",
+      "required": ["source_sha256", "document_page_span", "page_map_sha256", "chunk_manifest_sha256", "included", "excluded"],
+      "additionalProperties": true
+    },
+    "audience": {"type": "string", "minLength": 1},
+    "audit_design": {
+      "type": "object",
+      "required": ["mode", "candidate_blindness", "uncertainty_policy"],
+      "properties": {
+        "mode": {"enum": ["full", "pilot"]},
+        "candidate_blindness": {"enum": ["required", "preferred", "not_claimed"]},
+        "uncertainty_policy": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "content_policies": {
+      "type": "object",
+      "required": ["named_entities", "examples", "locators", "hierarchy", "cross_references"],
+      "additionalProperties": true
+    },
+    "density_profile": {
+      "type": "object",
+      "required": ["status", "metrics", "rationale"],
+      "properties": {
+        "status": {"enum": ["scored", "descriptive_only"]},
+        "rationale": {"type": "string"},
+        "metrics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["metric_id", "unit", "scored"],
+            "properties": {
+              "metric_id": {"type": "string"},
+              "unit": {"type": "string"},
+              "scored": {"type": "boolean"},
+              "weight": {"type": "number", "minimum": 0},
+              "ideal_min": {"type": "number"},
+              "ideal_max": {"type": "number"},
+              "acceptable_min": {"type": "number"},
+              "acceptable_max": {"type": "number"},
+              "provenance": {"type": "string"}
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "critical_gates": {"type": "array", "items": {"type": "string"}},
+    "rubric": {
+      "type": "object",
+      "required": ["version", "maximum_points"],
+      "properties": {
+        "version": {"const": "subject-index-rubric-v3"},
+        "maximum_points": {"const": 100}
+      }
+    },
+    "policy_sha256": {"type": ["string", "null"]}
+  },
+  "additionalProperties": true
+}

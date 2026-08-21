@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "structure-audit.schema.json",
+  "title": "Global subject index structure audit",
+  "type": "object",
+  "required": ["schema_version", "evaluation_id", "candidate_sha256", "scope_complete", "metrics", "density", "defects", "strengths"],
+  "properties": {
+    "schema_version": {"const": "structure-audit-v1"},
+    "evaluation_id": {"type": "string"},
+    "candidate_sha256": {"type": "string"},
+    "scope_complete": {"type": "boolean"},
+    "metrics": {
+      "type": "object",
+      "required": ["page_bearing_paths", "expanded_locators", "cross_references"],
+      "additionalProperties": true
+    },
+    "density": {
+      "type": "object",
+      "required": ["policy_status", "measurements", "fit_rating", "distribution_findings"],
+      "properties": {
+        "policy_status": {"enum": ["scored", "descriptive_only"]},
+        "measurements": {"type": "array", "items": {"type": "object"}},
+        "fit_rating": {"type": ["number", "null"], "minimum": 0, "maximum": 5, "multipleOf": 0.5},
+        "distribution_findings": {"type": "array", "items": {"type": "object"}}
+      }
+    },
+    "defects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["defect_id", "code", "severity", "summary", "affected_ids"],
+        "properties": {
+          "defect_id": {"type": "string", "pattern": "^DEFECT-"},
+          "code": {"enum": ["COV", "SEL", "CON", "STA", "LOC_POS", "LOC_NEG", "HED", "SUB", "XRF", "DEN", "MEC"]},
+          "severity": {"enum": ["cosmetic", "minor", "major", "critical"]},
+          "summary": {"type": "string"},
+          "affected_ids": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "strengths": {"type": "array", "items": {"type": "object"}}
+  },
+  "additionalProperties": true
+}

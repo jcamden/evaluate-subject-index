@@ -1,0 +1,44 @@
+{
+  "schema_version": "page-map-input-v1",
+  "source_sha256": "986a741c3f4566cb788fd9e6fed021355e4fc4ff7ca36a270eb957efbbdc5415",
+  "document_page_count": 10,
+  "document_page_basis": "one_based_inclusive",
+  "segments": [
+    {
+      "mapping_id": "unlabeled",
+      "mode": "explicit",
+      "document_page_range": [1, 2],
+      "label_style": "unlabeled",
+      "labels": [null, null],
+      "in_evaluation_scope": false,
+      "accepts_index_locators": false
+    },
+    {
+      "mapping_id": "roman-front",
+      "mode": "sequence",
+      "document_page_range": [3, 4],
+      "label_style": "roman_lower",
+      "label_start": "i",
+      "in_evaluation_scope": false,
+      "accepts_index_locators": false
+    },
+    {
+      "mapping_id": "arabic-body",
+      "mode": "sequence",
+      "document_page_range": [5, 8],
+      "label_style": "arabic",
+      "label_start": "1",
+      "in_evaluation_scope": true,
+      "accepts_index_locators": true
+    },
+    {
+      "mapping_id": "irregular-appendix",
+      "mode": "explicit",
+      "document_page_range": [9, 10],
+      "label_style": "literal",
+      "labels": ["A-1", "Plate 2"],
+      "in_evaluation_scope": true,
+      "accepts_index_locators": true
+    }
+  ]
+}

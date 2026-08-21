@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "candidate-locator-chunk.schema.json",
+  "title": "Candidate locator audit chunk",
+  "type": "object",
+  "required": ["schema_version", "candidate_id", "candidate_sha256", "page_map_sha256", "chunk_manifest_sha256", "chunk_id", "owned_document_pages", "paths", "summary"],
+  "properties": {
+    "schema_version": {"const": "candidate-locator-chunk-v1"},
+    "candidate_id": {"type": "string"},
+    "candidate_sha256": {"type": "string"},
+    "page_map_sha256": {"type": "string"},
+    "chunk_manifest_sha256": {"type": "string"},
+    "chunk_id": {"type": "string", "pattern": "^CHUNK-"},
+    "owned_document_pages": {"type": "array", "items": {"type": "integer"}, "uniqueItems": true},
+    "paths": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["record_id", "path_id", "heading_path", "locator_assignments", "other_locator_assignment_count"],
+        "properties": {
+          "record_id": {"type": "string"},
+          "path_id": {"type": "string"},
+          "heading_path": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "locator_assignments": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+          "other_locator_assignment_count": {"type": "integer", "minimum": 0}
+        },
+        "additionalProperties": true
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["path_count", "locator_assignment_count"],
+      "properties": {
+        "path_count": {"type": "integer", "minimum": 0},
+        "locator_assignment_count": {"type": "integer", "minimum": 0}
+      }
+    }
+  },
+  "additionalProperties": true
+}
