@@ -6,8 +6,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import mimetypes
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 
@@ -80,6 +81,11 @@ COMPLETION_TESTS = {
 }
 
 VALID_STATUSES = {"not_started", "in_progress", "completed", "blocked"}
+STATE_SCHEMA_VERSION = "subject-index-evaluation-state-v3"
+MANIFEST_SCHEMA_VERSION = "subject-index-artifact-manifest-v1"
+MANIFEST_FILENAME = "artifact-manifest.json"
+VALID_VISIBILITY = {"public", "private", "restricted"}
+VALID_RETENTION = {"required", "cache"}
 
 
 def now() -> str:
@@ -113,6 +119,53 @@ def save_state(path: Path, state: dict[str, Any]) -> None:
     path.write_text(json.dumps(state, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def portable_relative_path(path: Path, root: Path) -> str:
+    resolved_root = root.resolve()
+    resolved_path = path.resolve()
+    try:
+        relative = resolved_path.relative_to(resolved_root)
+    except ValueError:
+        fail("artifact_outside_evaluation_directory", f"Artifact must be inside {resolved_root}: {resolved_path}")
+    portable = PurePosixPath(relative.as_posix())
+    if portable.is_absolute() or ".." in portable.parts or str(portable) in {"", "."}:
+        fail("invalid_artifact_path", f"Artifact path is not portable: {relative}")
+    return str(portable)
+
+
+def resolve_artifact_path(state_path: Path, stored_path: str) -> Path:
+    portable = PurePosixPath(stored_path)
+    if portable.is_absolute() or ".." in portable.parts or stored_path in {"", "."}:
+        raise ValueError(f"Artifact path is not portable: {stored_path}")
+    return state_path.resolve().parent.joinpath(*portable.parts)
+
+
+def manifest_path_for_state(state_path: Path, state: dict[str, Any]) -> Path:
+    stored = str(state.get("artifact_manifest_path", MANIFEST_FILENAME))
+    return resolve_artifact_path(state_path, stored)
+
+
+def load_manifest(path: Path) -> dict[str, Any]:
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        fail("manifest_not_found", f"Artifact manifest does not exist: {path}")
+    except json.JSONDecodeError as exc:
+        fail("invalid_manifest_json", f"Could not parse artifact manifest JSON: {exc}")
+    if not isinstance(manifest, dict):
+        fail("invalid_manifest", "Artifact manifest root must be a JSON object.")
+    return manifest
+
+
+def save_manifest(path: Path, manifest: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def artifact_id(path: str, sha256: str) -> str:
+    identity = hashlib.sha256(f"{path}\0{sha256}".encode("utf-8")).hexdigest()
+    return f"ART-{identity[:12].upper()}"
+
+
 def emit(payload: dict[str, Any], exit_code: int = 0) -> None:
     print(json.dumps(payload, indent=2, ensure_ascii=False))
     raise SystemExit(exit_code)
@@ -130,14 +183,16 @@ def stage_dependencies(stage: str) -> list[str]:
     return STAGES[:index]
 
 
-def validate_state(state: dict[str, Any], check_files: bool = True) -> tuple[list[str], list[str]]:
+def validate_state(state: dict[str, Any], state_path: Path | None = None, check_files: bool = True) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
-    for key in ("schema_version", "evaluation_id", "source", "configuration", "stages", "artifacts", "blockers"):
+    for key in ("schema_version", "evaluation_id", "artifact_manifest_path", "source", "configuration", "stages", "artifacts", "blockers"):
         if key not in state:
             errors.append(f"Missing required key: {key}")
-    if state.get("schema_version") != "subject-index-evaluation-state-v2":
+    if state.get("schema_version") != STATE_SCHEMA_VERSION:
         errors.append("Unsupported schema_version.")
+    if state.get("configuration", {}).get("storage_mode") not in {"local", "library", "hybrid"}:
+        errors.append("configuration.storage_mode must be local, library, or hybrid.")
 
     stages = state.get("stages", {})
     if not isinstance(stages, dict):
@@ -167,18 +222,56 @@ def validate_state(state: dict[str, Any], check_files: bool = True) -> tuple[lis
     if not isinstance(artifacts, list):
         errors.append("artifacts must be an array.")
         artifacts = []
+    seen_paths: set[str] = set()
     for artifact in artifacts:
         if not isinstance(artifact, dict):
             errors.append("Each artifact must be an object.")
             continue
-        artifact_path = Path(str(artifact.get("path", "")))
+        stored_path = str(artifact.get("path", ""))
+        if stored_path in seen_paths:
+            errors.append(f"Duplicate artifact path: {stored_path}")
+        seen_paths.add(stored_path)
+        if artifact.get("visibility") not in VALID_VISIBILITY:
+            errors.append(f"Invalid artifact visibility: {stored_path}")
+        if artifact.get("retention") not in VALID_RETENTION:
+            errors.append(f"Invalid artifact retention: {stored_path}")
+        try:
+            artifact_path = resolve_artifact_path(state_path, stored_path) if state_path else Path(stored_path)
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
         if check_files and not artifact_path.is_file():
-            warnings.append(f"Artifact is not currently accessible: {artifact_path}")
+            warnings.append(f"Artifact is not currently accessible: {stored_path}")
         elif check_files:
             actual = sha256_file(artifact_path)
             recorded = artifact.get("sha256")
             if recorded and actual != recorded:
-                errors.append(f"Artifact hash mismatch: {artifact_path}")
+                errors.append(f"Artifact hash mismatch: {stored_path}")
+
+    if state_path:
+        try:
+            manifest_path = manifest_path_for_state(state_path, state)
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError, ValueError) as exc:
+            errors.append(f"Artifact manifest is unavailable or invalid: {exc}")
+        else:
+            if manifest.get("schema_version") != MANIFEST_SCHEMA_VERSION:
+                errors.append("Unsupported artifact manifest schema_version.")
+            if manifest.get("evaluation_id") != state.get("evaluation_id"):
+                errors.append("Artifact manifest evaluation_id does not match state.")
+            state_artifacts = {(item.get("path"), item.get("sha256")) for item in artifacts if isinstance(item, dict)}
+            manifest_artifacts = {
+                (item.get("path"), item.get("sha256"))
+                for item in manifest.get("artifacts", [])
+                if isinstance(item, dict)
+            }
+            if state_artifacts != manifest_artifacts:
+                errors.append("State and artifact manifest inventories do not match.")
+
+    artifact_stages = {item.get("stage") for item in artifacts if isinstance(item, dict)}
+    for name in STAGES[1:]:
+        if stages.get(name, {}).get("status") == "completed" and name not in artifact_stages:
+            errors.append(f"Completed stage has no registered artifact: {name}")
 
     active = [name for name in STAGES if stages.get(name, {}).get("status") == "in_progress"]
     if len(active) > 1:
@@ -206,8 +299,8 @@ def next_stage(state: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def state_summary(state: dict[str, Any]) -> dict[str, Any]:
-    errors, warnings = validate_state(state)
+def state_summary(state: dict[str, Any], state_path: Path | None = None) -> dict[str, Any]:
+    errors, warnings = validate_state(state, state_path=state_path)
     stages = state.get("stages", {})
     current = next((name for name in STAGES if stages.get(name, {}).get("status") == "in_progress"), None)
     if current is None:
@@ -215,6 +308,7 @@ def state_summary(state: dict[str, Any]) -> dict[str, Any]:
     return {
         "ok": not errors,
         "evaluation_id": state.get("evaluation_id"),
+        "storage_mode": state.get("configuration", {}).get("storage_mode"),
         "state": current,
         "completed_stages": [name for name in STAGES if stages.get(name, {}).get("status") == "completed"],
         "blocked_stages": [name for name in STAGES if stages.get(name, {}).get("status") == "blocked"],
@@ -245,14 +339,14 @@ def command_init(args: argparse.Namespace) -> None:
     }
     blockers = []
     state = {
-        "schema_version": "subject-index-evaluation-state-v2",
+        "schema_version": STATE_SCHEMA_VERSION,
         "evaluation_id": args.evaluation_id,
+        "artifact_manifest_path": MANIFEST_FILENAME,
         "created_at": stamp,
         "updated_at": stamp,
         "source": {
             "title": args.source_title,
             "filename": source_path.name,
-            "path": str(source_path),
             "sha256": source_hash,
             "document_page_span": [args.document_page_start, args.document_page_end],
             "document_page_basis": "one_based_inclusive",
@@ -263,6 +357,7 @@ def command_init(args: argparse.Namespace) -> None:
             "index_type": "subject_index",
             "intended_readership": args.intended_readership,
             "output_format": "json",
+            "storage_mode": args.storage_mode,
             "chunking": {"primary": "chapter", "maximum_pages": 60, "context_overlap_pages": 2},
             "rubric_version": "subject-index-rubric-v3",
         },
@@ -270,22 +365,36 @@ def command_init(args: argparse.Namespace) -> None:
         "artifacts": [],
         "blockers": blockers,
     }
+    manifest = {
+        "schema_version": MANIFEST_SCHEMA_VERSION,
+        "evaluation_id": args.evaluation_id,
+        "created_at": stamp,
+        "updated_at": stamp,
+        "artifacts": [],
+    }
+    save_manifest(output.parent / MANIFEST_FILENAME, manifest)
     save_state(output, state)
-    payload = state_summary(state)
-    payload.update({"command": "initialize", "state_path": str(output), "artifacts_written": [str(output)]})
+    payload = state_summary(state, output)
+    payload.update({
+        "command": "initialize",
+        "state_path": str(output),
+        "artifacts_written": [str(output), str(output.parent / MANIFEST_FILENAME)],
+    })
     emit(payload)
 
 
 def command_status(args: argparse.Namespace) -> None:
-    state = load_state(Path(args.state))
-    payload = state_summary(state)
+    state_path = Path(args.state)
+    state = load_state(state_path)
+    payload = state_summary(state, state_path)
     payload["command"] = "status"
     emit(payload, 0 if payload["ok"] else 1)
 
 
 def command_next(args: argparse.Namespace) -> None:
-    state = load_state(Path(args.state))
-    errors, warnings = validate_state(state)
+    state_path = Path(args.state)
+    state = load_state(state_path)
+    errors, warnings = validate_state(state, state_path=state_path)
     payload = {
         "command": "next",
         "ok": not errors,
@@ -309,6 +418,10 @@ def command_set_stage(args: argparse.Namespace) -> None:
         active = [name for name in STAGES if state["stages"][name]["status"] == "in_progress" and name != args.stage]
         if active:
             fail("another_stage_active", "Only one stage may be in progress.", active)
+    if args.status == "completed" and not args.artifact_path:
+        has_registered = any(item.get("stage") == args.stage for item in state.get("artifacts", []))
+        if args.stage != "initialize" and not has_registered:
+            fail("completion_artifact_required", f"Cannot complete {args.stage} without a registered artifact.")
     stamp = now()
     record = state["stages"][args.stage]
     record["status"] = args.status
@@ -318,32 +431,65 @@ def command_set_stage(args: argparse.Namespace) -> None:
     artifacts_written: list[str] = []
     if args.artifact_path:
         artifact_path = Path(args.artifact_path).resolve()
+        relative_path = portable_relative_path(artifact_path, state_path.resolve().parent)
         artifact_hash = sha256_file(artifact_path)
         if artifact_hash is None:
             fail("artifact_not_found", f"Artifact file does not exist: {artifact_path}")
-        artifact = {
+        if artifact_path.suffix.lower() == ".json":
+            try:
+                json.loads(artifact_path.read_text(encoding="utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                fail("invalid_artifact_json", f"JSON artifact is invalid: {exc}")
+        manifest_path = manifest_path_for_state(state_path, state)
+        manifest = load_manifest(manifest_path)
+        previous = next((item for item in manifest.get("artifacts", []) if item.get("path") == relative_path), None)
+        if previous and previous.get("frozen") and previous.get("sha256") != artifact_hash:
+            fail(
+                "frozen_artifact_changed",
+                "Refusing to overwrite a frozen artifact with different bytes; use a versioned path.",
+                {"path": relative_path, "previous_sha256": previous.get("sha256"), "new_sha256": artifact_hash},
+            )
+        guessed_type = mimetypes.guess_type(artifact_path.name)[0] or "application/octet-stream"
+        record = {
+            "artifact_id": artifact_id(relative_path, artifact_hash),
             "stage": args.stage,
             "artifact_type": args.artifact_type or artifact_path.stem,
-            "path": str(artifact_path),
+            "path": relative_path,
             "sha256": artifact_hash,
+            "media_type": args.media_type or guessed_type,
+            "visibility": args.visibility,
+            "retention": args.retention,
+            "frozen": args.frozen,
             "recorded_at": stamp,
+        }
+        if previous and previous.get("sha256") != artifact_hash:
+            record["supersedes"] = previous.get("artifact_id")
+        artifact = {
+            key: record[key]
+            for key in ("artifact_id", "stage", "artifact_type", "path", "sha256", "visibility", "retention", "frozen", "recorded_at")
         }
         state["artifacts"] = [
             item for item in state.get("artifacts", [])
-            if not (item.get("stage") == args.stage and item.get("path") == str(artifact_path))
+            if item.get("path") != relative_path
         ]
         state["artifacts"].append(artifact)
-        artifacts_written.append(str(artifact_path))
+        manifest["artifacts"] = [item for item in manifest.get("artifacts", []) if item.get("path") != relative_path]
+        manifest["artifacts"].append(record)
+        manifest["artifacts"].sort(key=lambda item: item["path"])
+        manifest["updated_at"] = stamp
+        save_manifest(manifest_path, manifest)
+        artifacts_written.append(relative_path)
     state["updated_at"] = stamp
     save_state(state_path, state)
-    payload = state_summary(state)
+    payload = state_summary(state, state_path)
     payload.update({"command": "set-stage", "updated_stage": args.stage, "artifacts_written": artifacts_written})
     emit(payload, 0 if payload["ok"] else 1)
 
 
 def command_validate(args: argparse.Namespace) -> None:
-    state = load_state(Path(args.state))
-    errors, warnings = validate_state(state, check_files=not args.skip_files)
+    state_path = Path(args.state)
+    state = load_state(state_path)
+    errors, warnings = validate_state(state, state_path=state_path, check_files=not args.skip_files)
     emit({
         "command": "validate",
         "ok": not errors,
@@ -366,6 +512,7 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument("--document-page-end", "--page-end", dest="document_page_end", type=int, required=True)
     init_parser.add_argument("--intended-readership", required=True)
     init_parser.add_argument("--audit-mode", choices=["full", "pilot"], default="full")
+    init_parser.add_argument("--storage-mode", choices=["local", "library", "hybrid"], default="local")
     init_parser.add_argument("--force", action="store_true")
     init_parser.set_defaults(func=command_init)
 
@@ -380,6 +527,10 @@ def build_parser() -> argparse.ArgumentParser:
     set_parser.add_argument("--status", required=True, choices=sorted(VALID_STATUSES))
     set_parser.add_argument("--artifact-type")
     set_parser.add_argument("--artifact-path")
+    set_parser.add_argument("--media-type")
+    set_parser.add_argument("--visibility", choices=sorted(VALID_VISIBILITY), default="private")
+    set_parser.add_argument("--retention", choices=sorted(VALID_RETENTION), default="required")
+    set_parser.add_argument("--frozen", action="store_true")
     set_parser.add_argument("--note")
     set_parser.set_defaults(func=command_set_stage)
 

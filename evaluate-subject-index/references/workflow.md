@@ -21,6 +21,10 @@
 
 Each stage status is `not_started`, `in_progress`, `completed`, or `blocked`. A stage may start only when every earlier required stage is complete. `validate` may run at any time.
 
+Each completion artifact is registered in `artifact-manifest.json` using a relative path, SHA-256, visibility, retention class, and frozen status. Save the manifest before marking the stage complete in `evaluation-state.json`. Chat text is never a completion artifact.
+
+`checkpoint`, `export-bundle`, and `import-bundle` are persistence commands rather than evaluation stages. They do not change editorial judgments or dependency order. Read [storage-and-checkpoints.md](storage-and-checkpoints.md).
+
 ## Why the two directional audits are necessary
 
 Index-to-source review asks, “Does this proposed heading and locator belong?” It measures precision and selectivity. It cannot discover an absent subject because the missing item never appears in the index.
@@ -48,6 +52,8 @@ Chapter chunking reduces context load and aligns judgments with the author's str
 
 `status` trusts neither filenames nor conversational memory alone. It checks the state file, hashes, manifests, and completion counts. `next` returns the earliest valid unfinished stage. If a completed artifact's hash changes, mark that stage and all dependent stages `blocked` until revalidated or rerun.
 
+When resuming in another chat or environment, materialize the active Library folder or import the latest checkpoint, validate it, reconnect excluded restricted inputs by SHA-256, then run `status` and `next`.
+
 ## Reruns and invalidation
 
 - Changing the source file invalidates page mapping and every later stage.
@@ -61,6 +67,10 @@ Chapter chunking reduces context load and aligns judgments with the author's str
 - Changing presentation text without changing evaluation facts requires only rebuilding the web report.
 
 Never overwrite a frozen artifact in place. Increment its version, compute a new hash, and retain provenance.
+
+## Checkpoints
+
+Create portable checkpoints after policy freeze, benchmark freeze, each candidate score, the final web report, and before a conversation/environment handoff. Portable bundles exclude restricted source/candidate files. A private-complete export may include them only at the user's request. Bundle creation does not publish anything.
 
 ## Comparison
 

@@ -8,3 +8,9 @@ chunk-manifest.json
 candidate-locator-CHUNK-*.json
 candidate-locator-routing-exceptions.json
 source-chunk-inventory.json
+artifact-manifest.json
+bundle-metadata.json
+evaluations/
+exports/
+*-checkpoint-*.zip
+*-bundle-*.zip

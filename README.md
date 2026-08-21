@@ -56,12 +56,29 @@ audit-missing-access [chunk-id]
 audit-index-structure
 score-index
 build-web-report
+checkpoint
+export-bundle
+import-bundle
 validate
 status
 next
 ```
 
 `status` reports completed and blocked stages. `next` returns the earliest dependency-satisfied command, required inputs, and completion test.
+
+## Storage and checkpoints
+
+Required outputs are never left only in chat text or a temporary workspace. Each study uses portable relative paths, `evaluation-state.json`, and `artifact-manifest.json`; every registered artifact carries a hash, visibility, retention class, and frozen status.
+
+Three storage modes are supported:
+
+- `local`: local evaluation directory plus checkpoints before handoff.
+- `library`: active study folder in ChatGPT Library plus milestone checkpoints.
+- `hybrid`: local directory, Library persistence when available, and portable checkpoints. This is the recommended ChatGPT mode.
+
+Portable ZIPs include public/private JSON evidence while excluding restricted source and candidate files. Private-complete ZIPs may include restricted inputs when explicitly requested. Safe imports reject traversal, absolute paths, duplicate members, and symlinks, then verify hashes before resume.
+
+See [`storage-and-checkpoints.md`](evaluate-subject-index/references/storage-and-checkpoints.md).
 
 ## Repository layout
 
@@ -85,7 +102,7 @@ OpenAI's documentation describes a skill as a directory containing `SKILL.md` pl
 - Python 3.10 or newer
 - [`pypdf`](https://pypi.org/project/pypdf/) for physically splitting source PDFs
 
-The state manager, page-map expansion, chunk validation, locator routing, density calculation, and scoring arithmetic otherwise use the Python standard library.
+The state manager, checkpoint/export/import tooling, page-map expansion, chunk validation, locator routing, density calculation, and scoring arithmetic otherwise use the Python standard library.
 
 Install the PDF dependency with:
 
@@ -95,7 +112,7 @@ python -m pip install -r requirements.txt
 
 ## Validation
 
-The included workflow checks JSON parsing, Python syntax, page-map expansion, chunk validation, candidate-locator routing, and rubric arithmetic.
+The included workflow checks JSON parsing, Python syntax, page-map expansion, chunk validation, candidate-locator routing, rubric arithmetic, artifact registration, portable checkpoint creation, and safe resume.
 
 Run the deterministic smoke tests locally:
 

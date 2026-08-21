@@ -1,6 +1,6 @@
 ---
 name: evaluate-subject-index
-description: Run a repeatable, source-grounded evaluation of a finished subject index. Use when a user wants to map PDF document pages to Arabic, Roman, prefixed, or irregular source labels; define and prepare audit chunks; discover substantively treated subjects; freeze a candidate-blind source benchmark; normalize and route index locators; audit every locator; find missing access; judge hierarchy and navigation; apply the subject-index rubric (including a predeclared density policy); resume an evaluation; or produce JSON for a web report.
+description: Run a repeatable, source-grounded evaluation of a finished subject index. Use when a user wants to map PDF document pages to Arabic, Roman, prefixed, or irregular source labels; define and prepare audit chunks; discover substantively treated subjects; freeze a candidate-blind source benchmark; normalize and route index locators; audit every locator; find missing access; judge hierarchy and navigation; apply the subject-index rubric (including a predeclared density policy); persist outputs to Library or portable bundles; resume an evaluation; or produce JSON for a web report.
 ---
 
 # Evaluate Subject Index
@@ -30,6 +30,9 @@ Supported commands:
 - `audit-index-structure`
 - `score-index`
 - `build-web-report`
+- `checkpoint`
+- `export-bundle`
+- `import-bundle`
 - `validate`
 
 Read [commands.md](references/commands.md) for inputs, outputs, dependencies, and command-specific behavior. If no command is supplied, run `status` when a state file is present; otherwise run `help`.
@@ -68,7 +71,13 @@ Default to JSON artifacts and concise JSON responses because results are intende
 
 Use the schemas in `references/schemas/`. Put display-ready facts in structured fields, retain complete evidence ledgers, and identify `not_measured`, `uninspectable`, and `uncertain` explicitly rather than treating them as failures or zeros.
 
-Use `scripts/state_cli.py` for deterministic state initialization, status, dependency-aware next-step selection, state transitions, artifact hashing, and validation. Use `scripts/page_chunk_cli.py` to expand page-label maps, validate user-approved chunk ranges, split source PDFs, and create locator-only chunk packets. Use `scripts/score_cli.py` for density-band and score arithmetic. Do not ask the language model to maintain arithmetic or workflow state when a script can do it.
+Use `scripts/state_cli.py` for deterministic state initialization, status, dependency-aware next-step selection, state transitions, artifact registration, hashing, manifest updates, and validation. Use `scripts/bundle_cli.py` for portable/private checkpoints, exports, artifact inventories, and safe imports. Use `scripts/page_chunk_cli.py` to expand page-label maps, validate user-approved chunk ranges, split source PDFs, and create locator-only chunk packets. Use `scripts/score_cli.py` for density-band and score arithmetic. Do not ask the language model to maintain arithmetic or workflow state when a script can do it.
+
+## Persistence rule
+
+Never leave a required artifact only in chat text or an ephemeral workspace. Keep the canonical representation in a user-selected evaluation directory with relative paths, `evaluation-state.json`, and `artifact-manifest.json`. Validate and hash each artifact, persist it, update the manifest, and update state last. In ChatGPT, prefer `hybrid` storage when Library is available: save the active study folder to Library and produce downloadable checkpoints. Otherwise use `local` and provide a checkpoint before a conversation boundary. Read [storage-and-checkpoints.md](references/storage-and-checkpoints.md) before initializing, checkpointing, exporting, importing, or resuming a study.
+
+Keep restricted source/candidate files and long evidence separate from public output. Portable bundles contain control files plus public/private JSON evidence but exclude restricted files by default. Private-complete bundles may include restricted inputs only when the user requests and is authorized to retain them.
 
 ## Full audit and pilot modes
 
@@ -88,3 +97,4 @@ Density is a fit question, not a reward for length. Freeze the density profile b
 - Subject, locator, omission, hierarchy, and uncertainty judgments: [judgment-policy.md](references/judgment-policy.md)
 - Weights, metrics, density penalty, gates, grades, and public claims: [rubric.md](references/rubric.md)
 - Machine-readable artifact map: [json-contracts.md](references/json-contracts.md)
+- Storage modes, study layout, checkpoints, imports, and public/private separation: [storage-and-checkpoints.md](references/storage-and-checkpoints.md)

@@ -8,9 +8,9 @@ Show purpose, syntax, required inputs, generated artifact, dependencies, complet
 
 ## `initialize`
 
-Required: source file, source title, document-page count or document-page span, index type, intended readership, audit mode (`full` or `pilot`), and evaluation directory. Candidate input is optional and must not be opened yet.
+Required: source file, source title, document-page count or document-page span, index type, intended readership, audit mode (`full` or `pilot`), storage mode (`local`, `library`, or `hybrid`), and evaluation directory. Candidate input is optional and must not be opened yet.
 
-Create `evaluation-state.json`. Hash the source file, record edition identity if known, and set every workflow stage to `not_started`. Document pages are one-based ordinals in the supplied file; they are not assumed to equal page labels printed in the book.
+Create `evaluation-state.json` and `artifact-manifest.json`. Hash the source file, record edition identity if known, store no ephemeral absolute input path, and set every workflow stage to `not_started`. Document pages are one-based ordinals in the supplied file; they are not assumed to equal page labels printed in the book. Use `hybrid` in ChatGPT when Library is available and `local` otherwise.
 
 ## `status`
 
@@ -120,6 +120,26 @@ Required: valid evaluation result and selected representative examples.
 
 Create `web-report.json` using the web schema. Include a plain-language grade, scorecard, measured rates, density profile and result, gates, strengths, consequential defects, balanced examples, methodology, comparability key, disclosure, and limitations. Avoid copyrighted source excerpts beyond what is necessary to verify a judgment.
 
+## `checkpoint`
+
+Required: valid state and artifact manifest.
+
+Create an in-progress ZIP using `scripts/bundle_cli.py checkpoint`. Default to the `portable` profile, which includes control files and all available public/private registered artifacts but excludes restricted source/candidate files. Use `private-complete` only when the user requests it and has authority to retain the restricted inputs. Return bundle path, hash, inclusion/exclusion counts, and warnings. Do not register a checkpoint inside itself.
+
+Checkpoint after policy freeze, benchmark freeze, candidate scoring, web reporting, and before a chat/environment handoff.
+
+## `export-bundle`
+
+Required: valid state and artifact manifest.
+
+Create a named delivery ZIP using the same profiles and validation as `checkpoint`. A portable export is the interoperable default. Exporting is not publishing: never send the bundle to a repository, website, or third party without a separate user request.
+
+## `import-bundle`
+
+Required: checkpoint/export ZIP and a new or empty evaluation directory.
+
+Use `scripts/bundle_cli.py import-bundle`. Reject traversal, absolute paths, duplicate members, and symlink-like entries. Verify state and manifest hashes plus every included registered artifact. Report restricted exclusions as `reconnect_required`; reconnect those inputs by SHA-256 before dependent work. Then run `validate`, `status`, and `next`.
+
 ## `validate`
 
-Validate current state, artifact presence, hashes, dependency order, schema conformance, coverage denominators, score arithmetic, and comparison key. Return errors and warnings separately. Validation success does not certify editorial judgments; it certifies structural and arithmetic consistency.
+Validate current state, artifact manifest parity, relative paths, artifact presence and hashes, dependency order, schema conformance, coverage denominators, score arithmetic, and comparison key. Return errors and warnings separately. Validation success does not certify editorial judgments; it certifies structural and arithmetic consistency.

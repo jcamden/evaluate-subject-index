@@ -48,3 +48,45 @@ jobs:
         run: |
           python evaluate-subject-index/scripts/score_cli.py scorecard \
             --input evaluate-subject-index/tests/scorecard.valid.json
+      - name: Exercise artifact persistence and portable resume
+        run: |
+          run_dir="$(mktemp -d)"
+          mkdir -p "$run_dir/study/source/chunks"
+          python evaluate-subject-index/scripts/state_cli.py init \
+            --output "$run_dir/study/evaluation-state.json" \
+            --evaluation-id ci-storage-smoke \
+            --source-title "CI storage smoke" \
+            --source-file evaluate-subject-index/tests/candidate-index.valid.json \
+            --document-page-start 1 \
+            --document-page-end 10 \
+            --intended-readership researchers \
+            --storage-mode local
+          cp evaluate-subject-index/tests/page-map-input.valid.json \
+            "$run_dir/study/source/page-map.json"
+          python evaluate-subject-index/scripts/state_cli.py set-stage \
+            --state "$run_dir/study/evaluation-state.json" \
+            --stage page_mapping \
+            --status completed \
+            --artifact-path "$run_dir/study/source/page-map.json" \
+            --artifact-type page-map \
+            --visibility private \
+            --frozen
+          cp evaluate-subject-index/tests/candidate-index.valid.json \
+            "$run_dir/study/source/chunks/chunk-001.pdf"
+          python evaluate-subject-index/scripts/state_cli.py set-stage \
+            --state "$run_dir/study/evaluation-state.json" \
+            --stage page_mapping \
+            --status completed \
+            --artifact-path "$run_dir/study/source/chunks/chunk-001.pdf" \
+            --artifact-type source-chunk \
+            --media-type application/pdf \
+            --visibility restricted \
+            --frozen
+          python evaluate-subject-index/scripts/bundle_cli.py checkpoint \
+            --state "$run_dir/study/evaluation-state.json" \
+            --output "$run_dir/portable.zip"
+          python evaluate-subject-index/scripts/bundle_cli.py import-bundle \
+            --input "$run_dir/portable.zip" \
+            --output-dir "$run_dir/imported"
+          python evaluate-subject-index/scripts/state_cli.py validate \
+            --state "$run_dir/imported/evaluation-state.json"

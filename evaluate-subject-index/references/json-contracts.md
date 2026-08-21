@@ -5,6 +5,8 @@ The schemas in `schemas/` are web-oriented contracts. Additional fields are allo
 | Artifact | Schema | Purpose |
 | --- | --- | --- |
 | Evaluation state | `evaluation-state.schema.json` | Resume, dependency, hash, and next-action state |
+| Artifact manifest | `artifact-manifest.schema.json` | Portable relative paths, hashes, visibility, retention, and freeze state |
+| Bundle metadata | `bundle-metadata.schema.json` | Checkpoint profile, control hashes, included paths, and exclusions |
 | Compact page-map input | `page-map-input.schema.json` | User-approved document-page to source-label ranges |
 | Expanded page map | `page-map.schema.json` | One record per original document page |
 | Chunk manifest | `chunk-manifest.schema.json` | User-approved ownership and context ranges |
@@ -37,6 +39,8 @@ Use explicit measurement states such as `measured`, `not_measured`, `uninspectab
 ## Canonical hashes
 
 For frozen JSON artifacts, remove the artifact's own hash field, serialize UTF-8 JSON with keys sorted and compact separators, then compute SHA-256. Record schema version, generator version, timestamp, input hashes, and superseded artifact hash when applicable.
+
+Use relative POSIX paths rooted at the evaluation directory in state and manifests. Never store ephemeral absolute paths or make canonical identity depend on a Library ID. Register each artifact only after validation; update state last. Read [storage-and-checkpoints.md](storage-and-checkpoints.md).
 
 ## Web safety
 
