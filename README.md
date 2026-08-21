@@ -1,0 +1,135 @@
+# Evaluate Subject Index
+
+[![Validate](https://github.com/JCamden/evaluate-subject-index/actions/workflows/validate.yml/badge.svg)](https://github.com/JCamden/evaluate-subject-index/actions/workflows/validate.yml)
+
+An agent skill for repeatable, source-grounded evaluation of finished back-of-book subject indexes.
+
+It evaluates one index independently against its source and a frozen policy. Compatible results can then be displayed side by side without treating another index as the gold standard.
+
+## What it does
+
+The workflow separates three questions that should not be conflated:
+
+1. **What does the source substantively treat?** Build and freeze a candidate-blind source-subject benchmark.
+2. **Are the candidate's headings and locators legitimate?** Audit every expanded locator assignment against the relevant source page.
+3. **Does the complete index work as a navigation system?** Audit missing access, hierarchy, terminology, cross-references, organization, density, and mechanics.
+
+The score uses six dimensions totaling 100 points:
+
+| Dimension | Weight |
+| --- | ---: |
+| Meaningful coverage | 20 |
+| Editorial selectivity, including density fit | 15 |
+| Conceptual and stance fidelity | 15 |
+| Page-reference reliability | 25 |
+| Findability and navigation | 20 |
+| Mechanics and consistency | 5 |
+
+## Page labels and chunks
+
+The workflow distinguishes:
+
+- **Document pages:** one-based integer ordinals in the supplied PDF.
+- **Source page labels:** strings used by the book and index, including `"12"`, `"xiv"`, `"A-12"`, or `"Plate 3"`.
+- **Chunk-PDF pages:** local page ordinals in a derived source chunk, mapped back through a sidecar file.
+
+Users supply or approve document-page ranges. Compact sequential or explicit label specifications expand into a canonical one-record-per-document-page map. Candidate locator assignments are then routed into minimal per-chunk packets containing only the complete heading paths and locators that must be audited for that chunk.
+
+See [`page-mapping-and-chunks.md`](evaluate-subject-index/references/page-mapping-and-chunks.md) for the formats.
+
+## Commands
+
+Invoke the skill with `@evaluate-subject-index help` and use its command vocabulary:
+
+```text
+initialize
+map-pages
+define-chunks
+define-policy
+prepare-source-chunks
+discover-source-subjects [chunk-id]
+freeze-source-benchmark
+normalize-index
+prepare-locator-chunks
+audit-locators [chunk-id]
+audit-missing-access [chunk-id]
+audit-index-structure
+score-index
+build-web-report
+validate
+status
+next
+```
+
+`status` reports completed and blocked stages. `next` returns the earliest dependency-satisfied command, required inputs, and completion test.
+
+## Repository layout
+
+The installable skill package is in [`evaluate-subject-index/`](evaluate-subject-index/):
+
+```text
+evaluate-subject-index/
+├── SKILL.md
+├── agents/
+├── assets/
+├── references/
+│   └── schemas/
+├── scripts/
+└── tests/
+```
+
+OpenAI's documentation describes a skill as a directory containing `SKILL.md` plus optional scripts, references, assets, and agent metadata. Standalone skill availability depends on the OpenAI product and environment; broader distribution can use a plugin package. See [Build skills](https://learn.chatgpt.com/docs/build-skills).
+
+## Requirements
+
+- Python 3.10 or newer
+- [`pypdf`](https://pypi.org/project/pypdf/) for physically splitting source PDFs
+
+The state manager, page-map expansion, chunk validation, locator routing, density calculation, and scoring arithmetic otherwise use the Python standard library.
+
+Install the PDF dependency with:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+## Validation
+
+The included workflow checks JSON parsing, Python syntax, page-map expansion, chunk validation, candidate-locator routing, and rubric arithmetic.
+
+Run the deterministic smoke tests locally:
+
+```bash
+python evaluate-subject-index/scripts/page_chunk_cli.py expand-page-map \
+  --input evaluate-subject-index/tests/page-map-input.valid.json \
+  --output /tmp/page-map.json
+
+python evaluate-subject-index/scripts/page_chunk_cli.py validate-chunks \
+  --input evaluate-subject-index/tests/chunk-manifest.input.json \
+  --page-map /tmp/page-map.json \
+  --output /tmp/chunk-manifest.json
+
+python evaluate-subject-index/scripts/page_chunk_cli.py filter-candidate \
+  --candidate evaluate-subject-index/tests/candidate-index.valid.json \
+  --page-map /tmp/page-map.json \
+  --chunks /tmp/chunk-manifest.json \
+  --output-dir /tmp/locator-packets
+
+python evaluate-subject-index/scripts/score_cli.py scorecard \
+  --input evaluate-subject-index/tests/scorecard.valid.json
+```
+
+## Audit integrity
+
+- Build the source benchmark before inspecting a candidate index.
+- Freeze page mapping, chunk ownership, scope, policy, density bands, reader tasks, and uncertainty treatment before candidate scoring.
+- Use both index-to-source and source-to-index audits; locator precision alone cannot reveal omissions.
+- Preserve original candidate output and record every normalization.
+- Compare evaluations only when their source, benchmark, rubric, mapping, scope, and audit-design identifiers match.
+- Publish denominators, gates, evidence, limitations, and representative strengths as well as defects.
+
+No copyrighted source books, candidate indexes, or evaluation results are included in this repository.
+
+## License
+
+MIT. See [`LICENSE`](LICENSE).
