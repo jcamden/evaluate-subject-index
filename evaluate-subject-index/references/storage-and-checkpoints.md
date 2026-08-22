@@ -47,10 +47,12 @@ study-root/
 │   └── candidate-id/
 │       ├── candidate-ref.json
 │       ├── candidate-index.json
+│       ├── item-inventory.json
 │       ├── locator-packets/
 │       ├── locator-audits/
 │       ├── missing-access-audits/
 │       ├── structure-audit.json
+│       ├── item-assessments.json
 │       ├── evaluation-result.json
 │       └── web-report.json
 ├── validation/
@@ -70,7 +72,7 @@ Retention classes:
 - `required`: needed to validate, resume, reproduce, or defend the evaluation.
 - `cache`: deterministically regenerable packets or derivatives. Keep during active work; an export may omit them only when bundle metadata records the omission.
 
-`web-report.json` must not embed restricted text. It may use short paraphrases and evidence IDs. Public publishing is a separate action and never follows automatically from creating a bundle.
+`web-report.json` must not embed restricted text. `item-assessments.json` uses short paraphrases and evidence IDs but may also reproduce candidate headings and locator labels, so register it as private by default. Register a public copy only after confirming both public-safety and authority to redistribute the candidate display. `item-inventory.json` remains private because it reproduces the complete normalized candidate structure. Public publishing is a separate action and never follows automatically from creating a bundle.
 
 ## Frozen artifacts
 

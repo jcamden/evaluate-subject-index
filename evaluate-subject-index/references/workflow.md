@@ -11,12 +11,12 @@
 | 5 | `prepare-source-chunks` | chunk PDFs and sidecar maps |
 | 6 | `discover-source-subjects` | all `source-subject-chunk.*.json` files |
 | 7 | `freeze-source-benchmark` | `source-benchmark.json` |
-| 8 | `normalize-index` | `candidate-index.json` |
+| 8 | `normalize-index` | `candidate-index.json` and `item-inventory.json` |
 | 9 | `prepare-locator-chunks` | all `candidate-locator-chunk.*.json` files and exception ledger |
 | 10 | `audit-locators` | all `locator-audit.*.json` files |
 | 11 | `audit-missing-access` | all `missing-access-audit.*.json` files |
 | 12 | `audit-index-structure` | `structure-audit.json` |
-| 13 | `score-index` | `evaluation-result.json` |
+| 13 | `score-index` | `item-assessments.json` and `evaluation-result.json` |
 | 14 | `build-web-report` | `web-report.json` |
 
 Each stage status is `not_started`, `in_progress`, `completed`, or `blocked`. A stage may start only when every earlier required stage is complete. `validate` may run at any time.
@@ -32,6 +32,8 @@ Index-to-source review asks, “Does this proposed heading and locator belong?�
 Source-to-index review asks, “Can a reader retrieve every independently searchable, substantively treated source subject?” It measures meaningful coverage, locator recall, and missing access. The frozen source benchmark—not the candidate—defines that denominator.
 
 The global pass asks, “Does the set of individually defensible records form a coherent navigation system?” It detects hierarchy and distribution problems that cannot be decided page by page.
+
+The diagnostic item layer asks, “What should a customer see when inspecting this particular locator, complete path, heading node, reference, or omitted source subject?” It deterministically derives grades and popover factors from the three completed audit directions. It does not create new editorial judgments and does not replace the publication-level rubric.
 
 ## Standard policy and minimal elicitation
 
@@ -72,8 +74,8 @@ When resuming in another chat or environment, materialize the active Library fol
 - Changing the standard-policy or rubric version invalidates policy and every later stage.
 - Correcting only the recorded readership rationale without changing its label or any operative rule does not invalidate judgments; changing the readership label invalidates reader tasks, benchmark synthesis, and every candidate stage.
 - Changing benchmark meaning, priority, evidence, or reader tasks invalidates the benchmark and every candidate stage.
-- Changing candidate normalization invalidates locator packets, locator audit, missing-access, structure, score, and web report stages.
-- Adjudicating a judgment invalidates scoring and web reporting only unless it changes the benchmark.
+- Changing candidate normalization or item inventory invalidates locator packets, locator audit, missing-access, structure, item assessments, score, and web report stages.
+- Adjudicating a judgment invalidates item assessments, scoring, and web reporting only unless it changes the benchmark.
 - Changing presentation text without changing evaluation facts requires only rebuilding the web report.
 
 Never overwrite a frozen artifact in place. Increment its version, compute a new hash, and retain provenance.

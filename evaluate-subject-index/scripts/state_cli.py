@@ -54,13 +54,13 @@ REQUIRED_INPUTS = {
     "source_chunk_preparation": ["source PDF", "expanded page map", "validated chunk manifest"],
     "source_subject_discovery": ["source chunk PDFs", "sidecar page maps", "frozen policy", "chunk manifest"],
     "benchmark_freeze": ["all source-subject chunks", "whole-source synthesis pass", "reader tasks"],
-    "candidate_normalization": ["original candidate index", "expanded page map"],
+    "candidate_normalization": ["original candidate index", "expanded page map", "deterministic item inventory"],
     "locator_chunk_preparation": ["normalized candidate", "expanded page map", "validated chunk manifest"],
     "locator_audit": ["source chunk PDF", "candidate locator chunk packet", "page sidecar"],
     "missing_access_audit": ["frozen benchmark", "normalized candidate", "locator judgments"],
-    "structure_audit": ["complete locator and missing-access audits", "normalized whole index"],
-    "scoring": ["all complete audit ledgers", "rubric v4", "standard critical gates"],
-    "web_report": ["validated evaluation result", "balanced representative examples"],
+    "structure_audit": ["complete locator and missing-access audits", "normalized whole index", "item inventory"],
+    "scoring": ["all complete audit ledgers", "item inventory", "item grading v1", "rubric v4", "standard critical gates"],
+    "web_report": ["validated evaluation result", "item assessments", "balanced representative examples"],
 }
 
 COMPLETION_TESTS = {
@@ -71,13 +71,13 @@ COMPLETION_TESTS = {
     "source_chunk_preparation": "Every chunk PDF and sidecar map exists and preserves original document-page identity.",
     "source_subject_discovery": "Every owned source page was reviewed once and every chunk artifact is valid.",
     "benchmark_freeze": "Whole-source synthesis is complete and the candidate-blind benchmark is frozen and hashed.",
-    "candidate_normalization": "Every delivered record, cross-reference, and expanded locator has a stable ID.",
+    "candidate_normalization": "Every delivered record, complete path, expanded locator, heading node, and cross-reference has a stable ID in the candidate and item inventory.",
     "locator_chunk_preparation": "Every resolved locator is routed once and the routing exception ledger is empty.",
     "locator_audit": "Every expected expanded locator assignment has exactly one judgment.",
     "missing_access_audit": "Every scored benchmark subject and expected treatment has a coverage judgment.",
-    "structure_audit": "The full hierarchy, terminology, references, mechanics, density, and distribution are audited.",
-    "scoring": "Score arithmetic, gates, denominators, hashes, and limitations validate.",
-    "web_report": "The display payload validates and references frozen evidence IDs.",
+    "structure_audit": "The full hierarchy, every heading node and cross-reference, terminology, mechanics, density, and distribution are audited.",
+    "scoring": "Diagnostic item grades, popover factors, overall score arithmetic, gates, denominators, hashes, and limitations validate.",
+    "web_report": "The display payload validates and references frozen evidence IDs plus the exact item-assessment artifact and color/popover contract.",
 }
 
 VALID_STATUSES = {"not_started", "in_progress", "completed", "blocked"}

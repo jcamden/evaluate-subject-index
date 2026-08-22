@@ -81,7 +81,9 @@ Default to JSON artifacts and concise JSON responses because results are intende
 
 Use the schemas in `references/schemas/`. Put display-ready facts in structured fields, retain complete evidence ledgers, and identify `not_measured`, `uninspectable`, and `uncertain` explicitly rather than treating them as failures or zeros.
 
-Use `scripts/state_cli.py` for deterministic state initialization, status, dependency-aware next-step selection, state transitions, artifact registration, hashing, manifest updates, and validation. Use `scripts/policy_cli.py` to instantiate and hash the built-in policy. Use `scripts/bundle_cli.py` for portable/private checkpoints, exports, artifact inventories, and safe imports. Use `scripts/page_chunk_cli.py` to expand page-label maps, validate user-approved chunk ranges, split source PDFs, and create locator-only chunk packets. Use `scripts/score_cli.py` for chapter-level density and score arithmetic. Do not ask the language model to maintain arithmetic or workflow state when a script can do it.
+Use `scripts/state_cli.py` for deterministic state initialization, status, dependency-aware next-step selection, state transitions, artifact registration, hashing, manifest updates, and validation. Use `scripts/policy_cli.py` to instantiate and hash the built-in policy. Use `scripts/bundle_cli.py` for portable/private checkpoints, exports, artifact inventories, and safe imports. Use `scripts/page_chunk_cli.py` to expand page-label maps, validate user-approved chunk ranges, split source PDFs, and create locator-only chunk packets. Use `scripts/item_grade_cli.py` to create stable display-item identities and deterministic diagnostic grades. Use `scripts/score_cli.py` for chapter-level density and overall score arithmetic. Do not ask the language model to maintain arithmetic, item-grade aggregation, or workflow state when a script can do it.
+
+Create item grades as a separate diagnostic layer under [item-grading.md](references/item-grading.md). Grade every measured locator, complete path, heading node, cross-reference, and frozen source subject; emit neutral `not_measured` records for unaudited pilot items. Include a public-safe popover payload with factors, weights or caps, confidence, explanations, and evidence IDs for every assessment. Never sum item grades into the overall 100-point result.
 
 ## Persistence rule
 
@@ -108,5 +110,6 @@ Use two built-in chapter-level calibration targets based on indexable source wor
 - Built-in scope, content, architecture, locator, cross-reference, density, and shipping-gate rules: [standard-policy.md](references/standard-policy.md)
 - Weights, metrics, density penalty, gates, grades, and public claims: [rubric.md](references/rubric.md)
 - Customer-facing method, presentation layers, and expandable evaluation criteria: [customer-methodology.md](references/customer-methodology.md)
+- Per-locator, path, heading, reference, omission grades and popover contract: [item-grading.md](references/item-grading.md)
 - Machine-readable artifact map: [json-contracts.md](references/json-contracts.md)
 - Storage modes, study layout, checkpoints, imports, and public/private separation: [storage-and-checkpoints.md](references/storage-and-checkpoints.md)

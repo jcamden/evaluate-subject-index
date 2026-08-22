@@ -27,6 +27,8 @@ The score uses six dimensions totaling 100 points:
 | Findability and navigation | 20 |
 | Mechanics and consistency | 5 |
 
+The workflow also produces a separate diagnostic grade for every measured locator, complete heading path, displayed main heading and subheading, cross-reference, and frozen source subject. These grades use semantic color tokens and structured hover/focus/touch popovers explaining the factors, weights or caps, confidence, and evidence behind the grade. They do not replace or add up to the publication-level score. See [`item-grading.md`](evaluate-subject-index/references/item-grading.md).
+
 ## Standard policy and density calibration
 
 The skill infers likely readership from the publication and records the evidence and confidence. It asks the user only when the audience is genuinely ambiguous or differs from the book's apparent readership. Routine scope, substantive-treatment, entity/example, locator, heading, compound-heading, cross-reference, uncertainty, and shipping-gate rules are built in rather than recreated for every run.
@@ -119,7 +121,7 @@ OpenAI's documentation describes a skill as a directory containing `SKILL.md` pl
 - Python 3.10 or newer
 - [`pypdf`](https://pypi.org/project/pypdf/) for physically splitting source PDFs
 
-The state manager, standard-policy builder, checkpoint/export/import tooling, page-map expansion, chunk validation, locator routing, chapter-level density calculation, and scoring arithmetic otherwise use the Python standard library.
+The state manager, standard-policy builder, checkpoint/export/import tooling, page-map expansion, chunk validation, locator routing, stable item inventory, diagnostic item grading, chapter-level density calculation, and scoring arithmetic otherwise use the Python standard library.
 
 Install the PDF dependency with:
 
@@ -129,7 +131,7 @@ python -m pip install -r requirements.txt
 
 ## Validation
 
-The included workflow checks JSON parsing, Python syntax, page-map expansion, chunk validation, candidate-locator routing, rubric arithmetic, artifact registration, portable checkpoint creation, and safe resume.
+The included workflow checks JSON parsing, Python syntax, page-map expansion, chunk validation, candidate-locator routing, stable item identities, granular grades and popovers, rubric arithmetic, artifact registration, portable checkpoint creation, and safe resume.
 
 Run the deterministic smoke tests locally:
 
@@ -159,6 +161,19 @@ python evaluate-subject-index/scripts/policy_cli.py build \
 python evaluate-subject-index/scripts/score_cli.py density-profile \
   --input evaluate-subject-index/tests/density-chapters.valid.json \
   --output /tmp/density-profile.json
+
+python evaluate-subject-index/scripts/item_grade_cli.py build-inventory \
+  --candidate evaluate-subject-index/tests/candidate-index.valid.json \
+  --output /tmp/item-inventory.json
+
+python evaluate-subject-index/scripts/item_grade_cli.py build-assessments \
+  --candidate evaluate-subject-index/tests/candidate-index.valid.json \
+  --inventory /tmp/item-inventory.json \
+  --locator-audit evaluate-subject-index/tests/locator-audit.item-grading.valid.json \
+  --missing-access-audit evaluate-subject-index/tests/missing-access-audit.item-grading.valid.json \
+  --structure-audit evaluate-subject-index/tests/structure-audit.item-grading.valid.json \
+  --audit-mode full \
+  --output /tmp/item-assessments.json
 ```
 
 ## Audit integrity

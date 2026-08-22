@@ -3,11 +3,12 @@
   "$id": "structure-audit.schema.json",
   "title": "Global subject index structure audit",
   "type": "object",
-  "required": ["schema_version", "evaluation_id", "candidate_sha256", "scope_complete", "metrics", "density", "defects", "strengths"],
+  "required": ["schema_version", "evaluation_id", "candidate_sha256", "item_inventory_sha256", "scope_complete", "metrics", "density", "expected_node_ids", "node_judgments", "expected_cross_reference_ids", "cross_reference_judgments", "defects", "strengths", "completion"],
   "properties": {
-    "schema_version": {"const": "structure-audit-v2"},
+    "schema_version": {"const": "structure-audit-v3"},
     "evaluation_id": {"type": "string"},
     "candidate_sha256": {"type": "string"},
+    "item_inventory_sha256": {"type": "string"},
     "scope_complete": {"type": "boolean"},
     "metrics": {
       "type": "object",
@@ -39,6 +40,50 @@
         "distribution_findings": {"type": "array", "items": {"type": "object"}}
       }
     },
+    "expected_node_ids": {"type": "array", "items": {"type": "string", "pattern": "^NODE-"}, "uniqueItems": true},
+    "node_judgments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["node_id", "heading_path", "role", "component_judgments", "summary", "confidence", "evidence_ids"],
+        "properties": {
+          "node_id": {"type": "string", "pattern": "^NODE-"},
+          "heading_path": {"type": "array", "minItems": 1, "maxItems": 2, "items": {"type": "string"}},
+          "role": {"enum": ["main_heading", "subheading"]},
+          "component_judgments": {
+            "type": "object",
+            "required": ["conceptual_stance_fidelity", "heading_access_architecture", "mechanics_consistency"],
+            "properties": {
+              "conceptual_stance_fidelity": {"$ref": "#/$defs/componentJudgment"},
+              "heading_access_architecture": {"$ref": "#/$defs/componentJudgment"},
+              "mechanics_consistency": {"$ref": "#/$defs/componentJudgment"}
+            },
+            "additionalProperties": false
+          },
+          "summary": {"type": "string"},
+          "confidence": {"enum": ["high", "medium", "low"]},
+          "evidence_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+        },
+        "additionalProperties": true
+      }
+    },
+    "expected_cross_reference_ids": {"type": "array", "items": {"type": "string", "pattern": "^XREF-"}, "uniqueItems": true},
+    "cross_reference_judgments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["reference_id", "judgment", "summary", "severity", "confidence", "evidence_ids"],
+        "properties": {
+          "reference_id": {"type": "string", "pattern": "^XREF-"},
+          "judgment": {"enum": ["supported", "partially_supported", "unsupported", "uninspectable"]},
+          "summary": {"type": "string"},
+          "severity": {"enum": ["none", "cosmetic", "minor", "major", "critical"]},
+          "confidence": {"enum": ["high", "medium", "low"]},
+          "evidence_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+        },
+        "additionalProperties": true
+      }
+    },
     "defects": {
       "type": "array",
       "items": {
@@ -53,7 +98,31 @@
         }
       }
     },
-    "strengths": {"type": "array", "items": {"type": "object"}}
+    "strengths": {"type": "array", "items": {"type": "object"}},
+    "completion": {
+      "type": "object",
+      "required": ["expected_nodes", "judged_nodes", "expected_cross_references", "judged_cross_references", "complete"],
+      "properties": {
+        "expected_nodes": {"type": "integer", "minimum": 0},
+        "judged_nodes": {"type": "integer", "minimum": 0},
+        "expected_cross_references": {"type": "integer", "minimum": 0},
+        "judged_cross_references": {"type": "integer", "minimum": 0},
+        "complete": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "componentJudgment": {
+      "type": "object",
+      "required": ["status", "summary", "evidence_ids"],
+      "properties": {
+        "status": {"enum": ["passes", "minor_issues", "major_issues", "fails", "uninspectable", "not_applicable"]},
+        "summary": {"type": "string"},
+        "evidence_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      },
+      "additionalProperties": true
+    }
   },
   "additionalProperties": true
 }

@@ -13,6 +13,7 @@ This evaluation measures how well a finished subject index helps readers find an
 - [Why the method is fair and auditable](#why-the-method-is-fair-and-auditable)
 - [Detailed evaluation criteria](#detailed-evaluation-criteria)
 - [What customers receive](#what-customers-receive)
+- [How individual index elements are graded](#how-individual-index-elements-are-graded)
 - [Limits and interpretation](#limits-and-interpretation)
 - [Terminology](#terminology)
 
@@ -299,6 +300,22 @@ A completed web report should include:
 - the audited source/candidate identity, scope, audit mode, and comparison key;
 - relevant limitations, uncertainty, and uninspectable material; and
 - a machine-readable JSON result for web presentation or independent checking.
+
+## How individual index elements are graded
+
+In addition to the publication-level score, the evaluation produces diagnostic grades for individual locators, complete heading paths, displayed main headings and subheadings, cross-references, and independently discovered source subjects. These grades make it possible to display the candidate index with semantic color coding and to inspect any element through a hover, keyboard-focus, or touch popover.
+
+The grades answer different questions:
+
+- A locator grade asks whether one complete heading path is substantively supported on one cited page.
+- A complete-path grade summarizes the measured quality of an entry as delivered, including its locator and path-specific evidence.
+- A heading-node grade evaluates the wording and structural role of the displayed main heading or subheading; it does not hide a weak child by averaging descendants.
+- A cross-reference grade asks whether one `see` or `see also` reference is valid and useful.
+- A source-subject grade identifies complete, partial, or missing access to a subject discovered independently from the source.
+
+Each popover shows the element’s grade, the factors that affected it, applicable weights or severity caps, confidence, a concise explanation, and links to evidence IDs. Public popovers use short paraphrases rather than long source quotations. “Not measured” and “uninspectable” are shown neutrally rather than colored as failures.
+
+Individual grades are diagnostic. They are not added together to calculate the overall 100-point score, and chapter density is never assigned to a particular heading. See the [item-grading specification](item-grading.md) for the exact rules.
 
 Full audits inspect all in-scope source pages, delivered index records, expanded locator assignments, scored benchmark subjects, cross-references, and structural flags. A pilot uses a disclosed sample to calibrate the method and cannot support full-index claims.
 

@@ -3,9 +3,9 @@
   "$id": "evaluation-result.schema.json",
   "title": "Scored subject index evaluation",
   "type": "object",
-  "required": ["schema_version", "evaluation_id", "candidate", "provenance", "audit_scope", "scorecard", "total_score", "interpretation", "metrics", "critical_gates", "defect_counts", "comparison_key", "limitations"],
+  "required": ["schema_version", "evaluation_id", "candidate", "provenance", "audit_scope", "scorecard", "total_score", "interpretation", "metrics", "item_assessments", "critical_gates", "defect_counts", "comparison_key", "limitations"],
   "properties": {
-    "schema_version": {"const": "subject-index-evaluation-result-v4"},
+    "schema_version": {"const": "subject-index-evaluation-result-v5"},
     "evaluation_id": {"type": "string"},
     "candidate": {"type": "object", "required": ["label", "sha256"], "additionalProperties": true},
     "provenance": {
@@ -41,6 +41,18 @@
     "total_score": {"type": "number", "minimum": 0, "maximum": 100},
     "interpretation": {"type": "string"},
     "metrics": {"type": "object"},
+    "item_assessments": {
+      "type": "object",
+      "required": ["schema_version", "grading_policy", "artifact_path", "sha256", "summary"],
+      "properties": {
+        "schema_version": {"const": "subject-index-item-assessments-v1"},
+        "grading_policy": {"const": "subject-index-item-grading-v1"},
+        "artifact_path": {"type": "string"},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "summary": {"type": "object"}
+      },
+      "additionalProperties": true
+    },
     "density": {
       "type": "object",
       "required": ["status", "measurement_level", "targets", "chapter_measurements", "fit_rating", "selectivity_points_contributed", "maximum_score_contribution"],

@@ -3,9 +3,9 @@
   "$id": "web-report.schema.json",
   "title": "Display-ready subject index report",
   "type": "object",
-  "required": ["schema_version", "report_id", "headline", "summary", "grade", "scorecard", "key_metrics", "density", "gate_status", "strengths", "defects", "examples", "methodology", "comparability", "disclosures", "limitations", "evidence_index"],
+  "required": ["schema_version", "report_id", "headline", "summary", "grade", "scorecard", "key_metrics", "density", "gate_status", "strengths", "defects", "examples", "item_grade_index", "methodology", "comparability", "disclosures", "limitations", "evidence_index"],
   "properties": {
-    "schema_version": {"const": "subject-index-web-report-v2"},
+    "schema_version": {"const": "subject-index-web-report-v3"},
     "report_id": {"type": "string"},
     "headline": {"type": "string"},
     "summary": {"type": "string"},
@@ -45,6 +45,28 @@
         "required": ["example_id", "category", "title", "source_paraphrase", "candidate_display", "judgment", "evidence_ids"],
         "additionalProperties": true
       }
+    },
+    "item_grade_index": {
+      "type": "object",
+      "required": ["artifact_path", "sha256", "grading_policy", "summary", "color_legend", "interaction"],
+      "properties": {
+        "artifact_path": {"type": "string"},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "grading_policy": {"const": "subject-index-item-grading-v1"},
+        "summary": {"type": "object"},
+        "color_legend": {"type": "array", "items": {"type": "object"}},
+        "interaction": {
+          "type": "object",
+          "required": ["color_source", "popover_source", "not_measured_behavior"],
+          "properties": {
+            "color_source": {"const": "grade.color_token"},
+            "popover_source": {"const": "popover"},
+            "not_measured_behavior": {"const": "neutral_not_failure"}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": true
     },
     "methodology": {"type": "object"},
     "comparability": {

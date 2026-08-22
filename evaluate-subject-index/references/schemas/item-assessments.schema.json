@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "item-assessments.schema.json",
+  "title": "Display-ready diagnostic grades for subject-index items",
+  "type": "object",
+  "$defs": {
+    "grade": {
+      "type": "object",
+      "required": ["score", "rating", "band", "color_token", "status"],
+      "properties": {
+        "score": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+        "rating": {"type": ["number", "null"], "minimum": 0, "maximum": 5},
+        "band": {"enum": ["excellent", "strong", "mixed", "weak", "poor", "not_measured"]},
+        "color_token": {"enum": ["grade_excellent", "grade_strong", "grade_mixed", "grade_weak", "grade_poor", "grade_neutral"]},
+        "status": {"enum": ["passes", "passes_with_issues", "needs_review", "needs_revision", "fails", "not_measured"]}
+      },
+      "additionalProperties": false
+    },
+    "factor": {
+      "type": "object",
+      "required": ["factor_id", "label", "status", "score", "explanation", "evidence_ids"],
+      "properties": {
+        "factor_id": {"type": "string"},
+        "label": {"type": "string"},
+        "status": {"type": "string"},
+        "score": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+        "weight": {"type": "number", "minimum": 0},
+        "severity": {"type": "string"},
+        "applied_cap": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+        "severity_caps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["defect_id", "severity", "maximum_score", "summary"],
+            "properties": {
+              "defect_id": {"type": ["string", "null"]},
+              "severity": {"enum": ["cosmetic", "minor", "major", "critical"]},
+              "maximum_score": {"type": "number", "minimum": 0, "maximum": 100},
+              "summary": {"type": "string"}
+            }
+          }
+        },
+        "explanation": {"type": "string"},
+        "evidence_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      },
+      "additionalProperties": true
+    },
+    "popover": {
+      "type": "object",
+      "required": ["title", "summary", "grade", "grade_scope", "confidence", "factors", "evidence_ids", "navigation"],
+      "properties": {
+        "title": {"type": "string"},
+        "summary": {"type": "string"},
+        "grade": {"$ref": "#/$defs/grade"},
+        "grade_scope": {"type": "string"},
+        "confidence": {"type": ["string", "null"], "enum": ["high", "medium", "low", null]},
+        "factors": {"type": "array", "items": {"$ref": "#/$defs/factor"}},
+        "evidence_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "navigation": {"type": "object"}
+      },
+      "additionalProperties": false
+    },
+    "assessedItem": {
+      "type": "object",
+      "required": ["grade", "grade_scope", "confidence", "evidence_ids", "popover"],
+      "properties": {
+        "grade": {"$ref": "#/$defs/grade"},
+        "grade_scope": {"type": "string"},
+        "confidence": {"type": ["string", "null"], "enum": ["high", "medium", "low", null]},
+        "evidence_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "popover": {"$ref": "#/$defs/popover"}
+      },
+      "additionalProperties": true
+    }
+  },
+  "required": ["schema_version", "grading_policy", "evaluation_id", "candidate_id", "candidate_sha256", "item_inventory_sha256", "audit_mode", "scope_complete", "grade_disclosure", "color_legend", "locator_assessments", "path_assessments", "heading_node_assessments", "cross_reference_assessments", "source_subject_assessments", "summary"],
+  "properties": {
+    "schema_version": {"const": "subject-index-item-assessments-v1"},
+    "grading_policy": {"const": "subject-index-item-grading-v1"},
+    "evaluation_id": {"type": "string"},
+    "candidate_id": {"type": "string"},
+    "candidate_sha256": {"type": "string"},
+    "item_inventory_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "audit_mode": {"enum": ["full", "pilot"]},
+    "scope_complete": {"type": "boolean"},
+    "grade_disclosure": {"type": "string"},
+    "color_legend": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "required": ["band", "minimum_score", "color_token"],
+        "properties": {
+          "band": {"enum": ["excellent", "strong", "mixed", "weak", "poor", "not_measured"]},
+          "minimum_score": {"type": ["number", "null"]},
+          "color_token": {"type": "string"}
+        }
+      }
+    },
+    "locator_assessments": {"type": "array", "items": {"allOf": [{"$ref": "#/$defs/assessedItem"}, {"type": "object", "required": ["locator_id", "path_id", "judgment"]}]}},
+    "path_assessments": {"type": "array", "items": {"allOf": [{"$ref": "#/$defs/assessedItem"}, {"type": "object", "required": ["path_id", "heading_path", "node_ids", "component_results"]}]}},
+    "heading_node_assessments": {"type": "array", "items": {"allOf": [{"$ref": "#/$defs/assessedItem"}, {"type": "object", "required": ["node_id", "heading_path", "role", "component_results"]}]}},
+    "cross_reference_assessments": {"type": "array", "items": {"allOf": [{"$ref": "#/$defs/assessedItem"}, {"type": "object", "required": ["reference_id", "judgment"]}]}},
+    "source_subject_assessments": {"type": "array", "items": {"allOf": [{"$ref": "#/$defs/assessedItem"}, {"type": "object", "required": ["subject_id", "coverage", "matched_path_ids"]}]}},
+    "summary": {"type": "object"}
+  },
+  "additionalProperties": true
+}

@@ -68,6 +68,63 @@ jobs:
           }
           assert density["fit_rating"] == 5.0
           PY
+      - name: Exercise granular item grading and popovers
+        run: |
+          python evaluate-subject-index/scripts/item_grade_cli.py build-inventory \
+            --candidate evaluate-subject-index/tests/candidate-index.valid.json \
+            --output /tmp/item-inventory.json
+          python evaluate-subject-index/scripts/item_grade_cli.py build-assessments \
+            --candidate evaluate-subject-index/tests/candidate-index.valid.json \
+            --inventory /tmp/item-inventory.json \
+            --locator-audit evaluate-subject-index/tests/locator-audit.item-grading.valid.json \
+            --missing-access-audit evaluate-subject-index/tests/missing-access-audit.item-grading.valid.json \
+            --structure-audit evaluate-subject-index/tests/structure-audit.item-grading.valid.json \
+            --audit-mode full \
+            --output /tmp/item-assessments.json
+          python - <<'PY'
+          import json
+
+          result = json.load(open("/tmp/item-assessments.json", encoding="utf-8"))
+          assert result["grading_policy"] == "subject-index-item-grading-v1"
+          assert result["summary"]["locators"]["bands"] == {
+              "excellent": 1,
+              "strong": 0,
+              "mixed": 1,
+              "weak": 0,
+              "poor": 1,
+              "not_measured": 0,
+          }
+          collections = (
+              "locator_assessments",
+              "path_assessments",
+              "heading_node_assessments",
+              "cross_reference_assessments",
+              "source_subject_assessments",
+          )
+          for collection in collections:
+              for item in result[collection]:
+                  assert item["popover"]["title"]
+                  assert item["popover"]["factors"]
+                  assert item["popover"]["grade"] == item["grade"]
+                  assert item["popover"]["grade_scope"] == item["grade_scope"]
+                  assert item["popover"]["confidence"] == item["confidence"]
+                  assert isinstance(item["popover"]["navigation"], dict)
+                  if item["grade"]["score"] is None:
+                      assert item["grade"]["color_token"] == "grade_neutral"
+          assert result["cross_reference_assessments"][0]["target_path_id"] == "PATH-001"
+          assert result["cross_reference_assessments"][0]["popover"]["navigation"]["target_path_id"] == "PATH-001"
+          assert any(
+              factor.get("applied_cap") == 85
+              for item in result["path_assessments"]
+              for factor in item["popover"]["factors"]
+          )
+          assert all(
+              cap["summary"]
+              for item in result["path_assessments"]
+              for factor in item["popover"]["factors"]
+              for cap in factor.get("severity_caps", [])
+          )
+          PY
       - name: Exercise artifact persistence and portable resume
         run: |
           run_dir="$(mktemp -d)"

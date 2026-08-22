@@ -15,10 +15,12 @@ The schemas in `schemas/` are web-oriented contracts. Additional fields are allo
 | Source chunk | `source-subject-chunk.schema.json` | Candidate-blind chapter/page discoveries |
 | Benchmark | `source-benchmark.schema.json` | Frozen whole-source subject graph and evidence denominator |
 | Normalized candidate | `candidate-index.schema.json` | Complete paths, references, and expanded locator assignments |
+| Item inventory | `item-inventory.schema.json` | Stable path, locator, heading-node, and cross-reference identities for display and audit joins |
 | Candidate locator chunk | `candidate-locator-chunk.schema.json` | Only paths and assignments owned by one audit chunk |
 | Locator batch | `locator-audit.schema.json` | One judgment for every expanded candidate locator |
 | Missing-access batch | `missing-access-audit.schema.json` | Source-to-index concept coverage and locator recall |
 | Structure audit | `structure-audit.schema.json` | Global hierarchy, navigation, cross-reference, mechanics, and density evidence |
+| Item assessments | `item-assessments.schema.json` | Diagnostic grades, semantic color tokens, popover factors, and evidence joins for every display item |
 | Density input | `density-input.schema.json` | Chapter word, path, and locator counts for deterministic density scoring |
 | Evaluation result | `evaluation-result.schema.json` | Auditable scores, metrics, gates, and comparison key |
 | Web report | `web-report.schema.json` | Display-ready narrative and evidence cards |
@@ -30,11 +32,15 @@ Use opaque IDs rather than mutable labels:
 - `SUBJ-*` for benchmark subjects;
 - `PATH-*` for complete candidate heading paths;
 - `LOC-*` for expanded locator assignments;
+- `NODE-*` for unique displayed main-heading and subheading nodes;
+- `XREF-*` for individual cross-reference records;
 - `CHUNK-*` for page ownership units;
 - `TASK-*` for reader tasks; and
 - `DEFECT-*` for underlying defects.
 
 Use `subject-index-rubric-v4` for newly created results. Its density payload must preserve both standardized targets, target and broad tolerance bands, chapter-level measurements, source-word-weighted aggregation, and the five-point maximum contribution.
+
+Use `subject-index-item-grading-v1` for diagnostic item grades. Keep it separate from the rubric version. Every item assessment requires a semantic color token, explicit grade scope, evidence IDs, and a public-safe popover with structured factors. A null score must use `grade_neutral` and `not_measured`; never convert unknown or uninspectable evidence to zero.
 
 ## Null and missing data
 
@@ -48,4 +54,4 @@ Use relative POSIX paths rooted at the evaluation directory in state and manifes
 
 ## Web safety
 
-The web report should reference evidence IDs and short paraphrases. Keep long copyrighted passages in a restricted audit artifact when lawful, not in the public payload. Preserve candidate labels separately from any organizer blind key until scores are frozen.
+The web report and item assessments should reference evidence IDs and short paraphrases. Keep exact quotations and long copyrighted passages in a restricted audit artifact when lawful, not in either public payload. Preserve candidate labels separately from any organizer blind key until scores are frozen.

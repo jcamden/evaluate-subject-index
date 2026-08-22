@@ -18,7 +18,7 @@
           "record_id": {"type": "string"},
           "record_type": {"enum": ["page_bearing", "container", "cross_reference"]},
           "path_id": {"type": "string", "pattern": "^PATH-"},
-          "heading_path": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "heading_path": {"type": "array", "minItems": 1, "maxItems": 2, "items": {"type": "string"}},
           "locator_assignments": {
             "type": "array",
             "items": {
@@ -35,6 +35,16 @@
               },
               "additionalProperties": true
             }
+          },
+          "cross_reference": {
+            "type": "object",
+            "required": ["type", "target"],
+            "properties": {
+              "type": {"enum": ["see", "see also"]},
+              "target": {"type": "string"},
+              "target_path_id": {"type": ["string", "null"], "pattern": "^PATH-"}
+            },
+            "additionalProperties": true
           }
         },
         "additionalProperties": true

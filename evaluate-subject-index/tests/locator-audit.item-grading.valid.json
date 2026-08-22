@@ -1,0 +1,52 @@
+{
+  "schema_version": "locator-audit-v1",
+  "evaluation_id": "eval-item-test",
+  "candidate_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "chunk_id": "CHUNK-001",
+  "expected_locator_ids": ["LOC-001", "LOC-002", "LOC-003"],
+  "judgments": [
+    {
+      "locator_id": "LOC-001",
+      "path_id": "PATH-001",
+      "complete_heading_path": ["Revolution", "economic causes"],
+      "document_page": 5,
+      "source_page_label": "1",
+      "source_scope_status": "indexable",
+      "treatment_class": "substantive",
+      "judgment": "supported",
+      "evidence_summary": "The page substantively treats economic causes.",
+      "confidence": "high",
+      "error_codes": [],
+      "severity": "none"
+    },
+    {
+      "locator_id": "LOC-002",
+      "path_id": "PATH-001",
+      "complete_heading_path": ["Revolution", "economic causes"],
+      "document_page": 8,
+      "source_page_label": "4",
+      "source_scope_status": "indexable",
+      "treatment_class": "mixed",
+      "judgment": "partially_supported",
+      "evidence_summary": "The page supports the topic, but only briefly.",
+      "confidence": "medium",
+      "error_codes": ["LOC_POS"],
+      "severity": "minor"
+    },
+    {
+      "locator_id": "LOC-003",
+      "path_id": "PATH-002",
+      "complete_heading_path": ["Appendix material"],
+      "document_page": 9,
+      "source_page_label": "A-1",
+      "source_scope_status": "excluded",
+      "treatment_class": "absent",
+      "judgment": "unsupported",
+      "evidence_summary": "The locator points to excluded material.",
+      "confidence": "high",
+      "error_codes": ["SCP", "LOC_POS"],
+      "severity": "major"
+    }
+  ],
+  "completion": {"expected": 3, "judged": 3, "unique": true, "complete": true}
+}

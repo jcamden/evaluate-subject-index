@@ -1,0 +1,89 @@
+{
+  "schema_version": "structure-audit-v3",
+  "evaluation_id": "eval-item-test",
+  "candidate_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "item_inventory_sha256": "9f2a454b2ff0bdef21c37a8640e3a428e2aa73086ca75837b50e7cd27ee6841e",
+  "scope_complete": true,
+  "metrics": {"page_bearing_paths": 2, "expanded_locators": 3, "cross_references": 1},
+  "density": {
+    "policy_status": "scored",
+    "measurement_level": "chapter_or_approved_intellectual_unit",
+    "targets": [{"metric_id": "paths", "target": 8}, {"metric_id": "locators", "target": 20}],
+    "chapter_measurements": [],
+    "fit_rating": 4,
+    "maximum_score_contribution": 5,
+    "distribution_findings": []
+  },
+  "expected_node_ids": ["NODE-2B755A7B7B0D", "NODE-3EAEF0562901", "NODE-382514721606", "NODE-4D8D2BCA76FB"],
+  "node_judgments": [
+    {
+      "node_id": "NODE-2B755A7B7B0D",
+      "heading_path": ["Appendix material"],
+      "role": "main_heading",
+      "component_judgments": {
+        "conceptual_stance_fidelity": {"status": "passes", "summary": "The wording is literal.", "evidence_ids": []},
+        "heading_access_architecture": {"status": "major_issues", "summary": "Excluded material should not be an access point.", "evidence_ids": ["DEFECT-002"]},
+        "mechanics_consistency": {"status": "passes", "summary": "Mechanically valid.", "evidence_ids": []}
+      },
+      "summary": "Mechanically sound but not a warranted heading.",
+      "confidence": "high",
+      "evidence_ids": ["DEFECT-002"]
+    },
+    {
+      "node_id": "NODE-3EAEF0562901",
+      "heading_path": ["Economic origins"],
+      "role": "main_heading",
+      "component_judgments": {
+        "conceptual_stance_fidelity": {"status": "passes", "summary": "Accurate alternative terminology.", "evidence_ids": []},
+        "heading_access_architecture": {"status": "passes", "summary": "Useful inversion through see.", "evidence_ids": ["XREF-675042835077"]},
+        "mechanics_consistency": {"status": "passes", "summary": "Reference syntax is valid.", "evidence_ids": []}
+      },
+      "summary": "A useful alternative access term.",
+      "confidence": "high",
+      "evidence_ids": ["XREF-675042835077"]
+    },
+    {
+      "node_id": "NODE-382514721606",
+      "heading_path": ["Revolution"],
+      "role": "main_heading",
+      "component_judgments": {
+        "conceptual_stance_fidelity": {"status": "passes", "summary": "The umbrella is accurate.", "evidence_ids": []},
+        "heading_access_architecture": {"status": "minor_issues", "summary": "The umbrella is broad but usable.", "evidence_ids": ["DEFECT-001"]},
+        "mechanics_consistency": {"status": "passes", "summary": "Mechanically valid.", "evidence_ids": []}
+      },
+      "summary": "A broadly useful main heading with a minor architecture issue.",
+      "confidence": "high",
+      "evidence_ids": ["DEFECT-001"]
+    },
+    {
+      "node_id": "NODE-4D8D2BCA76FB",
+      "heading_path": ["Revolution", "economic causes"],
+      "role": "subheading",
+      "component_judgments": {
+        "conceptual_stance_fidelity": {"status": "passes", "summary": "The subheading preserves the source meaning.", "evidence_ids": ["LOC-001"]},
+        "heading_access_architecture": {"status": "passes", "summary": "The relationship is clear.", "evidence_ids": []},
+        "mechanics_consistency": {"status": "passes", "summary": "Mechanically valid.", "evidence_ids": []}
+      },
+      "summary": "A clear, accurate subheading.",
+      "confidence": "high",
+      "evidence_ids": ["LOC-001"]
+    }
+  ],
+  "expected_cross_reference_ids": ["XREF-675042835077"],
+  "cross_reference_judgments": [
+    {
+      "reference_id": "XREF-675042835077",
+      "judgment": "supported",
+      "summary": "The alternative term resolves to useful access.",
+      "severity": "none",
+      "confidence": "high",
+      "evidence_ids": ["PATH-001"]
+    }
+  ],
+  "defects": [
+    {"defect_id": "DEFECT-001", "code": "HED", "severity": "minor", "summary": "Broad umbrella.", "affected_ids": ["NODE-382514721606", "PATH-001"]},
+    {"defect_id": "DEFECT-002", "code": "SCP", "severity": "major", "summary": "Excluded appendix access.", "affected_ids": ["NODE-2B755A7B7B0D", "PATH-002", "LOC-003"]}
+  ],
+  "strengths": [],
+  "completion": {"expected_nodes": 4, "judged_nodes": 4, "expected_cross_references": 1, "judged_cross_references": 1, "complete": true}
+}

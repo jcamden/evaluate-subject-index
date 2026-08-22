@@ -72,6 +72,8 @@ Required: original candidate index and page mapping.
 
 Parse every main heading, subheading, complete heading path, locator/range, and cross-reference. Expand ranges to individual locator assignments while preserving the displayed form. Create stable IDs and retain raw source text or coordinates. Output `candidate-index.json` plus a normalization report. Never repair wording, filing, locators, or references silently.
 
+Run `scripts/item_grade_cli.py build-inventory` over the normalized candidate and output `item-inventory.json`. The inventory must deterministically enumerate every `PATH-*`, `LOC-*`, unique main-heading/subheading `NODE-*`, and cross-reference `XREF-*`. Register both files as required private artifacts of candidate normalization. The inventory contains identities and display relationships, not judgments.
+
 Every expanded locator assignment must retain `source_page_label` as a string and resolve to exactly one `document_page` through the frozen page map. Expand displayed ranges by resolving both endpoint labels and walking the ordered document pages within the same mapping segment; do not assume Arabic arithmetic. Mark unresolved or ambiguous labels explicitly; do not guess from an apparent numeric offset.
 
 ## `prepare-locator-chunks`
@@ -86,7 +88,7 @@ Do not include unrelated headings, containers, or cross-references in locator-au
 
 Required: source chunk PDF, candidate locator chunk packet, policy, expanded page map, and chunk manifest.
 
-For each supplied assignment, test whether its mapped source page substantively supports the complete heading path and preserves meaning/stance. Apply the scope, entity/example, compound-heading, and locator rules to every atomic path/page pair. Inspect local context pages as needed, but judge each owned assignment once. Output one item per locator assignment with `supported`, `partially_supported`, `unsupported`, or `uninspectable`, evidence, error codes, severity, and confidence.
+For each supplied assignment, test whether its mapped source page substantively supports the complete heading path and preserves meaning/stance. Apply the scope, entity/example, compound-heading, and locator rules to every atomic path/page pair. Inspect local context pages as needed, but judge each owned assignment once. Output one item per locator assignment with `supported`, `partially_supported`, `unsupported`, or `uninspectable`, a concise public-safe evidence paraphrase, error codes, severity, and confidence. Keep any necessary exact quotation or extended evidence in a restricted ledger referenced by evidence ID; do not copy it into display summaries.
 
 This command measures proposed-locator precision and entry legitimacy. It does not measure omissions or recall.
 
@@ -102,13 +104,17 @@ Required: complete normalized candidate, all locator judgments, all missing-acce
 
 Judge the index globally under the heading/access, cross-reference, coherence, and mechanics rules: heading clarity, parent-child truth, sibling parallelism, direct access, underdivision, overdivision, fragmentation, terminology consistency, every cross-reference, filing, mechanics, distribution, and long undivided locator strings. Measure both frozen density metrics for each chapter using indexable source words and use source-word-weighted aggregation. Output `structure-audit.json` with item-level defects, chapter measurements, target disclosure, and metrics.
 
+Use the frozen item inventory. Judge every `NODE-*` separately for conceptual/stance fidelity, heading/access architecture, and mechanics. Judge every `XREF-*` as supported, partially supported, unsupported, or uninspectable. Record completion counts against the inventory and include node/reference evidence IDs. A main-heading node judgment concerns that heading's wording and organizational role; do not hide a weak child by averaging its descendants.
+
 Do not decide that a parent-child relation is valid merely because the child locator is valid; test whether the relationship expressed by the full path is true and useful.
 
 ## `score-index`
 
-Required: all audits complete and schema-valid.
+Required: normalized candidate, item inventory, and all audits complete and schema-valid.
 
-Calculate the rubric from evidence ledgers, report denominators, apply critical gates, and produce `evaluation-result.json`. Use half-point dimension ratings only after calculating their supporting metrics. The total is a quality summary, not a percent correct. Do not override an item ledger to produce a preferred grade.
+First run `scripts/item_grade_cli.py build-assessments` and produce `item-assessments.json` under [item-grading.md](item-grading.md). In full mode, require one judgment for every resolved locator, heading node, and cross-reference. In pilot mode, retain unsampled inventory items with neutral `not_measured` grades. Every item must carry `grade`, `color_token`, component factors, public-safe popover content, confidence where applicable, and evidence IDs. Register the complete artifact as private by default because its labels and locators may reproduce the candidate; publishing a full colored index requires a separate rights and disclosure decision.
+
+Then calculate the rubric from evidence ledgers, report denominators, apply critical gates, and produce `evaluation-result.json`. Reference the exact item-assessment path, hash, policy version, and summary. Use half-point dimension ratings only after calculating their supporting metrics. The total is a quality summary, not a percent correct. Diagnostic item grades do not add to or replace it. Do not override an item ledger to produce a preferred grade.
 
 ## `build-web-report`
 
@@ -116,7 +122,7 @@ Required: valid evaluation result and selected representative examples.
 
 Create `web-report.json` using the web schema and the public presentation strategy in [customer-methodology.md](customer-methodology.md). Organize the report in four layers: (1) overall result and publication-readiness status, (2) six plain-language quality questions, (3) measured evidence and representative examples, and (4) complete methodology, scope, and limitations. Make layers three and four expandable in the web interface.
 
-Include a plain-language grade, scorecard, measured rates, density profile and result, gates, strengths, consequential defects, balanced examples, methodology, comparability key, disclosure, and limitations. State explicitly that this framework targets 8 locator-bearing paths and 20 locator occurrences per 1,000 indexable source words, evaluated by chapter as permissive calibration rather than quotas. Avoid copyrighted source excerpts beyond what is necessary to verify a judgment. Never require a customer to interpret raw internal artifacts to understand a score; link every displayed conclusion to supporting evidence IDs for optional inspection.
+Include a plain-language grade, scorecard, measured rates, density profile and result, gates, strengths, consequential defects, balanced examples, methodology, comparability key, disclosure, and limitations. Reference the complete `item-assessments.json` artifact by relative path and hash. Publish its semantic color legend and specify that interfaces read colors from `grade.color_token` and hover/focus content from `popover`. Ensure keyboard and touch access as well as hover, pair every color with a text label or icon, and render not-measured items neutrally. State explicitly that this framework targets 8 locator-bearing paths and 20 locator occurrences per 1,000 indexable source words, evaluated by chapter as permissive calibration rather than quotas. Avoid copyrighted source excerpts beyond what is necessary to verify a judgment. Never require a customer to interpret raw internal artifacts to understand a score; link every displayed conclusion to supporting evidence IDs for optional inspection.
 
 ## `checkpoint`
 
