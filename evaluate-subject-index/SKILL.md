@@ -53,6 +53,8 @@ Read [commands.md](references/commands.md) for inputs, outputs, dependencies, an
 
 Read [workflow.md](references/workflow.md) for the full state machine and [judgment-policy.md](references/judgment-policy.md) before making substantive judgments. Read [rubric.md](references/rubric.md) before scoring.
 
+For customer-facing explanations and reports, read [customer-methodology.md](references/customer-methodology.md). Use its four-layer presentation hierarchy: overall result, six quality questions, supporting evidence, then full methodology. Keep technical detail available through progressive disclosure instead of placing it in the primary conclusion.
+
 ## Built-in policy
 
 Use [standard-policy.md](references/standard-policy.md) for every evaluation. Do not ask the user to invent named-entity, example, locator, hierarchy, cross-reference, uncertainty, gate, or density policies. At `define-policy`, instantiate the versioned standard policy with the frozen source hashes and source-specific scope/availability facts. Ask only when the source is ambiguous, the user requests a documented deviation, or a publisher specification conflicts with the default.
@@ -105,5 +107,6 @@ Use two built-in chapter-level calibration targets based on indexable source wor
 - Subject, locator, omission, hierarchy, and uncertainty judgments: [judgment-policy.md](references/judgment-policy.md)
 - Built-in scope, content, architecture, locator, cross-reference, density, and shipping-gate rules: [standard-policy.md](references/standard-policy.md)
 - Weights, metrics, density penalty, gates, grades, and public claims: [rubric.md](references/rubric.md)
+- Customer-facing method, presentation layers, and expandable evaluation criteria: [customer-methodology.md](references/customer-methodology.md)
 - Machine-readable artifact map: [json-contracts.md](references/json-contracts.md)
 - Storage modes, study layout, checkpoints, imports, and public/private separation: [storage-and-checkpoints.md](references/storage-and-checkpoints.md)

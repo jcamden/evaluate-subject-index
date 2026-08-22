@@ -114,7 +114,9 @@ Calculate the rubric from evidence ledgers, report denominators, apply critical 
 
 Required: valid evaluation result and selected representative examples.
 
-Create `web-report.json` using the web schema. Include a plain-language grade, scorecard, measured rates, density profile and result, gates, strengths, consequential defects, balanced examples, methodology, comparability key, disclosure, and limitations. State explicitly that this framework targets 8 locator-bearing paths and 20 locator occurrences per 1,000 indexable source words, evaluated by chapter as permissive calibration rather than quotas. Avoid copyrighted source excerpts beyond what is necessary to verify a judgment.
+Create `web-report.json` using the web schema and the public presentation strategy in [customer-methodology.md](customer-methodology.md). Organize the report in four layers: (1) overall result and publication-readiness status, (2) six plain-language quality questions, (3) measured evidence and representative examples, and (4) complete methodology, scope, and limitations. Make layers three and four expandable in the web interface.
+
+Include a plain-language grade, scorecard, measured rates, density profile and result, gates, strengths, consequential defects, balanced examples, methodology, comparability key, disclosure, and limitations. State explicitly that this framework targets 8 locator-bearing paths and 20 locator occurrences per 1,000 indexable source words, evaluated by chapter as permissive calibration rather than quotas. Avoid copyrighted source excerpts beyond what is necessary to verify a judgment. Never require a customer to interpret raw internal artifacts to understand a score; link every displayed conclusion to supporting evidence IDs for optional inspection.
 
 ## `checkpoint`
 

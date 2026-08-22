@@ -6,6 +6,8 @@ An agent skill for repeatable, source-grounded evaluation of finished back-of-bo
 
 It evaluates one index independently against its source and a frozen policy. Compatible results can then be displayed side by side without treating another index as the gold standard.
 
+**Customer-facing explanation:** [How the Subject Index Evaluation Works](evaluate-subject-index/references/customer-methodology.md) describes the process, score, density calibration, publication-readiness checks, and detailed criteria in plain language. It also defines the four-layer presentation strategy for web reports: overall result, six quality questions, supporting evidence, and full methodology.
+
 ## What it does
 
 The workflow separates three questions that should not be conflated:
@@ -37,6 +39,8 @@ Density is measured by chapter using two permissive calibration targets:
 Target bands are 6–10 paths and 15–25 occurrences; broad tolerance bands are 4–12 paths and 10–30 occurrences. These are this framework's calibration points—not quotas, minimums, universal professional requirements, or hard ceilings. Density contributes at most five of 100 points and never controls which subjects enter the frozen source benchmark.
 
 See [`standard-policy.md`](evaluate-subject-index/references/standard-policy.md).
+
+For a clear explanation suitable for customers, see [How the Subject Index Evaluation Works](evaluate-subject-index/references/customer-methodology.md). The exact scoring formulas and technical anchors remain in [`rubric.md`](evaluate-subject-index/references/rubric.md).
 
 ## Page labels and chunks
 
