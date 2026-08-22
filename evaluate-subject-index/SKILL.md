@@ -1,6 +1,6 @@
 ---
 name: evaluate-subject-index
-description: Run a repeatable, source-grounded evaluation of a finished subject index using a built-in standard policy. Use when a user wants to map PDF document pages to Arabic, Roman, prefixed, or irregular source labels; define and prepare audit chunks; discover substantively treated subjects; freeze a candidate-blind source benchmark; normalize and route index locators; audit every locator; find missing access; judge hierarchy, density, and navigation; persist outputs to Library or portable bundles; resume an evaluation; or produce JSON for a web report.
+description: Run a repeatable, source-grounded evaluation of a finished subject index using a built-in standard policy. Use when a user wants to map PDF document pages to Arabic, Roman, prefixed, or irregular source labels; define and prepare audit chunks; discover substantively treated subjects serially or through parallel branch-and-pull-request workers; integrate distributed discoveries; freeze a candidate-blind source benchmark; normalize and route index locators; audit every locator; find missing access; judge hierarchy, density, and navigation; persist outputs to Library or portable bundles; resume an evaluation; or produce JSON for a web report.
 ---
 
 # Evaluate Subject Index
@@ -22,6 +22,8 @@ Supported commands:
 - `define-policy`
 - `prepare-source-chunks`
 - `discover-source-subjects [chunk-id]`
+- `worker-discovery [chunk-id] --project [repository]`
+- `integrate-discoveries --project [repository] [pull-request-or-branch ...]`
 - `freeze-source-benchmark`
 - `normalize-index`
 - `prepare-locator-chunks`
@@ -82,6 +84,16 @@ Default to JSON artifacts and concise JSON responses because results are intende
 Use the schemas in `references/schemas/`. Put display-ready facts in structured fields, retain complete evidence ledgers, and identify `not_measured`, `uninspectable`, and `uncertain` explicitly rather than treating them as failures or zeros.
 
 Use `scripts/state_cli.py` for deterministic state initialization, status, dependency-aware next-step selection, state transitions, artifact registration, hashing, manifest updates, and validation. Use `scripts/policy_cli.py` to instantiate and hash the built-in policy. Use `scripts/bundle_cli.py` for portable/private checkpoints, exports, artifact inventories, and safe imports. Use `scripts/page_chunk_cli.py` to expand page-label maps, validate user-approved chunk ranges, split source PDFs, and create locator-only chunk packets. Use `scripts/item_grade_cli.py` to create stable display-item identities and deterministic diagnostic grades. Use `scripts/score_cli.py` for chapter-level density and overall score arithmetic. Do not ask the language model to maintain arithmetic, item-grade aggregation, or workflow state when a script can do it.
+
+Use `scripts/parallel_discovery_cli.py` for distributed discovery. `worker-receipt` validates one candidate-blind chapter artifact against canonical source, policy, page-map, and chunk hashes without mutating shared state. `integrate` validates all supplied worker artifacts before copying or registering any of them, then updates the canonical manifest and state once.
+
+## Parallel source discovery
+
+Use `worker-discovery` when independent chats should discover different chunks concurrently. Require a chunk ID and GitHub project/repository. Resolve an immutable base commit, derive the default branch `source-discovery/<lowercase-chunk-id>`, and stop if that branch already exists. Import the same validated checkpoint in an isolated worker directory, reconnect the exact source by SHA-256, perform normal candidate-blind discovery, and generate a worker receipt. Keep branch-local recovery control files and checkpoints under a chunk-specific Library worker folder.
+
+Publish only `source/source-subject-chunk.<chunk-id>.json` on the worker branch. Create one commit and one pull request into the configured base branch; never merge it, update canonical control files, publish a worker checkpoint, or update a candidate evaluation repository. Before a public write, inspect the exact JSON for unexpected verbatim source text or secrets and keep the allowed public path explicit. Treat the command invocation naming the repository as authorization for this bounded branch and pull-request workflow; stop for any materially broader publication. After one explicit Auto-review denial, preserve the Library recovery copy and report the rationale without retrying the same action.
+
+Use `integrate-discoveries` only in a coordinating chat. Require the project plus explicit pull-request numbers, URLs, or branch refs; never sweep or merge unspecified pull requests. First verify every selected change is open, targets the expected base, changes exactly one allowed chapter artifact, and contains no restricted or shared control files. Fetch all artifacts and validate them together with `parallel_discovery_cli.py`; if any fails, merge none. After the full set passes, merge the selected pull requests, materialize the resulting base head, run the integration helper once, validate canonical state and manifest, create one cumulative portable checkpoint, and commit the shared control-file update. Update any candidate evaluation benchmark lock only after that canonical integration commit. Record merged PRs, commits, chunk IDs, artifact hashes, and the new benchmark head.
 
 Create item grades as a separate diagnostic layer under [item-grading.md](references/item-grading.md). Grade every measured locator, complete path, heading node, cross-reference, and frozen source subject; emit neutral `not_measured` records for unaudited pilot items. Include a public-safe popover payload with factors, weights or caps, confidence, explanations, and evidence IDs for every assessment. Never sum item grades into the overall 100-point result.
 

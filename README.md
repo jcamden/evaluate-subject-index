@@ -67,6 +67,8 @@ define-chunks
 define-policy
 prepare-source-chunks
 discover-source-subjects [chunk-id]
+worker-discovery [chunk-id] --project [repository]
+integrate-discoveries --project [repository] [pull-request-or-branch ...]
 freeze-source-benchmark
 normalize-index
 prepare-locator-chunks
@@ -84,6 +86,15 @@ next
 ```
 
 `status` reports completed and blocked stages. `next` returns the earliest dependency-satisfied command, required inputs, and completion test. `define-policy` instantiates the standard policy with source-specific hashes, availability facts, and any documented deviations; it does not ask the user to invent policy.
+
+## Parallel source discovery
+
+Source discovery can be distributed safely across independent chats:
+
+- `worker-discovery CHUNK-003 --project owner/repository` resolves the compatible source and checkpoint, creates an isolated branch such as `source-discovery/chunk-003`, validates one candidate-blind chapter artifact, stores a branch-scoped recovery copy, and opens an unmerged pull request containing only that chapter JSON.
+- `integrate-discoveries --project owner/repository <PRs...>` validates an explicit pull-request batch before merging any member, rejects shared-control or restricted files, integrates accepted chapter artifacts together, updates canonical state and manifest once, creates one cumulative checkpoint, and only then advances downstream benchmark locks.
+
+Parallel workers never edit canonical `evaluation-state.json`, `artifact-manifest.json`, cumulative checkpoints, or candidate-evaluation locks. See [`commands.md`](evaluate-subject-index/references/commands.md) and [`workflow.md`](evaluate-subject-index/references/workflow.md).
 
 ## Storage and checkpoints
 

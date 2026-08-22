@@ -58,6 +58,59 @@ Read the complete owned range plus declared context pages. Determine which subje
 
 The completion test is every owned document page inspected once, all page-level uncertainties recorded, and the artifact schema-valid.
 
+## `worker-discovery [chunk-id] --project [repository]`
+
+Required from the user: one chunk ID and a GitHub benchmark repository/project. Resolve the exact source and latest compatible validated checkpoint from the active project or Library when each is unambiguous; ask only when multiple or missing candidates prevent hash-safe selection. Accept an optional immutable base commit and base branch. When omitted, read the repository's default-branch head once and record that exact commit before work begins.
+
+This is the parallel form of `discover-source-subjects`. Import the checkpoint into an isolated worker directory, reconnect the restricted source by SHA-256, and apply every normal candidate-blind discovery requirement. Do not inspect other source-subject chunks until the fresh source-led draft is complete; afterward use them only for schema and procedural consistency.
+
+Default the worker branch to `source-discovery/<lowercase-chunk-id>`. Refuse to overwrite an existing branch. Produce the normal `source/source-subject-chunk.<chunk-id>.json` plus a branch-local `parallel-source-discovery-receipt-v1` generated with:
+
+```bash
+python scripts/parallel_discovery_cli.py worker-receipt \
+  --state evaluation-state.json \
+  --chunk-manifest source/chunk-manifest.json \
+  --artifact source/source-subject-chunk.CHUNK-003.json \
+  --chunk-id CHUNK-003 \
+  --project owner/repository \
+  --base-commit <40-character-sha> \
+  --output workers/CHUNK-003/worker-discovery-receipt.json
+```
+
+Save worker recovery files to a chunk-specific Library folder so concurrent workers never replace canonical Library control files. The GitHub branch and pull request contain exactly one mergeable path: the chapter artifact. Do not include `evaluation-state.json`, `artifact-manifest.json`, checkpoints, PDFs, sidecars, raw extracted text, or worker receipts. Inspect the outgoing JSON for unexpected verbatim source text and secrets before publication.
+
+Create one commit, push the branch, and open a pull request into the configured base branch. Do not merge the pull request or update a candidate evaluation repository. Include base commit, source and evaluation identities, chunk ranges, blindness status, page count, subject/priority/evidence counts, word count, artifact SHA-256, validation result, and limitations in the pull-request description.
+
+The completion test is: the worker receipt validates; the recovery copy is durable; the branch contains exactly the allowed artifact; and an open, unmerged pull request reports the receipt facts. If GitHub publication is denied, the durable recovery copy satisfies work preservation but the command returns `blocked` with the exact denial.
+
+## `integrate-discoveries --project [repository] [pull-request-or-branch ...]`
+
+Required: the canonical validated study, GitHub benchmark repository/project, and an explicit list of worker pull requests or branches. Never discover or merge all open pull requests implicitly.
+
+Act as the sole coordinator for shared state. Verify before any merge that every selected pull request:
+
+- is open and targets the expected base branch;
+- originates from the expected repository and `source-discovery/<chunk-id>` branch;
+- changes exactly `source/source-subject-chunk.<chunk-id>.json`;
+- contains no PDFs, sidecars, checkpoints, control files, raw source text, or unrelated changes; and
+- has a unique chunk ID not already represented by a different frozen artifact.
+
+Fetch every proposed artifact and validate the full set before merging any pull request. Use `scripts/parallel_discovery_cli.py integrate` in a disposable copy first when practical. Require matching evaluation, source, policy, page-map, and chunk-manifest hashes; exact owned/context pages; complete page review; valid subject/evidence structure; and preserved candidate blindness unless the user explicitly accepts a documented compromised run. If any proposed artifact fails, merge none.
+
+After the full set passes, merge the selected pull requests, materialize the resulting base head, and integrate all newly merged artifacts into the canonical study in one transaction:
+
+```bash
+python scripts/parallel_discovery_cli.py integrate \
+  --state evaluation-state.json \
+  --chunk-manifest source/chunk-manifest.json \
+  --artifact /path/to/source-subject-chunk.CHUNK-003.json \
+  --artifact /path/to/source-subject-chunk.CHUNK-004.json
+```
+
+The helper copies each artifact to its canonical path, registers it as frozen/private/required, updates the manifest first and state last, and completes source discovery only when every manifest chunk has one active artifact. Then run `validate`, create one cumulative portable checkpoint, and make one shared-control commit on the base branch. Advance candidate-evaluation benchmark locks only to that canonical integration commit, never to an unintegrated worker branch.
+
+The completion test is: all selected PRs are merged; their exact artifact hashes are registered; canonical validation succeeds; a cumulative checkpoint exists; shared control files are committed once; and downstream benchmark locks identify the new canonical commit.
+
 ## `freeze-source-benchmark`
 
 Required: all source-subject chunk artifacts and policy.

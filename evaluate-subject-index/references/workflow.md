@@ -58,6 +58,21 @@ Use the source's intellectual units first:
 
 Chapter chunking reduces context load and aligns judgments with the author's structure. It is not sufficient by itself because themes cross chapters. `freeze-source-benchmark` must perform a whole-book synthesis pass, and `audit-index-structure` must inspect the whole index.
 
+## Parallel source-discovery workers
+
+Parallelism changes ownership, not editorial policy. Every worker starts from the same compatible checkpoint and immutable benchmark commit, reconnects the same source hash, and owns exactly one chunk artifact. Worker branches must be append-only with respect to the canonical study: each branch adds one unique `source/source-subject-chunk.<chunk-id>.json` and does not edit `evaluation-state.json`, `artifact-manifest.json`, checkpoints, or benchmark locks.
+
+Use one branch and Library recovery folder per chunk. Default branch names to `source-discovery/<lowercase-chunk-id>` and refuse collisions. A worker pull request remains open for coordinator review and must not merge itself. The worker receipt records the immutable base, source identity, canonical hashes, validation counts, allowed publication path, and forbidden content; it is a handoff record, not a canonical study artifact.
+
+The coordinator owns all fan-in operations. It receives an explicit PR/branch allowlist, verifies the complete diff and every artifact before merging any member of the selected batch, then merges only validated artifact-only PRs. After the branch artifacts exist on the base branch, integrate them together, update the canonical manifest and state once, validate, checkpoint, and commit the shared control files. Advance candidate benchmark locks only after that commit.
+
+This two-phase pattern prevents lost updates:
+
+1. **Fan-out:** immutable common base → independent chunk artifacts and PRs.
+2. **Fan-in:** validate all selected PRs → merge artifact files → one canonical state/manifest/checkpoint update.
+
+If a selected batch contains any invalid, incompatible, unexpected, or restricted change, merge none of that batch. A later coordinator run may integrate a corrected subset explicitly.
+
 ## Resume behavior
 
 `status` trusts neither filenames nor conversational memory alone. It checks the state file, hashes, manifests, and completion counts. `next` returns the earliest valid unfinished stage. If a completed artifact's hash changes, mark that stage and all dependent stages `blocked` until revalidated or rerun.

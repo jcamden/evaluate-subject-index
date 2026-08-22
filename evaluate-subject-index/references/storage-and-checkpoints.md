@@ -95,6 +95,14 @@ Use `checkpoint` for an in-progress snapshot and `export-bundle` for a named del
 
 Every ZIP contains `bundle-metadata.json` with the profile, evaluation ID, state and manifest hashes, included paths, excluded paths and reasons, and creation time. ZIP member paths are relative and deterministic.
 
+## Parallel worker storage
+
+Never let parallel workers replace the canonical Library state, manifest, or cumulative checkpoint. Give each worker a unique recovery root such as `workers/CHUNK-003/` beneath the study folder. A worker may retain its isolated state, manifest, receipt, artifact, and portable recovery bundle there.
+
+Worker recovery files are not canonical and do not belong in the benchmark pull request. The branch publishes only the unique chapter artifact. After accepted pull requests are merged, the coordinating run materializes those artifacts into the canonical study, registers their hashes, validates the complete run, and creates one new cumulative checkpoint.
+
+A Git branch and Library worker recovery copy serve different purposes: the branch is the reviewable merge proposal; the Library copy preserves work if branch publication is blocked. Neither supersedes canonical integration.
+
 ## Import and resume
 
 `import-bundle` must reject absolute paths, `..` traversal, duplicate members, and symlink-like entries. Extract into a new or empty directory, validate the state and manifest, and report excluded or missing artifacts. Never treat a successful ZIP extraction as successful evaluation validation.

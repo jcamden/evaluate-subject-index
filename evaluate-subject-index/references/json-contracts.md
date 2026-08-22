@@ -13,6 +13,7 @@ The schemas in `schemas/` are web-oriented contracts. Additional fields are allo
 | Policy build input | `policy-build-input.schema.json` | Source-bound facts used to instantiate the standard policy |
 | Policy | `evaluation-policy.schema.json` | Run-specific instance of standard policy v1 with frozen scope, audience provenance, gates, and density rules |
 | Source chunk | `source-subject-chunk.schema.json` | Candidate-blind chapter/page discoveries |
+| Parallel discovery receipt | `parallel-source-discovery-receipt.schema.json` | Branch base, validation summary, publication scope, and PR handoff for one worker chunk |
 | Benchmark | `source-benchmark.schema.json` | Frozen whole-source subject graph and evidence denominator |
 | Normalized candidate | `candidate-index.schema.json` | Complete paths, references, and expanded locator assignments |
 | Item inventory | `item-inventory.schema.json` | Stable path, locator, heading-node, and cross-reference identities for display and audit joins |

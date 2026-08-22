@@ -1,6 +1,6 @@
 interface:
   display_name: Evaluate Subject Index
-  short_description: Run source-grounded subject-index evaluations
+  short_description: Run and parallelize source-grounded index evaluations
   default_prompt: Use $evaluate-subject-index help to show the evaluation workflow
     and required inputs.
   icon_small: assets/icon.svg
