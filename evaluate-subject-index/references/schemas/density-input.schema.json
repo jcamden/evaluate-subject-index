@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "density-input.schema.json",
+  "title": "Chapter-level subject-index density input",
+  "type": "object",
+  "required": ["chapters"],
+  "properties": {
+    "chapters": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["chunk_id", "indexable_source_words", "locator_bearing_heading_paths", "locator_occurrences"],
+        "properties": {
+          "chunk_id": {"type": "string", "pattern": "^CHUNK-"},
+          "source_unit_label": {"type": "string"},
+          "indexable_source_words": {"type": "integer", "minimum": 1},
+          "locator_bearing_heading_paths": {"type": "integer", "minimum": 0},
+          "locator_occurrences": {"type": "integer", "minimum": 0}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": false
+}

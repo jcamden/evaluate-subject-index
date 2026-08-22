@@ -5,7 +5,7 @@
   "type": "object",
   "required": ["schema_version", "evaluation_id", "candidate_sha256", "scope_complete", "metrics", "density", "defects", "strengths"],
   "properties": {
-    "schema_version": {"const": "structure-audit-v1"},
+    "schema_version": {"const": "structure-audit-v2"},
     "evaluation_id": {"type": "string"},
     "candidate_sha256": {"type": "string"},
     "scope_complete": {"type": "boolean"},
@@ -16,11 +16,26 @@
     },
     "density": {
       "type": "object",
-      "required": ["policy_status", "measurements", "fit_rating", "distribution_findings"],
+      "required": ["policy_status", "measurement_level", "targets", "chapter_measurements", "fit_rating", "maximum_score_contribution", "distribution_findings"],
       "properties": {
-        "policy_status": {"enum": ["scored", "descriptive_only"]},
-        "measurements": {"type": "array", "items": {"type": "object"}},
+        "policy_status": {"const": "scored"},
+        "measurement_level": {"const": "chapter_or_approved_intellectual_unit"},
+        "targets": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {"type": "object"}
+        },
+        "chapter_measurements": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["chunk_id", "indexable_source_words", "locator_bearing_heading_paths", "locator_occurrences", "metric_results", "unit_fit_rating"],
+            "additionalProperties": true
+          }
+        },
         "fit_rating": {"type": ["number", "null"], "minimum": 0, "maximum": 5, "multipleOf": 0.5},
+        "maximum_score_contribution": {"const": 5},
         "distribution_findings": {"type": "array", "items": {"type": "object"}}
       }
     },
@@ -31,7 +46,7 @@
         "required": ["defect_id", "code", "severity", "summary", "affected_ids"],
         "properties": {
           "defect_id": {"type": "string", "pattern": "^DEFECT-"},
-          "code": {"enum": ["COV", "SEL", "CON", "STA", "LOC_POS", "LOC_NEG", "HED", "SUB", "XRF", "DEN", "MEC"]},
+          "code": {"enum": ["SCP", "COV", "SEL", "CON", "STA", "LOC_POS", "LOC_NEG", "CMP", "HED", "SUB", "XRF", "DEN", "MEC"]},
           "severity": {"enum": ["cosmetic", "minor", "major", "critical"]},
           "summary": {"type": "string"},
           "affected_ids": {"type": "array", "items": {"type": "string"}}

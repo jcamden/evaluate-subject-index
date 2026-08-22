@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "policy-build-input.schema.json",
+  "title": "Standard policy build input",
+  "type": "object",
+  "required": ["schema_version", "policy_id", "source_scope", "audience", "audit_design", "deviations"],
+  "properties": {
+    "schema_version": {"const": "subject-index-policy-build-input-v1"},
+    "policy_id": {"type": "string", "minLength": 1},
+    "source_scope": {
+      "type": "object",
+      "required": ["source_sha256", "document_page_span", "page_map_sha256", "chunk_manifest_sha256", "availability"],
+      "properties": {
+        "source_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "document_page_span": {
+          "type": "array",
+          "prefixItems": [{"type": "integer"}, {"type": "integer"}],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "page_map_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "chunk_manifest_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "availability": {"type": "object"},
+        "source_specific_included": {"type": "array", "items": {"type": "string"}},
+        "source_specific_excluded": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": true
+    },
+    "audience": {
+      "type": "object",
+      "required": ["label", "basis", "confidence", "rationale"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1},
+        "basis": {"enum": ["inferred", "user_supplied"]},
+        "confidence": {"enum": ["high", "medium", "low"]},
+        "rationale": {"type": "string", "minLength": 1}
+      }
+    },
+    "audit_design": {
+      "type": "object",
+      "required": ["mode", "candidate_blindness"],
+      "properties": {
+        "mode": {"enum": ["full", "pilot"]},
+        "candidate_blindness": {"enum": ["required", "preferred", "not_claimed"]}
+      }
+    },
+    "deviations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "replacement", "rationale", "provenance"],
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

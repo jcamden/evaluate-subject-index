@@ -1,5 +1,11 @@
 # Judgment policy
 
+Apply [standard-policy.md](standard-policy.md). This file defines judgment units and evidence handling; the standard policy defines the substantive rules and stage ownership.
+
+## Source scope
+
+Inspect only matter frozen as indexable. Treat mixed pages at the region level. Record unavailable notes, missing pages, illegible regions, and role ambiguity as source limitations. Do not put excluded or unavailable matter in coverage denominators. A candidate locator into excluded matter is a scope defect when its mapping is known; a locator into unavailable matter is `uninspectable`, not automatically wrong.
+
 ## Substantively treated subjects
 
 A subject is substantively treated when the source does at least one of the following:
@@ -27,6 +33,8 @@ Each essential or major record must state:
 
 Do not make the frozen benchmark a model index. It is a graph of source meaning and acceptable retrieval routes; more than one index structure can satisfy it.
 
+Record indexable source-word counts by approved chapter/unit for later density measurement. Do not use density calibration to cap, pad, or prioritize the benchmark.
+
 ## Locator legitimacy
 
 The unit is one expanded locator assignment plus its complete heading path. Judge:
@@ -37,6 +45,8 @@ The unit is one expanded locator assignment plus its complete heading path. Judg
 - `uninspectable`: the page or mapping cannot be evaluated reliably.
 
 Do not mark a child locator supported because only its parent appears. Do not mark an entire page range supported after checking only its first page. Report `uninspectable` outside the precision denominator unless the frozen uncertainty policy says otherwise.
+
+For compound or enumerated paths, require every named component on every assigned page. When components are supported only on different pages, use `unsupported` with `CMP`; do not average the components into partial support. Use `partially_supported` when the page materially supports the asserted subject but the path is genuinely too broad, narrow, vague, or qualified—not as a compromise for an improper union.
 
 For a binary precision measure, count `supported` as correct, `unsupported` as incorrect, and publish `partially_supported` separately. If a project elects fractional credit, freeze the fraction before candidate review and disclose it.
 
@@ -67,9 +77,11 @@ Use the complete locator ledger as evidence, then judge:
 - alphabetical filing, names, range order, duplication, and formatting; and
 - distribution of access across chapters and major subject areas.
 
+Audit every `see` and `see also` record. Verify source semantics, source locator status, target existence and precision, cycles, chains, reciprocity, and whether the reference substitutes for warranted substantive access. Run deterministic graph checks first and editorial utility checks second.
+
 ## Severity and error codes
 
-Use: `COV`, `SEL`, `CON`, `STA`, `LOC_POS`, `LOC_NEG`, `HED`, `SUB`, `XRF`, `DEN`, and `MEC`.
+Use: `SCP`, `COV`, `SEL`, `CON`, `STA`, `LOC_POS`, `LOC_NEG`, `CMP`, `HED`, `SUB`, `XRF`, `DEN`, and `MEC`.
 
 - `critical`: fabrication, central reversal, broken scope, or systemic failure preventing reliable use;
 - `major`: materially harms retrieval or misrepresents important treatment;

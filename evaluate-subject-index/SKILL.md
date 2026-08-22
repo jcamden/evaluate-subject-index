@@ -1,6 +1,6 @@
 ---
 name: evaluate-subject-index
-description: Run a repeatable, source-grounded evaluation of a finished subject index. Use when a user wants to map PDF document pages to Arabic, Roman, prefixed, or irregular source labels; define and prepare audit chunks; discover substantively treated subjects; freeze a candidate-blind source benchmark; normalize and route index locators; audit every locator; find missing access; judge hierarchy and navigation; apply the subject-index rubric (including a predeclared density policy); persist outputs to Library or portable bundles; resume an evaluation; or produce JSON for a web report.
+description: Run a repeatable, source-grounded evaluation of a finished subject index using a built-in standard policy. Use when a user wants to map PDF document pages to Arabic, Roman, prefixed, or irregular source labels; define and prepare audit chunks; discover substantively treated subjects; freeze a candidate-blind source benchmark; normalize and route index locators; audit every locator; find missing access; judge hierarchy, density, and navigation; persist outputs to Library or portable bundles; resume an evaluation; or produce JSON for a web report.
 ---
 
 # Evaluate Subject Index
@@ -42,7 +42,7 @@ Read [commands.md](references/commands.md) for inputs, outputs, dependencies, an
 1. Discover source subjects before inspecting a candidate index. If the candidate was visible in the same context, label candidate blindness `compromised` and recommend rerunning discovery in a fresh context for public claims.
 2. Distinguish one-based document-page ordinals from source page labels. Store every source label as a string, including Arabic, Roman, prefixed, alphabetic, and exceptional labels. Expand the user-supplied mapping to one record per document page before chunking or locator filtering.
 3. Require the user to approve document-page ranges for every chunk. Use chapters as the primary intellectual units, but never infer final boundaries silently. Use context overlap without assigning the same document page to two judgment owners.
-4. Freeze the scope, policies, density bands, source-subject graph, locator classes, and reader tasks before candidate scoring. Hash the canonical benchmark JSON.
+4. Apply and freeze the built-in standard policy before candidate scoring. Infer readership from the source unless genuinely ambiguous; record the inference and ask only about material deviations. Freeze source-specific scope facts, the source-subject graph, locator classes, and reader tasks. Hash the canonical policy and benchmark JSON.
 5. Audit the complete heading path at every expanded locator. This establishes locator precision, not coverage.
 6. For each locator-audit chunk, include only paths having locator assignments mapped to document pages owned by that chunk. Preserve the complete path and in-chunk assignments; report but do not include other assignments.
 7. Separately compare the frozen source-subject graph with the candidate. This establishes missing access and locator recall.
@@ -52,6 +52,14 @@ Read [commands.md](references/commands.md) for inputs, outputs, dependencies, an
 11. Keep each candidate in an independent evaluation. Compare scores only if source hash, benchmark hash, rubric version, page-label map, chunk manifest, inclusion policy, audit mode, and uncertainty policy match.
 
 Read [workflow.md](references/workflow.md) for the full state machine and [judgment-policy.md](references/judgment-policy.md) before making substantive judgments. Read [rubric.md](references/rubric.md) before scoring.
+
+## Built-in policy
+
+Use [standard-policy.md](references/standard-policy.md) for every evaluation. Do not ask the user to invent named-entity, example, locator, hierarchy, cross-reference, uncertainty, gate, or density policies. At `define-policy`, instantiate the versioned standard policy with the frozen source hashes and source-specific scope/availability facts. Ask only when the source is ambiguous, the user requests a documented deviation, or a publisher specification conflicts with the default.
+
+Infer intended readership from the title, publisher, paratext, genre, terminology, and presentation. Record `label`, `basis: inferred`, `confidence`, and a short rationale. If evidence supports more than one audience, record a combined label. Ask the user only when confidence is low or they say the index targets a different readership; then record `basis: user_supplied`. Readership informs reader tasks and terminology expectations but never relaxes locator truth or source fidelity.
+
+Keep the frozen benchmark exhaustive and source-led. Never prune or pad benchmark subjects to meet index-density calibration points; density evaluates only the finished candidate.
 
 ## Output contract
 
@@ -71,7 +79,7 @@ Default to JSON artifacts and concise JSON responses because results are intende
 
 Use the schemas in `references/schemas/`. Put display-ready facts in structured fields, retain complete evidence ledgers, and identify `not_measured`, `uninspectable`, and `uncertain` explicitly rather than treating them as failures or zeros.
 
-Use `scripts/state_cli.py` for deterministic state initialization, status, dependency-aware next-step selection, state transitions, artifact registration, hashing, manifest updates, and validation. Use `scripts/bundle_cli.py` for portable/private checkpoints, exports, artifact inventories, and safe imports. Use `scripts/page_chunk_cli.py` to expand page-label maps, validate user-approved chunk ranges, split source PDFs, and create locator-only chunk packets. Use `scripts/score_cli.py` for density-band and score arithmetic. Do not ask the language model to maintain arithmetic or workflow state when a script can do it.
+Use `scripts/state_cli.py` for deterministic state initialization, status, dependency-aware next-step selection, state transitions, artifact registration, hashing, manifest updates, and validation. Use `scripts/policy_cli.py` to instantiate and hash the built-in policy. Use `scripts/bundle_cli.py` for portable/private checkpoints, exports, artifact inventories, and safe imports. Use `scripts/page_chunk_cli.py` to expand page-label maps, validate user-approved chunk ranges, split source PDFs, and create locator-only chunk packets. Use `scripts/score_cli.py` for chapter-level density and score arithmetic. Do not ask the language model to maintain arithmetic or workflow state when a script can do it.
 
 ## Persistence rule
 
@@ -87,7 +95,7 @@ Use `pilot` only when requested or needed to calibrate policy. Report sample des
 
 ## Density rule
 
-Density is a fit question, not a reward for length. Freeze the density profile before opening the candidate. The profile must name its metrics, ideal and acceptable bands, intended audience, source complexity, and rationale. Score density once within Editorial Selectivity; score coverage and navigation from observed omissions and friction, not from size again. See [rubric.md](references/rubric.md).
+Use two built-in chapter-level calibration targets based on indexable source words: 8 locator-bearing complete heading paths and 20 expanded locator occurrences per 1,000 words. Treat them as calibration points, never quotas, minimums, or hard ceilings. Use target bands of 6–10 paths and 15–25 occurrences, broad tolerance bands of 4–12 paths and 10–30 occurrences, and source-word-weighted chapter aggregation. Preserve chapter outliers as diagnostics rather than forcing uniformity. Score density once within Editorial Selectivity; score actual omissions, clutter, and navigation failures from their own evidence, not from size again. Publish the targets, bands, observed chapter distribution, and their limited five-point contribution. See [rubric.md](references/rubric.md).
 
 ## Resource routing
 
@@ -95,6 +103,7 @@ Density is a fit question, not a reward for length. Freeze the density profile b
 - State sequence, chunking, ownership, and rerun rules: [workflow.md](references/workflow.md)
 - Page-label mapping and chunk input formats: [page-mapping-and-chunks.md](references/page-mapping-and-chunks.md)
 - Subject, locator, omission, hierarchy, and uncertainty judgments: [judgment-policy.md](references/judgment-policy.md)
+- Built-in scope, content, architecture, locator, cross-reference, density, and shipping-gate rules: [standard-policy.md](references/standard-policy.md)
 - Weights, metrics, density penalty, gates, grades, and public claims: [rubric.md](references/rubric.md)
 - Machine-readable artifact map: [json-contracts.md](references/json-contracts.md)
 - Storage modes, study layout, checkpoints, imports, and public/private separation: [storage-and-checkpoints.md](references/storage-and-checkpoints.md)

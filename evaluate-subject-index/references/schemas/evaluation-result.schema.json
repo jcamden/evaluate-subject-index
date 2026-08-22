@@ -5,7 +5,7 @@
   "type": "object",
   "required": ["schema_version", "evaluation_id", "candidate", "provenance", "audit_scope", "scorecard", "total_score", "interpretation", "metrics", "critical_gates", "defect_counts", "comparison_key", "limitations"],
   "properties": {
-    "schema_version": {"const": "subject-index-evaluation-result-v3"},
+    "schema_version": {"const": "subject-index-evaluation-result-v4"},
     "evaluation_id": {"type": "string"},
     "candidate": {"type": "object", "required": ["label", "sha256"], "additionalProperties": true},
     "provenance": {
@@ -15,7 +15,7 @@
         "source_sha256": {"type": "string"},
         "policy_sha256": {"type": "string"},
         "benchmark_sha256": {"type": "string"},
-        "rubric_version": {"const": "subject-index-rubric-v3"}
+        "rubric_version": {"const": "subject-index-rubric-v4"}
       }
     },
     "audit_scope": {"type": "object", "required": ["mode", "complete"], "additionalProperties": true},
@@ -43,11 +43,15 @@
     "metrics": {"type": "object"},
     "density": {
       "type": "object",
-      "required": ["status", "fit_rating", "selectivity_points_contributed"],
+      "required": ["status", "measurement_level", "targets", "chapter_measurements", "fit_rating", "selectivity_points_contributed", "maximum_score_contribution"],
       "properties": {
-        "status": {"enum": ["scored", "descriptive_only"]},
+        "status": {"const": "scored"},
+        "measurement_level": {"const": "chapter_or_approved_intellectual_unit"},
+        "targets": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "object"}},
+        "chapter_measurements": {"type": "array", "items": {"type": "object"}},
         "fit_rating": {"type": ["number", "null"]},
-        "selectivity_points_contributed": {"type": ["number", "null"], "minimum": 0, "maximum": 5}
+        "selectivity_points_contributed": {"type": ["number", "null"], "minimum": 0, "maximum": 5},
+        "maximum_score_contribution": {"const": 5}
       }
     },
     "critical_gates": {"type": "array", "items": {"type": "object"}},

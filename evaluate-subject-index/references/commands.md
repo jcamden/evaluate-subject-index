@@ -8,9 +8,9 @@ Show purpose, syntax, required inputs, generated artifact, dependencies, complet
 
 ## `initialize`
 
-Required: source file, source title, document-page count or document-page span, index type, intended readership, audit mode (`full` or `pilot`), storage mode (`local`, `library`, or `hybrid`), and evaluation directory. Candidate input is optional and must not be opened yet.
+Required from the user: source file and, only when not clear from the file, source title/edition. Determine the document-page span from the file. Default to subject index, full audit, and `hybrid` storage when Library is available (`local` otherwise). Candidate input is optional and must not be opened yet.
 
-Create `evaluation-state.json` and `artifact-manifest.json`. Hash the source file, record edition identity if known, store no ephemeral absolute input path, and set every workflow stage to `not_started`. Document pages are one-based ordinals in the supplied file; they are not assumed to equal page labels printed in the book. Use `hybrid` in ChatGPT when Library is available and `local` otherwise.
+Infer intended readership from the source. Do not ask unless confidence is low or the user identifies a different target. Record the label, `inferred` or `user_supplied` basis, confidence, and rationale. Create `evaluation-state.json` and `artifact-manifest.json`. Hash the source file, record edition identity if known, store no ephemeral absolute input path, and set every later workflow stage to `not_started`. Document pages are one-based ordinals in the supplied file; they are not assumed to equal page labels printed in the book.
 
 ## `status`
 
@@ -36,17 +36,13 @@ ChatGPT may propose chapter-based boundaries after inspecting the source, but th
 
 ## `define-policy`
 
-Freeze provisional project rules before subject discovery:
+Instantiate and freeze [standard-policy.md](standard-policy.md) before subject discovery. Do not ask the user to create policies. Bind the standard policy to the exact source hash, one-based document-page span, page-map hash, chunk-manifest hash, inferred readership, audit mode, and source-specific availability/scope facts. Inspect the source to determine whether notes, captions, tables, and other eligible roles are present and inspectable.
 
-- exact source, one-based document-page span, frozen page-label map, chunk manifest, and included/excluded matter;
-- named-entity, examples, heading-depth, locator, and cross-reference policies;
-- intended readers and index type;
-- full or pilot audit design and uncertainty treatment;
-- critical gates;
-- density metrics with ideal and acceptable bands; and
-- rubric version.
+Ask only when a matter role is genuinely ambiguous, a publisher specification conflicts with the default, or the user requests a deviation. Record every deviation with path, prior value, replacement, rationale, provenance, and freeze time.
 
-Output `evaluation-policy.json`. The density profile can be informed by source length, genre, complexity, audience, and publisher specification, but never by candidate sizes. A universal density band must not be invented when no defensible specification exists; mark the metric `descriptive_only` until calibrated.
+Use the fixed chapter-level density profile: target 8 locator-bearing complete heading paths and 20 expanded locator occurrences per 1,000 indexable source words; target bands 6–10 and 15–25; broad tolerance bands 4–12 and 10–30. Output schema-valid, canonically hashed `evaluation-policy.json` with policy profile `subject-index-standard-policy-v1` and rubric `subject-index-rubric-v4`.
+
+For a legacy state that has not yet frozen policy or started downstream work, run `scripts/state_cli.py adopt-standard-policy` first to record readership provenance and update the state’s policy/rubric identifiers without restarting the evaluation.
 
 ## `prepare-source-chunks`
 
@@ -58,7 +54,7 @@ Create one PDF per chunk containing the union of owned and context document page
 
 Required: source, policy, chunk manifest, and the assigned chapter/page range. Candidate indexes must not be present or inspected.
 
-Read the complete owned range plus declared context pages. Determine which subjects are substantively treated, not merely which terms occur. Emit one `source-subject-chunk` JSON artifact containing subjects, priority, meaning/stance, relationships, acceptable terminology, evidence passages, locator classes, exclusions, and uncertainty. Do not impose a target number of subjects.
+Read the complete owned range plus declared context pages. Determine which subjects are substantively treated under the standard coverage/selectivity rules, not merely which terms occur. Emit one `source-subject-chunk` JSON artifact containing subjects, priority, meaning/stance, relationships, acceptable terminology, evidence passages, locator classes, exclusions, uncertainty, and the unit's indexable source-word count. Do not impose a target number of subjects and do not use density calibration to prune or pad discovery.
 
 The completion test is every owned document page inspected once, all page-level uncertainties recorded, and the artifact schema-valid.
 
@@ -90,7 +86,7 @@ Do not include unrelated headings, containers, or cross-references in locator-au
 
 Required: source chunk PDF, candidate locator chunk packet, policy, expanded page map, and chunk manifest.
 
-For each supplied assignment, test whether its mapped source page substantively supports the complete heading path and preserves meaning/stance. Inspect local context pages as needed, but judge each owned assignment once. Output one item per locator assignment with `supported`, `partially_supported`, `unsupported`, or `uninspectable`, evidence, error codes, severity, and confidence.
+For each supplied assignment, test whether its mapped source page substantively supports the complete heading path and preserves meaning/stance. Apply the scope, entity/example, compound-heading, and locator rules to every atomic path/page pair. Inspect local context pages as needed, but judge each owned assignment once. Output one item per locator assignment with `supported`, `partially_supported`, `unsupported`, or `uninspectable`, evidence, error codes, severity, and confidence.
 
 This command measures proposed-locator precision and entry legitimacy. It does not measure omissions or recall.
 
@@ -98,13 +94,13 @@ This command measures proposed-locator precision and entry legitimacy. It does n
 
 Required: frozen benchmark, normalized candidate, locator judgments, source, and chunk manifest.
 
-For each frozen essential or major source subject owned by the chunk, test whether the candidate provides a plausible direct or cross-referenced access route, preserves required distinctions, and includes principal/supporting/conclusion passages under policy. Output concept coverage, locator recall, missing routes, missed treatments, and reader-task results. This is the source-to-index pass that prevents circular evaluation.
+For each frozen essential or major source subject owned by the chunk, test whether the candidate provides a plausible direct or cross-referenced access route, preserves required distinctions, and includes principal/supporting/conclusion passages under policy. Test important subsidiary or localized subjects when frozen as scored. Exclude nonindexable or unavailable source matter from denominators. Output concept coverage, locator recall, missing routes, missed treatments, and reader-task results. This is the source-to-index pass that prevents circular evaluation.
 
 ## `audit-index-structure`
 
 Required: complete normalized candidate, all locator judgments, all missing-access judgments, and policy.
 
-Judge the index globally: heading clarity, parent-child truth, sibling parallelism, direct access, underdivision, overdivision, fragmentation, terminology consistency, cross-reference validity, filing, mechanics, distribution, long undivided locator strings, and frozen density metrics. Output `structure-audit.json` with item-level defects and metrics.
+Judge the index globally under the heading/access, cross-reference, coherence, and mechanics rules: heading clarity, parent-child truth, sibling parallelism, direct access, underdivision, overdivision, fragmentation, terminology consistency, every cross-reference, filing, mechanics, distribution, and long undivided locator strings. Measure both frozen density metrics for each chapter using indexable source words and use source-word-weighted aggregation. Output `structure-audit.json` with item-level defects, chapter measurements, target disclosure, and metrics.
 
 Do not decide that a parent-child relation is valid merely because the child locator is valid; test whether the relationship expressed by the full path is true and useful.
 
@@ -118,7 +114,7 @@ Calculate the rubric from evidence ledgers, report denominators, apply critical 
 
 Required: valid evaluation result and selected representative examples.
 
-Create `web-report.json` using the web schema. Include a plain-language grade, scorecard, measured rates, density profile and result, gates, strengths, consequential defects, balanced examples, methodology, comparability key, disclosure, and limitations. Avoid copyrighted source excerpts beyond what is necessary to verify a judgment.
+Create `web-report.json` using the web schema. Include a plain-language grade, scorecard, measured rates, density profile and result, gates, strengths, consequential defects, balanced examples, methodology, comparability key, disclosure, and limitations. State explicitly that this framework targets 8 locator-bearing paths and 20 locator occurrences per 1,000 indexable source words, evaluated by chapter as permissive calibration rather than quotas. Avoid copyrighted source excerpts beyond what is necessary to verify a judgment.
 
 ## `checkpoint`
 

@@ -34,8 +34,20 @@
         "audit_mode": {"enum": ["full", "pilot"]},
         "index_type": {"const": "subject_index"},
         "intended_readership": {"type": "string"},
+        "readership_provenance": {
+          "type": "object",
+          "required": ["basis", "confidence", "rationale"],
+          "properties": {
+            "basis": {"enum": ["inferred", "user_supplied"]},
+            "confidence": {"enum": ["high", "medium", "low"]},
+            "rationale": {"type": "string", "minLength": 1}
+          },
+          "additionalProperties": true
+        },
         "output_format": {"const": "json"},
-        "storage_mode": {"enum": ["local", "library", "hybrid"]}
+        "storage_mode": {"enum": ["local", "library", "hybrid"]},
+        "policy_profile": {"const": "subject-index-standard-policy-v1"},
+        "rubric_version": {"enum": ["subject-index-rubric-v3", "subject-index-rubric-v4"]}
       },
       "additionalProperties": true
     },

@@ -7,7 +7,7 @@
 | 1 | `initialize` | `evaluation-state.json` |
 | 2 | `map-pages` | `page-map.json` |
 | 3 | `define-chunks` | `chunk-manifest.json` |
-| 4 | `define-policy` | `evaluation-policy.json` |
+| 4 | `define-policy` | run-specific instance of the built-in `evaluation-policy.json` |
 | 5 | `prepare-source-chunks` | chunk PDFs and sidecar maps |
 | 6 | `discover-source-subjects` | all `source-subject-chunk.*.json` files |
 | 7 | `freeze-source-benchmark` | `source-benchmark.json` |
@@ -32,6 +32,14 @@ Index-to-source review asks, “Does this proposed heading and locator belong?�
 Source-to-index review asks, “Can a reader retrieve every independently searchable, substantively treated source subject?” It measures meaningful coverage, locator recall, and missing access. The frozen source benchmark—not the candidate—defines that denominator.
 
 The global pass asks, “Does the set of individually defensible records form a coherent navigation system?” It detects hierarchy and distribution problems that cannot be decided page by page.
+
+## Standard policy and minimal elicitation
+
+Infer readership during initialization and instantiate [standard-policy.md](standard-policy.md) at `define-policy`. Do not pause to ask the user to select routine content, entity, example, locator, heading, cross-reference, uncertainty, gate, or density rules. Pause only for a material ambiguity, a publisher specification, or an explicit requested deviation. Record the evidence and provenance of every inference or override.
+
+If a legacy evaluation has reached chunk definition but has not frozen policy or started later work, use `scripts/state_cli.py adopt-standard-policy` to migrate its policy/rubric identifiers and readership provenance in place. Do not migrate after policy freeze; create a new policy version and follow normal invalidation instead.
+
+Use source discovery to establish what deserves access; use locator audit to test proposed path/page legitimacy; use missing-access audit to test source-to-index coverage; and use structure audit to test the index as a whole. Density is measured only in the structure audit. Source discovery records indexable word counts for its denominator but never targets a subject count.
 
 ## Chapter chunking
 
@@ -61,6 +69,8 @@ When resuming in another chat or environment, materialize the active Library fol
 - Changing owned chunk ranges invalidates source chunk files, discovery, and every later stage.
 - Changing context-only ranges invalidates source chunk files and any judgments that used them.
 - Changing scope, audit mode, or uncertainty policy invalidates policy and every later stage.
+- Changing the standard-policy or rubric version invalidates policy and every later stage.
+- Correcting only the recorded readership rationale without changing its label or any operative rule does not invalidate judgments; changing the readership label invalidates reader tasks, benchmark synthesis, and every candidate stage.
 - Changing benchmark meaning, priority, evidence, or reader tasks invalidates the benchmark and every candidate stage.
 - Changing candidate normalization invalidates locator packets, locator audit, missing-access, structure, score, and web report stages.
 - Adjudicating a judgment invalidates scoring and web reporting only unless it changes the benchmark.

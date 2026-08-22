@@ -44,10 +44,30 @@ jobs:
             --page-map /tmp/page-map.json \
             --chunks /tmp/chunk-manifest.json \
             --output-dir /tmp/locator-packets
-      - name: Exercise score arithmetic
+      - name: Exercise standard policy and score arithmetic
         run: |
+          python evaluate-subject-index/scripts/policy_cli.py build \
+            --input evaluate-subject-index/tests/policy-build-input.valid.json \
+            --output /tmp/evaluation-policy.json
+          python evaluate-subject-index/scripts/score_cli.py density-profile \
+            --input evaluate-subject-index/tests/density-chapters.valid.json \
+            --output /tmp/density-profile.json
           python evaluate-subject-index/scripts/score_cli.py scorecard \
             --input evaluate-subject-index/tests/scorecard.valid.json
+          python - <<'PY'
+          import json
+
+          policy = json.load(open("/tmp/evaluation-policy.json", encoding="utf-8"))
+          density = json.load(open("/tmp/density-profile.json", encoding="utf-8"))
+          assert policy["policy_profile"]["id"] == "subject-index-standard-policy-v1"
+          assert policy["rubric"]["version"] == "subject-index-rubric-v4"
+          assert [item["target"] for item in policy["density_profile"]["metrics"]] == [8.0, 20.0]
+          assert density["chapter_measurements"][0]["calibration_counts"] == {
+              "locator_bearing_heading_paths": 80.0,
+              "locator_occurrences": 200.0,
+          }
+          assert density["fit_rating"] == 5.0
+          PY
       - name: Exercise artifact persistence and portable resume
         run: |
           run_dir="$(mktemp -d)"

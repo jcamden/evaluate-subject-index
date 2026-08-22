@@ -47,10 +47,10 @@ COMMANDS = {
 }
 
 REQUIRED_INPUTS = {
-    "initialize": ["source file", "source title", "document-page span", "audience", "audit mode"],
+    "initialize": ["source file", "source title or inferable title", "document-page span"],
     "page_mapping": ["compact mapping from one-based document-page ranges to source page-label strings"],
     "chunk_definition": ["expanded page map", "user-approved owned and context document-page ranges"],
-    "define_policy": ["initialized state", "source scope", "page map", "chunk manifest", "indexing policies", "density-band rationale"],
+    "define_policy": ["initialized state", "source scope and availability facts", "page map", "chunk manifest", "built-in standard policy v1"],
     "source_chunk_preparation": ["source PDF", "expanded page map", "validated chunk manifest"],
     "source_subject_discovery": ["source chunk PDFs", "sidecar page maps", "frozen policy", "chunk manifest"],
     "benchmark_freeze": ["all source-subject chunks", "whole-source synthesis pass", "reader tasks"],
@@ -59,15 +59,15 @@ REQUIRED_INPUTS = {
     "locator_audit": ["source chunk PDF", "candidate locator chunk packet", "page sidecar"],
     "missing_access_audit": ["frozen benchmark", "normalized candidate", "locator judgments"],
     "structure_audit": ["complete locator and missing-access audits", "normalized whole index"],
-    "scoring": ["all complete audit ledgers", "rubric v3", "critical gates"],
+    "scoring": ["all complete audit ledgers", "rubric v4", "standard critical gates"],
     "web_report": ["validated evaluation result", "balanced representative examples"],
 }
 
 COMPLETION_TESTS = {
-    "initialize": "State is valid and the source identity and one-based document-page span are recorded.",
+    "initialize": "State is valid; source identity, one-based document-page span, and inferred or supplied readership provenance are recorded.",
     "page_mapping": "Every document page has one mapping record and every indexable label resolves uniquely.",
     "chunk_definition": "The user approved the ranges, owned pages are unique, and every in-scope document page is owned.",
-    "define_policy": "Policy is schema-valid, frozen, hashed, and density is scored or explicitly descriptive-only.",
+    "define_policy": "Standard policy v1 is source-bound, schema-valid, frozen, hashed, and any deviations are documented.",
     "source_chunk_preparation": "Every chunk PDF and sidecar map exists and preserves original document-page identity.",
     "source_subject_discovery": "Every owned source page was reviewed once and every chunk artifact is valid.",
     "benchmark_freeze": "Whole-source synthesis is complete and the candidate-blind benchmark is frozen and hashed.",
@@ -193,6 +193,13 @@ def validate_state(state: dict[str, Any], state_path: Path | None = None, check_
         errors.append("Unsupported schema_version.")
     if state.get("configuration", {}).get("storage_mode") not in {"local", "library", "hybrid"}:
         errors.append("configuration.storage_mode must be local, library, or hybrid.")
+    readership = state.get("configuration", {}).get("readership_provenance")
+    if readership is None:
+        warnings.append("Legacy state has no readership provenance; record it when defining policy.")
+    elif readership.get("basis") not in {"inferred", "user_supplied"}:
+        errors.append("configuration.readership_provenance.basis must be inferred or user_supplied.")
+    elif readership.get("confidence") not in {"high", "medium", "low"}:
+        errors.append("configuration.readership_provenance.confidence must be high, medium, or low.")
 
     stages = state.get("stages", {})
     if not isinstance(stages, dict):
@@ -356,10 +363,16 @@ def command_init(args: argparse.Namespace) -> None:
             "audit_mode": args.audit_mode,
             "index_type": "subject_index",
             "intended_readership": args.intended_readership,
+            "readership_provenance": {
+                "basis": args.readership_basis,
+                "confidence": args.readership_confidence,
+                "rationale": args.readership_rationale,
+            },
             "output_format": "json",
             "storage_mode": args.storage_mode,
             "chunking": {"primary": "chapter", "maximum_pages": 60, "context_overlap_pages": 2},
-            "rubric_version": "subject-index-rubric-v3",
+            "policy_profile": "subject-index-standard-policy-v1",
+            "rubric_version": "subject-index-rubric-v4",
         },
         "stages": stages,
         "artifacts": [],
@@ -499,6 +512,42 @@ def command_validate(args: argparse.Namespace) -> None:
     }, 0 if not errors else 1)
 
 
+def command_adopt_standard_policy(args: argparse.Namespace) -> None:
+    state_path = Path(args.state)
+    state = load_state(state_path)
+    policy_stage = state.get("stages", {}).get("define_policy", {}).get("status")
+    later_started = [
+        name for name in STAGES[STAGES.index("source_chunk_preparation"):]
+        if state.get("stages", {}).get(name, {}).get("status") != "not_started"
+    ]
+    if policy_stage == "completed" or later_started:
+        fail(
+            "policy_already_frozen_or_used",
+            "Adopt the standard policy only before policy freeze and candidate-independent downstream work.",
+            {"policy_stage": policy_stage, "later_started": later_started},
+        )
+    configuration = state.setdefault("configuration", {})
+    if args.intended_readership:
+        configuration["intended_readership"] = args.intended_readership
+    configuration["readership_provenance"] = {
+        "basis": args.readership_basis,
+        "confidence": args.readership_confidence,
+        "rationale": args.readership_rationale,
+    }
+    configuration["policy_profile"] = "subject-index-standard-policy-v1"
+    configuration["rubric_version"] = "subject-index-rubric-v4"
+    state["updated_at"] = now()
+    save_state(state_path, state)
+    payload = state_summary(state, state_path)
+    payload.update({
+        "command": "adopt-standard-policy",
+        "policy_profile": configuration["policy_profile"],
+        "rubric_version": configuration["rubric_version"],
+        "state_path": str(state_path.resolve()),
+    })
+    emit(payload, 0 if payload["ok"] else 1)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -511,6 +560,12 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument("--document-page-start", "--page-start", dest="document_page_start", type=int, required=True)
     init_parser.add_argument("--document-page-end", "--page-end", dest="document_page_end", type=int, required=True)
     init_parser.add_argument("--intended-readership", required=True)
+    init_parser.add_argument("--readership-basis", choices=["inferred", "user_supplied"], default="inferred")
+    init_parser.add_argument("--readership-confidence", choices=["high", "medium", "low"], default="medium")
+    init_parser.add_argument(
+        "--readership-rationale",
+        default="Inferred from the source's genre, publisher, terminology, and presentation.",
+    )
     init_parser.add_argument("--audit-mode", choices=["full", "pilot"], default="full")
     init_parser.add_argument("--storage-mode", choices=["local", "library", "hybrid"], default="local")
     init_parser.add_argument("--force", action="store_true")
@@ -538,6 +593,14 @@ def build_parser() -> argparse.ArgumentParser:
     validate_parser.add_argument("--state", required=True)
     validate_parser.add_argument("--skip-files", action="store_true")
     validate_parser.set_defaults(func=command_validate)
+
+    adopt_parser = subparsers.add_parser("adopt-standard-policy")
+    adopt_parser.add_argument("--state", required=True)
+    adopt_parser.add_argument("--intended-readership")
+    adopt_parser.add_argument("--readership-basis", choices=["inferred", "user_supplied"], required=True)
+    adopt_parser.add_argument("--readership-confidence", choices=["high", "medium", "low"], required=True)
+    adopt_parser.add_argument("--readership-rationale", required=True)
+    adopt_parser.set_defaults(func=command_adopt_standard_policy)
     return parser
 
 

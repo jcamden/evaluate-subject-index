@@ -1,4 +1,4 @@
-# Subject-index evaluation rubric v3
+# Subject-index evaluation rubric v4
 
 The rubric scores one finished subject index from 0 to 100. The total is not a percentage correct. Publish component scores, measured rates, gates, scope, and examples with it.
 
@@ -13,7 +13,7 @@ The rubric scores one finished subject index from 0 to 100. The total is not a p
 | Can readers find things efficiently? | Findability and navigation | 20 |
 | Is it professionally consistent? | Mechanics and consistency | 5 |
 
-Rate five dimensions from 0 to 5 in half-point increments; their weighted points are `rating / 5 * weight`. Editorial Selectivity is calculated from two transparent subscores: substantive selectivity contributes 10 points and density fit contributes 5. Display its equivalent 0–5 rating for readability, but retain the two subscore calculations.
+Rate the five non-selectivity dimensions from 0 to 5 in half-point increments; their weighted points are `rating / 5 * weight`. Calculate Editorial Selectivity from two transparent subscores: substantive selectivity contributes 10 points and density fit contributes 5. Display its equivalent 0–5 rating for readability, but retain the two subscore calculations.
 
 | Rating | Meaning |
 | ---: | --- |
@@ -37,29 +37,25 @@ Rate five dimensions from 0 to 5 in half-point increments; their weighted points
 
 ## Density scoring
 
-Density measures whether the amount and distribution of access fit this source and audience. It is not a universal quota and does not replace source-grounded coverage or selectivity.
+Density measures whether the amount and distribution of access fit this source. It is not a quota and does not replace source-grounded coverage or selectivity. Apply the built-in profile before any candidate is opened:
 
-Before any candidate is opened, freeze at least one primary metric and preferably two corroborating metrics. Recommended metrics are:
+| Metric | Target | Target band | Broad tolerance band | Weight |
+| --- | ---: | ---: | ---: | ---: |
+| Locator-bearing complete heading paths per 1,000 indexable source words | 8 | 6–10 | 4–12 | 50% |
+| Expanded locator occurrences per 1,000 indexable source words | 20 | 15–25 | 10–30 | 50% |
 
-- page-bearing heading paths per 100 indexable source pages;
-- expanded locator assignments per 100 indexable source pages;
-- standardized index footprint, such as index words per 10,000 source words when reliable text is available;
-- median and upper-tail locators per page-bearing path;
-- share of access concentrated in the densest 10% of headings; and
-- chapter-level access distribution compared with substantive source distribution.
+Measure each approved chapter or intellectual unit. Average its two metric ratings, then calculate the indexable-source-word-weighted mean across units and round only the final fit rating to the nearest 0.5. Retain chapter outliers and whole-index totals as diagnostics. Treat exceptionally short units as descriptive or combine them with a declared adjacent unit when rates are unstable.
 
-Each scored metric declares `ideal_min`, `ideal_max`, `acceptable_min`, and `acceptable_max`, with `acceptable_min <= ideal_min <= ideal_max <= acceptable_max`. The policy also records provenance and rationale. If no defensible bands can be established before candidates are viewed, mark density `descriptive_only`; do not fabricate a scored ideal after seeing the outputs.
+The targets are calibration points, not quotas, minimums, hard ceilings, or instructions to prune valid access. The target bands allow ordinary variation; the broad tolerance bands delay meaningful score loss until an index is substantially sparse or dense. Do not use this profile to determine how many subjects belong in the source benchmark.
 
-For a scored primary density metric, let `x` be the candidate value and measure distance outside the acceptable band relative to the nearest acceptable boundary:
+For each metric, let `x` be the candidate value and measure distance outside the broad tolerance band relative to the nearest boundary:
 
-- within ideal band: density fit rating 5;
-- within acceptable but outside ideal: 4;
-- outside acceptable by up to 25% of the nearest boundary: 3;
+- within target band: density fit rating 5;
+- within broad tolerance but outside target: 4;
+- outside broad tolerance by up to 25% of the nearest boundary: 3;
 - outside by more than 25% and up to 50%: 2;
 - outside by more than 50% and up to 100%: 1;
 - outside by more than 100%: 0.
-
-Use predeclared metric weights if more than one metric is scored. Round only the resulting density fit rating to the nearest 0.5.
 
 Within Editorial Selectivity, calculate `substantive_selectivity_rating / 5 * 10 + density_fit_rating / 5 * 5`. This makes density affect the total once. The equivalent dimension rating is `selectivity_points / 15 * 5`; it need not fall on a half step. Coverage and navigation may still reflect demonstrated omissions or friction, but they must not be penalized merely because the index is short or long.
 
@@ -78,15 +74,21 @@ Density cannot be interpreted without distribution. A candidate inside the globa
 
 An index cannot be called publication-ready if any applicable gate fails:
 
-- central subject or conclusion missing;
+- fabricated, nonexistent, or out-of-scope locator;
+- systematic incidental or unsupported locator pattern;
+- central subject or conclusion materially omitted;
 - central claim fabricated, reversed, or materially misrepresented;
-- nonexistent or fabricated page references;
-- systematic term-matching or broad-overassignment failure;
-- material unresolved, circular, or chained `see` references;
+- compound heading whose locators support only separate components;
+- `see` source replacing a warranted substantive entry;
+- unresolved, self-referential, circular, or chained cross-reference;
+- any third-level heading;
+- systematic named-entity, example, or citation clutter;
+- critical or major unresolved grounding;
+- more than 1% of in-scope locator assignments uninspectable without a frozen alternative tolerance;
 - wrong source span; or
 - structurally invalid or incomplete output.
 
-Freeze project-specific gates before candidate review.
+These are the standardized gates. Add a source-specific gate only before candidate review and record its rationale.
 
 ## Interpretation bands
 
@@ -102,4 +104,6 @@ No band alone means publication-ready. A failed gate overrides that claim, not t
 
 ## Public reporting
 
-Lead with one restrained conclusion limited to this source and candidate version. Show the six scores, gates, precision/recall, density fit, strongest evidence, most consequential defects, at least one genuine strength, audit scope, evaluator relationship, and limitations. Select examples by predefined error category or recurring pattern, not by embarrassment value.
+Lead with one restrained conclusion limited to this source and candidate version. Show the six scores, gates, precision/recall, strongest evidence, most consequential defects, at least one genuine strength, audit scope, evaluator relationship, and limitations. Select examples by predefined error category or recurring pattern, not by embarrassment value.
+
+Show density as a separate plain-language calibration card. State the framework targets—8 locator-bearing heading paths and 20 locator occurrences per 1,000 indexable source words—the target and broad tolerance bands, chapter-level basis, observed distribution, fit rating, and five-point maximum contribution. Call them this framework’s standardized calibration targets, not universal professional requirements or hard limits.

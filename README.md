@@ -2,7 +2,7 @@
 
 [![Validate](https://github.com/JCamden/evaluate-subject-index/actions/workflows/validate.yml/badge.svg)](https://github.com/JCamden/evaluate-subject-index/actions/workflows/validate.yml)
 
-An agent skill for repeatable, source-grounded evaluation of finished back-of-book subject indexes.
+An agent skill for repeatable, source-grounded evaluation of finished back-of-book subject indexes using a versioned standard policy.
 
 It evaluates one index independently against its source and a frozen policy. Compatible results can then be displayed side by side without treating another index as the gold standard.
 
@@ -24,6 +24,19 @@ The score uses six dimensions totaling 100 points:
 | Page-reference reliability | 25 |
 | Findability and navigation | 20 |
 | Mechanics and consistency | 5 |
+
+## Standard policy and density calibration
+
+The skill infers likely readership from the publication and records the evidence and confidence. It asks the user only when the audience is genuinely ambiguous or differs from the book's apparent readership. Routine scope, substantive-treatment, entity/example, locator, heading, compound-heading, cross-reference, uncertainty, and shipping-gate rules are built in rather than recreated for every run.
+
+Density is measured by chapter using two permissive calibration targets:
+
+- **8 locator-bearing complete heading paths per 1,000 indexable source words**
+- **20 expanded locator occurrences per 1,000 indexable source words**
+
+Target bands are 6–10 paths and 15–25 occurrences; broad tolerance bands are 4–12 paths and 10–30 occurrences. These are this framework's calibration points—not quotas, minimums, universal professional requirements, or hard ceilings. Density contributes at most five of 100 points and never controls which subjects enter the frozen source benchmark.
+
+See [`standard-policy.md`](evaluate-subject-index/references/standard-policy.md).
 
 ## Page labels and chunks
 
@@ -64,7 +77,7 @@ status
 next
 ```
 
-`status` reports completed and blocked stages. `next` returns the earliest dependency-satisfied command, required inputs, and completion test.
+`status` reports completed and blocked stages. `next` returns the earliest dependency-satisfied command, required inputs, and completion test. `define-policy` instantiates the standard policy with source-specific hashes, availability facts, and any documented deviations; it does not ask the user to invent policy.
 
 ## Storage and checkpoints
 
@@ -102,7 +115,7 @@ OpenAI's documentation describes a skill as a directory containing `SKILL.md` pl
 - Python 3.10 or newer
 - [`pypdf`](https://pypi.org/project/pypdf/) for physically splitting source PDFs
 
-The state manager, checkpoint/export/import tooling, page-map expansion, chunk validation, locator routing, density calculation, and scoring arithmetic otherwise use the Python standard library.
+The state manager, standard-policy builder, checkpoint/export/import tooling, page-map expansion, chunk validation, locator routing, chapter-level density calculation, and scoring arithmetic otherwise use the Python standard library.
 
 Install the PDF dependency with:
 
@@ -134,12 +147,20 @@ python evaluate-subject-index/scripts/page_chunk_cli.py filter-candidate \
 
 python evaluate-subject-index/scripts/score_cli.py scorecard \
   --input evaluate-subject-index/tests/scorecard.valid.json
+
+python evaluate-subject-index/scripts/policy_cli.py build \
+  --input evaluate-subject-index/tests/policy-build-input.valid.json \
+  --output /tmp/evaluation-policy.json
+
+python evaluate-subject-index/scripts/score_cli.py density-profile \
+  --input evaluate-subject-index/tests/density-chapters.valid.json \
+  --output /tmp/density-profile.json
 ```
 
 ## Audit integrity
 
 - Build the source benchmark before inspecting a candidate index.
-- Freeze page mapping, chunk ownership, scope, policy, density bands, reader tasks, and uncertainty treatment before candidate scoring.
+- Instantiate and freeze standard policy v1, page mapping, chunk ownership, source-specific scope, density calibration, reader tasks, and uncertainty treatment before candidate scoring.
 - Use both index-to-source and source-to-index audits; locator precision alone cannot reveal omissions.
 - Preserve original candidate output and record every normalization.
 - Compare evaluations only when their source, benchmark, rubric, mapping, scope, and audit-design identifiers match.

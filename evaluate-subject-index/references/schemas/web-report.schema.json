@@ -5,7 +5,7 @@
   "type": "object",
   "required": ["schema_version", "report_id", "headline", "summary", "grade", "scorecard", "key_metrics", "density", "gate_status", "strengths", "defects", "examples", "methodology", "comparability", "disclosures", "limitations", "evidence_index"],
   "properties": {
-    "schema_version": {"const": "subject-index-web-report-v1"},
+    "schema_version": {"const": "subject-index-web-report-v2"},
     "report_id": {"type": "string"},
     "headline": {"type": "string"},
     "summary": {"type": "string"},
@@ -20,7 +20,21 @@
     },
     "scorecard": {"type": "array", "items": {"type": "object"}},
     "key_metrics": {"type": "array", "items": {"type": "object"}},
-    "density": {"type": "object"},
+    "density": {
+      "type": "object",
+      "required": ["headline", "calibration_disclosure", "measurement_level", "targets", "chapter_measurements", "fit_rating", "points_contributed", "maximum_points"],
+      "properties": {
+        "headline": {"type": "string"},
+        "calibration_disclosure": {"type": "string"},
+        "measurement_level": {"const": "chapter_or_approved_intellectual_unit"},
+        "targets": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "object"}},
+        "chapter_measurements": {"type": "array", "items": {"type": "object"}},
+        "fit_rating": {"type": "number", "minimum": 0, "maximum": 5},
+        "points_contributed": {"type": "number", "minimum": 0, "maximum": 5},
+        "maximum_points": {"const": 5}
+      },
+      "additionalProperties": true
+    },
     "gate_status": {"type": "object"},
     "strengths": {"type": "array", "items": {"type": "object"}},
     "defects": {"type": "array", "items": {"type": "object"}},

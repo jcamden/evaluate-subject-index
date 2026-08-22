@@ -20,10 +20,13 @@
     "candidate_blindness": {"enum": ["preserved", "compromised", "not_claimed"]},
     "page_review": {
       "type": "object",
-      "required": ["expected_owned_pages", "reviewed_owned_pages", "complete"],
+      "required": ["expected_owned_pages", "reviewed_owned_pages", "indexable_source_words", "complete"],
       "properties": {
         "expected_owned_pages": {"type": "integer", "minimum": 0},
         "reviewed_owned_pages": {"type": "integer", "minimum": 0},
+        "indexable_source_words": {"type": "integer", "minimum": 0},
+        "excluded_regions": {"type": "array", "items": {"type": "object"}},
+        "unavailable_regions": {"type": "array", "items": {"type": "object"}},
         "complete": {"type": "boolean"}
       }
     },

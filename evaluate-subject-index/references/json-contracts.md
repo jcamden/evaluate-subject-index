@@ -10,7 +10,8 @@ The schemas in `schemas/` are web-oriented contracts. Additional fields are allo
 | Compact page-map input | `page-map-input.schema.json` | User-approved document-page to source-label ranges |
 | Expanded page map | `page-map.schema.json` | One record per original document page |
 | Chunk manifest | `chunk-manifest.schema.json` | User-approved ownership and context ranges |
-| Policy | `evaluation-policy.schema.json` | Frozen scope, audit, uncertainty, gates, and density rules |
+| Policy build input | `policy-build-input.schema.json` | Source-bound facts used to instantiate the standard policy |
+| Policy | `evaluation-policy.schema.json` | Run-specific instance of standard policy v1 with frozen scope, audience provenance, gates, and density rules |
 | Source chunk | `source-subject-chunk.schema.json` | Candidate-blind chapter/page discoveries |
 | Benchmark | `source-benchmark.schema.json` | Frozen whole-source subject graph and evidence denominator |
 | Normalized candidate | `candidate-index.schema.json` | Complete paths, references, and expanded locator assignments |
@@ -18,6 +19,7 @@ The schemas in `schemas/` are web-oriented contracts. Additional fields are allo
 | Locator batch | `locator-audit.schema.json` | One judgment for every expanded candidate locator |
 | Missing-access batch | `missing-access-audit.schema.json` | Source-to-index concept coverage and locator recall |
 | Structure audit | `structure-audit.schema.json` | Global hierarchy, navigation, cross-reference, mechanics, and density evidence |
+| Density input | `density-input.schema.json` | Chapter word, path, and locator counts for deterministic density scoring |
 | Evaluation result | `evaluation-result.schema.json` | Auditable scores, metrics, gates, and comparison key |
 | Web report | `web-report.schema.json` | Display-ready narrative and evidence cards |
 
@@ -31,6 +33,8 @@ Use opaque IDs rather than mutable labels:
 - `CHUNK-*` for page ownership units;
 - `TASK-*` for reader tasks; and
 - `DEFECT-*` for underlying defects.
+
+Use `subject-index-rubric-v4` for newly created results. Its density payload must preserve both standardized targets, target and broad tolerance bands, chapter-level measurements, source-word-weighted aggregation, and the five-point maximum contribution.
 
 ## Null and missing data
 
