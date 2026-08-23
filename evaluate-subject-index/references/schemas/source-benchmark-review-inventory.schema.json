@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "source-benchmark-review-inventory.schema.json",
+  "title": "Deterministic source benchmark review inventory",
+  "type": "object",
+  "required": ["schema_version", "evaluation_id", "draft", "denominators", "queues", "diagnostics"],
+  "properties": {
+    "schema_version": {"const": "source-benchmark-review-inventory-v1"},
+    "evaluation_id": {"type": "string", "minLength": 1},
+    "draft": {
+      "type": "object",
+      "required": ["path", "version", "file_sha256", "canonical_sha256", "candidate_blindness"],
+      "properties": {
+        "path": {"type": "string"},
+        "version": {"type": "integer", "minimum": 1},
+        "file_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "canonical_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "candidate_blindness": {"enum": ["preserved", "compromised", "not_claimed"]}
+      }
+    },
+    "denominators": {
+      "type": "object",
+      "required": ["subjects", "relationships", "reader_tasks", "cross_chapter_subjects", "unresolved_relationships", "fallback_reader_tasks"],
+      "additionalProperties": {"type": "integer", "minimum": 0}
+    },
+    "queues": {
+      "type": "object",
+      "required": ["subject_ids", "relationship_ids", "reader_task_ids", "cross_chapter_subject_ids", "unresolved_relationship_ids", "fallback_reader_task_ids", "exact_duplicate_label_groups", "near_duplicate_label_pairs"],
+      "additionalProperties": true
+    },
+    "diagnostics": {"type": "object"}
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "source-benchmark-review.schema.json",
+  "title": "Independent candidate-blind source benchmark review",
+  "type": "object",
+  "required": ["schema_version", "evaluation_id", "review_mode", "candidate_blindness", "reviewer_independence", "draft", "coverage", "changes", "remaining_issues", "completion", "recommendation"],
+  "properties": {
+    "schema_version": {"const": "source-benchmark-review-v1"},
+    "evaluation_id": {"type": "string", "minLength": 1},
+    "review_mode": {"enum": ["full", "pilot"]},
+    "candidate_blindness": {"enum": ["preserved", "compromised", "not_claimed"]},
+    "reviewer_independence": {
+      "type": "object",
+      "required": ["fresh_context", "candidate_unseen", "source_reconnected_sha256"],
+      "properties": {
+        "fresh_context": {"type": "boolean"},
+        "candidate_unseen": {"type": "boolean"},
+        "source_reconnected_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      },
+      "additionalProperties": true
+    },
+    "draft": {
+      "type": "object",
+      "required": ["path", "version", "file_sha256", "canonical_sha256"],
+      "properties": {
+        "path": {"type": "string"},
+        "version": {"type": "integer", "minimum": 1},
+        "file_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "canonical_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "required": ["subject_ids_reviewed", "relationship_ids_reviewed", "reader_task_ids_reviewed", "cross_chapter_subject_ids_reviewed", "unresolved_relationship_ids_dispositioned", "fallback_reader_task_ids_reviewed"],
+      "properties": {
+        "subject_ids_reviewed": {"type": "array", "items": {"type": "string", "pattern": "^SUBJ-"}, "uniqueItems": true},
+        "relationship_ids_reviewed": {"type": "array", "items": {"type": "string", "pattern": "^REL-"}, "uniqueItems": true},
+        "reader_task_ids_reviewed": {"type": "array", "items": {"type": "string", "pattern": "^TASK-"}, "uniqueItems": true},
+        "cross_chapter_subject_ids_reviewed": {"type": "array", "items": {"type": "string", "pattern": "^SUBJ-"}, "uniqueItems": true},
+        "unresolved_relationship_ids_dispositioned": {"type": "array", "items": {"type": "string", "pattern": "^REL-"}, "uniqueItems": true},
+        "fallback_reader_task_ids_reviewed": {"type": "array", "items": {"type": "string", "pattern": "^TASK-"}, "uniqueItems": true}
+      },
+      "additionalProperties": true
+    },
+    "changes": {
+      "type": "object",
+      "required": ["merges", "splits", "priority_changes", "relationship_changes", "reader_task_changes", "subjects_added", "subjects_removed", "terminology_changes"],
+      "additionalProperties": {"type": "array"}
+    },
+    "remaining_issues": {"type": "array", "items": {"type": "object"}},
+    "completion": {
+      "type": "object",
+      "required": ["structural_validation_passed", "editorial_review_complete", "source_first_omission_review_complete", "candidate_blindness_preserved", "no_unreviewed_required_items", "public_claims_allowed"],
+      "properties": {
+        "structural_validation_passed": {"type": "boolean"},
+        "editorial_review_complete": {"type": "boolean"},
+        "source_first_omission_review_complete": {"type": "boolean"},
+        "candidate_blindness_preserved": {"type": "boolean"},
+        "no_unreviewed_required_items": {"type": "boolean"},
+        "public_claims_allowed": {"type": "boolean"}
+      }
+    },
+    "recommendation": {"enum": ["retain_draft", "approve_revised", "revise_before_freeze", "blocked"]}
+  },
+  "additionalProperties": true
+}

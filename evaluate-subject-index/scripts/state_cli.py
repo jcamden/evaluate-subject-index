@@ -12,6 +12,23 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 
+LEGACY_STAGES_V3 = [
+    "initialize",
+    "page_mapping",
+    "chunk_definition",
+    "define_policy",
+    "source_chunk_preparation",
+    "source_subject_discovery",
+    "benchmark_freeze",
+    "candidate_normalization",
+    "locator_chunk_preparation",
+    "locator_audit",
+    "missing_access_audit",
+    "structure_audit",
+    "scoring",
+    "web_report",
+]
+
 STAGES = [
     "initialize",
     "page_mapping",
@@ -19,6 +36,8 @@ STAGES = [
     "define_policy",
     "source_chunk_preparation",
     "source_subject_discovery",
+    "benchmark_synthesis",
+    "benchmark_review",
     "benchmark_freeze",
     "candidate_normalization",
     "locator_chunk_preparation",
@@ -36,6 +55,8 @@ COMMANDS = {
     "define_policy": "define-policy",
     "source_chunk_preparation": "prepare-source-chunks",
     "source_subject_discovery": "discover-source-subjects",
+    "benchmark_synthesis": "synthesize-source-benchmark",
+    "benchmark_review": "review-source-benchmark",
     "benchmark_freeze": "freeze-source-benchmark",
     "candidate_normalization": "normalize-index",
     "locator_chunk_preparation": "prepare-locator-chunks",
@@ -53,7 +74,9 @@ REQUIRED_INPUTS = {
     "define_policy": ["initialized state", "source scope and availability facts", "page map", "chunk manifest", "built-in standard policy v1"],
     "source_chunk_preparation": ["source PDF", "expanded page map", "validated chunk manifest"],
     "source_subject_discovery": ["source chunk PDFs", "sidecar page maps", "frozen policy", "chunk manifest"],
-    "benchmark_freeze": ["all source-subject chunks", "whole-source synthesis pass", "reader tasks"],
+    "benchmark_synthesis": ["all source-subject chunks", "whole-source synthesis pass", "provisional reader tasks"],
+    "benchmark_review": ["candidate-blind benchmark draft", "independent review context", "benchmark review inventory", "exact source for contested judgments"],
+    "benchmark_freeze": ["reviewed benchmark draft", "complete benchmark review ledger", "final canonical hash"],
     "candidate_normalization": ["original candidate index", "expanded page map", "deterministic item inventory"],
     "locator_chunk_preparation": ["normalized candidate", "expanded page map", "validated chunk manifest"],
     "locator_audit": ["source chunk PDF", "candidate locator chunk packet", "page sidecar"],
@@ -70,7 +93,9 @@ COMPLETION_TESTS = {
     "define_policy": "Standard policy v1 is source-bound, schema-valid, frozen, hashed, and any deviations are documented.",
     "source_chunk_preparation": "Every chunk PDF and sidecar map exists and preserves original document-page identity.",
     "source_subject_discovery": "Every owned source page was reviewed once and every chunk artifact is valid.",
-    "benchmark_freeze": "Whole-source synthesis is complete and the candidate-blind benchmark is frozen and hashed.",
+    "benchmark_synthesis": "A candidate-blind whole-source draft consolidates all chunks, relationships, priorities, reader tasks, exclusions, uncertainties, and omission findings.",
+    "benchmark_review": "An independent candidate-blind review covers every required subject, relationship, reader task, merge/split, priority, and omission check, with no undispositioned required item.",
+    "benchmark_freeze": "The independently reviewed candidate-blind benchmark is versioned, schema-valid, canonically hashed, and frozen.",
     "candidate_normalization": "Every delivered record, complete path, expanded locator, heading node, and cross-reference has a stable ID in the candidate and item inventory.",
     "locator_chunk_preparation": "Every resolved locator is routed once and the routing exception ledger is empty.",
     "locator_audit": "Every expected expanded locator assignment has exactly one judgment.",
@@ -81,7 +106,9 @@ COMPLETION_TESTS = {
 }
 
 VALID_STATUSES = {"not_started", "in_progress", "completed", "blocked"}
-STATE_SCHEMA_VERSION = "subject-index-evaluation-state-v3"
+STATE_SCHEMA_VERSION = "subject-index-evaluation-state-v4"
+LEGACY_STATE_SCHEMA_VERSION = "subject-index-evaluation-state-v3"
+SUPPORTED_STATE_SCHEMA_VERSIONS = {LEGACY_STATE_SCHEMA_VERSION, STATE_SCHEMA_VERSION}
 MANIFEST_SCHEMA_VERSION = "subject-index-artifact-manifest-v1"
 MANIFEST_FILENAME = "artifact-manifest.json"
 VALID_VISIBILITY = {"public", "private", "restricted"}
@@ -178,9 +205,15 @@ def fail(code: str, message: str, details: Any = None) -> None:
     emit(payload, 1)
 
 
-def stage_dependencies(stage: str) -> list[str]:
-    index = STAGES.index(stage)
-    return STAGES[:index]
+def stages_for_state(state: dict[str, Any]) -> list[str]:
+    if state.get("schema_version") == LEGACY_STATE_SCHEMA_VERSION:
+        return LEGACY_STAGES_V3
+    return STAGES
+
+
+def stage_dependencies(stage: str, stage_order: list[str]) -> list[str]:
+    index = stage_order.index(stage)
+    return stage_order[:index]
 
 
 def validate_state(state: dict[str, Any], state_path: Path | None = None, check_files: bool = True) -> tuple[list[str], list[str]]:
@@ -189,7 +222,7 @@ def validate_state(state: dict[str, Any], state_path: Path | None = None, check_
     for key in ("schema_version", "evaluation_id", "artifact_manifest_path", "source", "configuration", "stages", "artifacts", "blockers"):
         if key not in state:
             errors.append(f"Missing required key: {key}")
-    if state.get("schema_version") != STATE_SCHEMA_VERSION:
+    if state.get("schema_version") not in SUPPORTED_STATE_SCHEMA_VERSIONS:
         errors.append("Unsupported schema_version.")
     if state.get("configuration", {}).get("storage_mode") not in {"local", "library", "hybrid"}:
         errors.append("configuration.storage_mode must be local, library, or hybrid.")
@@ -205,7 +238,8 @@ def validate_state(state: dict[str, Any], state_path: Path | None = None, check_
     if not isinstance(stages, dict):
         errors.append("stages must be an object.")
         stages = {}
-    for name in STAGES:
+    stage_order = stages_for_state(state)
+    for name in stage_order:
         record = stages.get(name)
         if not isinstance(record, dict):
             errors.append(f"Missing stage record: {name}")
@@ -214,7 +248,7 @@ def validate_state(state: dict[str, Any], state_path: Path | None = None, check_
             errors.append(f"Invalid status for {name}: {record.get('status')}")
 
     completed_prefix = True
-    for name in STAGES:
+    for name in stage_order:
         status = stages.get(name, {}).get("status")
         if status == "completed" and not completed_prefix:
             errors.append(f"Stage {name} is completed before all dependencies are complete.")
@@ -276,11 +310,14 @@ def validate_state(state: dict[str, Any], state_path: Path | None = None, check_
                 errors.append("State and artifact manifest inventories do not match.")
 
     artifact_stages = {item.get("stage") for item in artifacts if isinstance(item, dict)}
-    for name in STAGES[1:]:
-        if stages.get(name, {}).get("status") == "completed" and name not in artifact_stages:
+    for name in stage_order[1:]:
+        artifact_present = name in artifact_stages
+        if name == "benchmark_synthesis":
+            artifact_present = artifact_present or "benchmark_freeze" in artifact_stages
+        if stages.get(name, {}).get("status") == "completed" and not artifact_present:
             errors.append(f"Completed stage has no registered artifact: {name}")
 
-    active = [name for name in STAGES if stages.get(name, {}).get("status") == "in_progress"]
+    active = [name for name in stage_order if stages.get(name, {}).get("status") == "in_progress"]
     if len(active) > 1:
         errors.append(f"More than one stage is in progress: {active}")
     return errors, warnings
@@ -288,11 +325,12 @@ def validate_state(state: dict[str, Any], state_path: Path | None = None, check_
 
 def next_stage(state: dict[str, Any]) -> dict[str, Any] | None:
     stages = state["stages"]
-    for name in STAGES:
+    stage_order = stages_for_state(state)
+    for name in stage_order:
         status = stages[name]["status"]
         if status == "completed":
             continue
-        deps = stage_dependencies(name)
+        deps = stage_dependencies(name, stage_order)
         unmet = [dep for dep in deps if stages[dep]["status"] != "completed"]
         return {
             "stage": name,
@@ -309,16 +347,17 @@ def next_stage(state: dict[str, Any]) -> dict[str, Any] | None:
 def state_summary(state: dict[str, Any], state_path: Path | None = None) -> dict[str, Any]:
     errors, warnings = validate_state(state, state_path=state_path)
     stages = state.get("stages", {})
-    current = next((name for name in STAGES if stages.get(name, {}).get("status") == "in_progress"), None)
+    stage_order = stages_for_state(state)
+    current = next((name for name in stage_order if stages.get(name, {}).get("status") == "in_progress"), None)
     if current is None:
-        current = next((name for name in STAGES if stages.get(name, {}).get("status") != "completed"), "complete")
+        current = next((name for name in stage_order if stages.get(name, {}).get("status") != "completed"), "complete")
     return {
         "ok": not errors,
         "evaluation_id": state.get("evaluation_id"),
         "storage_mode": state.get("configuration", {}).get("storage_mode"),
         "state": current,
-        "completed_stages": [name for name in STAGES if stages.get(name, {}).get("status") == "completed"],
-        "blocked_stages": [name for name in STAGES if stages.get(name, {}).get("status") == "blocked"],
+        "completed_stages": [name for name in stage_order if stages.get(name, {}).get("status") == "completed"],
+        "blocked_stages": [name for name in stage_order if stages.get(name, {}).get("status") == "blocked"],
         "artifacts": state.get("artifacts", []),
         "blockers": state.get("blockers", []),
         "next_actions": [] if next_stage(state) is None else [next_stage(state)],
@@ -422,13 +461,14 @@ def command_next(args: argparse.Namespace) -> None:
 def command_set_stage(args: argparse.Namespace) -> None:
     state_path = Path(args.state)
     state = load_state(state_path)
-    if args.stage not in STAGES:
+    stage_order = stages_for_state(state)
+    if args.stage not in stage_order:
         fail("unknown_stage", f"Unknown stage: {args.stage}")
-    unmet = [dep for dep in stage_dependencies(args.stage) if state["stages"][dep]["status"] != "completed"]
+    unmet = [dep for dep in stage_dependencies(args.stage, stage_order) if state["stages"][dep]["status"] != "completed"]
     if args.status in {"in_progress", "completed"} and unmet:
         fail("unmet_dependencies", f"Cannot set {args.stage} to {args.status}.", unmet)
     if args.status == "in_progress":
-        active = [name for name in STAGES if state["stages"][name]["status"] == "in_progress" and name != args.stage]
+        active = [name for name in stage_order if state["stages"][name]["status"] == "in_progress" and name != args.stage]
         if active:
             fail("another_stage_active", "Only one stage may be in progress.", active)
     if args.status == "completed" and not args.artifact_path:
@@ -516,8 +556,9 @@ def command_adopt_standard_policy(args: argparse.Namespace) -> None:
     state_path = Path(args.state)
     state = load_state(state_path)
     policy_stage = state.get("stages", {}).get("define_policy", {}).get("status")
+    stage_order = stages_for_state(state)
     later_started = [
-        name for name in STAGES[STAGES.index("source_chunk_preparation"):]
+        name for name in stage_order[stage_order.index("source_chunk_preparation"):]
         if state.get("stages", {}).get(name, {}).get("status") != "not_started"
     ]
     if policy_stage == "completed" or later_started:
@@ -545,6 +586,67 @@ def command_adopt_standard_policy(args: argparse.Namespace) -> None:
         "rubric_version": configuration["rubric_version"],
         "state_path": str(state_path.resolve()),
     })
+    emit(payload, 0 if payload["ok"] else 1)
+
+
+def command_upgrade_benchmark_workflow(args: argparse.Namespace) -> None:
+    state_path = Path(args.state)
+    state = load_state(state_path)
+    if state.get("schema_version") == STATE_SCHEMA_VERSION:
+        payload = state_summary(state, state_path)
+        payload.update({"command": "upgrade-benchmark-workflow", "changed": False})
+        emit(payload, 0 if payload["ok"] else 1)
+    if state.get("schema_version") != LEGACY_STATE_SCHEMA_VERSION:
+        fail("unsupported_upgrade_source", "Only v3 evaluation states can be upgraded to the reviewed-benchmark workflow.")
+    later_started = [
+        name for name in LEGACY_STAGES_V3[LEGACY_STAGES_V3.index("candidate_normalization"):]
+        if state.get("stages", {}).get(name, {}).get("status") != "not_started"
+    ]
+    if later_started:
+        fail(
+            "candidate_work_already_started",
+            "Upgrade the benchmark workflow before candidate normalization or later candidate work.",
+            later_started,
+        )
+    stamp = now()
+    old_stages = state["stages"]
+    old_freeze = old_stages.get("benchmark_freeze", {"status": "not_started", "updated_at": None, "notes": []})
+    if old_freeze.get("status") == "completed":
+        synthesis_status = "completed"
+        synthesis_notes = list(old_freeze.get("notes", [])) + [
+            "Legacy frozen benchmark adopted as the candidate-blind synthesis baseline for independent post-freeze review."
+        ]
+    else:
+        synthesis_status = old_freeze.get("status", "not_started")
+        synthesis_notes = list(old_freeze.get("notes", []))
+    new_stages: dict[str, Any] = {}
+    for name in STAGES:
+        if name == "benchmark_synthesis":
+            new_stages[name] = {
+                "status": synthesis_status,
+                "updated_at": stamp if synthesis_status == "completed" else old_freeze.get("updated_at"),
+                "notes": synthesis_notes,
+            }
+        elif name == "benchmark_review":
+            new_stages[name] = {
+                "status": "not_started",
+                "updated_at": None,
+                "notes": ["Independent candidate-blind benchmark review required before final freeze."],
+            }
+        elif name == "benchmark_freeze":
+            new_stages[name] = {
+                "status": "not_started",
+                "updated_at": None,
+                "notes": ["Final freeze must follow completed independent benchmark review."],
+            }
+        else:
+            new_stages[name] = old_stages[name]
+    state["schema_version"] = STATE_SCHEMA_VERSION
+    state["stages"] = new_stages
+    state["updated_at"] = stamp
+    save_state(state_path, state)
+    payload = state_summary(state, state_path)
+    payload.update({"command": "upgrade-benchmark-workflow", "changed": True, "state_path": str(state_path.resolve())})
     emit(payload, 0 if payload["ok"] else 1)
 
 
@@ -578,7 +680,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     set_parser = subparsers.add_parser("set-stage", help="Update one stage after dependency checks")
     set_parser.add_argument("--state", required=True)
-    set_parser.add_argument("--stage", required=True, choices=STAGES)
+    set_parser.add_argument("--stage", required=True, choices=sorted(set(STAGES + LEGACY_STAGES_V3)))
     set_parser.add_argument("--status", required=True, choices=sorted(VALID_STATUSES))
     set_parser.add_argument("--artifact-type")
     set_parser.add_argument("--artifact-path")
@@ -601,6 +703,10 @@ def build_parser() -> argparse.ArgumentParser:
     adopt_parser.add_argument("--readership-confidence", choices=["high", "medium", "low"], required=True)
     adopt_parser.add_argument("--readership-rationale", required=True)
     adopt_parser.set_defaults(func=command_adopt_standard_policy)
+
+    upgrade_parser = subparsers.add_parser("upgrade-benchmark-workflow")
+    upgrade_parser.add_argument("--state", required=True)
+    upgrade_parser.set_defaults(func=command_upgrade_benchmark_workflow)
     return parser
 
 

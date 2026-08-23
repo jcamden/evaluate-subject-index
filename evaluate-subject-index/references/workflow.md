@@ -10,14 +10,16 @@
 | 4 | `define-policy` | run-specific instance of the built-in `evaluation-policy.json` |
 | 5 | `prepare-source-chunks` | chunk PDFs and sidecar maps |
 | 6 | `discover-source-subjects` | all `source-subject-chunk.*.json` files |
-| 7 | `freeze-source-benchmark` | `source-benchmark.json` |
-| 8 | `normalize-index` | `candidate-index.json` and `item-inventory.json` |
-| 9 | `prepare-locator-chunks` | all `candidate-locator-chunk.*.json` files and exception ledger |
-| 10 | `audit-locators` | all `locator-audit.*.json` files |
-| 11 | `audit-missing-access` | all `missing-access-audit.*.json` files |
-| 12 | `audit-index-structure` | `structure-audit.json` |
-| 13 | `score-index` | `item-assessments.json` and `evaluation-result.json` |
-| 14 | `build-web-report` | `web-report.json` |
+| 7 | `synthesize-source-benchmark` | `source-benchmark.draft.vN.json` |
+| 8 | `review-source-benchmark` | review inventory and `source-benchmark-review.vN.json` |
+| 9 | `freeze-source-benchmark` | `source-benchmark.vN.json` |
+| 10 | `normalize-index` | `candidate-index.json` and `item-inventory.json` |
+| 11 | `prepare-locator-chunks` | all `candidate-locator-chunk.*.json` files and exception ledger |
+| 12 | `audit-locators` | all `locator-audit.*.json` files |
+| 13 | `audit-missing-access` | all `missing-access-audit.*.json` files |
+| 14 | `audit-index-structure` | `structure-audit.json` |
+| 15 | `score-index` | `item-assessments.json` and `evaluation-result.json` |
+| 16 | `build-web-report` | `web-report.json` |
 
 Each stage status is `not_started`, `in_progress`, `completed`, or `blocked`. A stage may start only when every earlier required stage is complete. `validate` may run at any time.
 
@@ -56,7 +58,7 @@ Use the source's intellectual units first:
 7. Split the source PDF from the approved manifest and preserve a sidecar map from each chunk-PDF page to the original document page and source label.
 8. Keep a complete heading path together, but route only its expanded locator assignments whose mapped document pages belong to the current chunk. Do not send the rest of the index in a locator-audit chunk.
 
-Chapter chunking reduces context load and aligns judgments with the author's structure. It is not sufficient by itself because themes cross chapters. `freeze-source-benchmark` must perform a whole-book synthesis pass, and `audit-index-structure` must inspect the whole index.
+Chapter chunking reduces context load and aligns judgments with the author's structure. It is not sufficient by itself because themes cross chapters. `synthesize-source-benchmark` performs the whole-book reconciliation, `review-source-benchmark` independently checks it, and `audit-index-structure` inspects the whole index.
 
 ## Parallel source-discovery workers
 
@@ -73,6 +75,12 @@ This two-phase pattern prevents lost updates:
 
 If a selected batch contains any invalid, incompatible, unexpected, or restricted change, merge none of that batch. A later coordinator run may integrate a corrected subset explicitly.
 
+## Benchmark QA gate
+
+The benchmark is not frozen when synthesis ends. Synthesis creates a draft; a fresh, candidate-blind reviewer then checks the draft against the exact source and complete deterministic review inventory. Full review requires exact ID coverage for every subject, relationship, reader task, cross-chapter subject, unresolved relationship, and fallback reader task, plus an independent omission pass. Only an approving full review can authorize the final freeze. Read [benchmark-review.md](benchmark-review.md).
+
+New evaluations use state schema v4. State schema v3 remains readable for historical runs. Before candidate work begins, `upgrade-benchmark-workflow` may convert a v3 run: a completed legacy freeze is treated as a synthesis baseline, while review and final freeze are reopened. Never migrate after candidate normalization or later work has started.
+
 ## Resume behavior
 
 `status` trusts neither filenames nor conversational memory alone. It checks the state file, hashes, manifests, and completion counts. `next` returns the earliest valid unfinished stage. If a completed artifact's hash changes, mark that stage and all dependent stages `blocked` until revalidated or rerun.
@@ -88,7 +96,7 @@ When resuming in another chat or environment, materialize the active Library fol
 - Changing scope, audit mode, or uncertainty policy invalidates policy and every later stage.
 - Changing the standard-policy or rubric version invalidates policy and every later stage.
 - Correcting only the recorded readership rationale without changing its label or any operative rule does not invalidate judgments; changing the readership label invalidates reader tasks, benchmark synthesis, and every candidate stage.
-- Changing benchmark meaning, priority, evidence, or reader tasks invalidates the benchmark and every candidate stage.
+- Changing the synthesis draft invalidates benchmark review, final freeze, and every candidate stage. Changing review dispositions invalidates final freeze and every candidate stage. Changing final benchmark meaning, priority, evidence, or reader tasks creates a new version and invalidates every candidate stage.
 - Changing candidate normalization or item inventory invalidates locator packets, locator audit, missing-access, structure, item assessments, score, and web report stages.
 - Adjudicating a judgment invalidates item assessments, scoring, and web reporting only unless it changes the benchmark.
 - Changing presentation text without changing evaluation facts requires only rebuilding the web report.
@@ -97,7 +105,7 @@ Never overwrite a frozen artifact in place. Increment its version, compute a new
 
 ## Checkpoints
 
-Create portable checkpoints after policy freeze, benchmark freeze, each candidate score, the final web report, and before a conversation/environment handoff. Portable bundles exclude restricted source/candidate files. A private-complete export may include them only at the user's request. Bundle creation does not publish anything.
+Create portable checkpoints after policy freeze, final benchmark freeze, each candidate score, the final web report, and before a conversation/environment handoff. Portable bundles exclude restricted source/candidate files. A private-complete export may include them only at the user's request. Bundle creation does not publish anything.
 
 ## Comparison
 

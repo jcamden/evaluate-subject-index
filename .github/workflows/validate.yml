@@ -30,6 +30,84 @@ jobs:
       - name: Compile deterministic helpers
         run: |
           python -m py_compile evaluate-subject-index/scripts/*.py
+      - name: Exercise independent benchmark review and freeze gates
+        run: |
+          python evaluate-subject-index/scripts/benchmark_review_cli.py screen \
+            --draft evaluate-subject-index/tests/source-benchmark.draft.valid.json \
+            --output /tmp/benchmark-review-inventory.json
+          python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          draft_path = Path("evaluate-subject-index/tests/source-benchmark.draft.valid.json")
+          draft = json.loads(draft_path.read_text(encoding="utf-8"))
+          inventory = json.loads(Path("/tmp/benchmark-review-inventory.json").read_text(encoding="utf-8"))
+
+          def canonical_hash(value):
+              clone = dict(value)
+              clone.pop("benchmark_sha256", None)
+              encoded = json.dumps(clone, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+              return hashlib.sha256(encoded).hexdigest()
+
+          review = {
+              "schema_version": "source-benchmark-review-v1",
+              "evaluation_id": draft["evaluation_id"],
+              "review_mode": "full",
+              "candidate_blindness": "preserved",
+              "reviewer_independence": {
+                  "fresh_context": True,
+                  "candidate_unseen": True,
+                  "source_reconnected_sha256": draft["source_sha256"],
+              },
+              "draft": {
+                  "path": draft_path.name,
+                  "version": draft["version"],
+                  "file_sha256": hashlib.sha256(draft_path.read_bytes()).hexdigest(),
+                  "canonical_sha256": canonical_hash(draft),
+              },
+              "coverage": {
+                  "subject_ids_reviewed": inventory["queues"]["subject_ids"],
+                  "relationship_ids_reviewed": inventory["queues"]["relationship_ids"],
+                  "reader_task_ids_reviewed": inventory["queues"]["reader_task_ids"],
+                  "cross_chapter_subject_ids_reviewed": inventory["queues"]["cross_chapter_subject_ids"],
+                  "unresolved_relationship_ids_dispositioned": inventory["queues"]["unresolved_relationship_ids"],
+                  "fallback_reader_task_ids_reviewed": inventory["queues"]["fallback_reader_task_ids"],
+              },
+              "changes": {key: [] for key in (
+                  "merges", "splits", "priority_changes", "relationship_changes",
+                  "reader_task_changes", "subjects_added", "subjects_removed", "terminology_changes"
+              )},
+              "remaining_issues": [],
+              "completion": {key: True for key in (
+                  "structural_validation_passed", "editorial_review_complete",
+                  "source_first_omission_review_complete", "candidate_blindness_preserved",
+                  "no_unreviewed_required_items", "public_claims_allowed"
+              )},
+              "recommendation": "retain_draft",
+          }
+          Path("/tmp/benchmark-review.json").write_text(json.dumps(review, indent=2) + "\n", encoding="utf-8")
+
+          final = dict(draft)
+          final["schema_version"] = "source-subject-benchmark-v2"
+          final.pop("synthesis")
+          final["freeze"] = {
+              "frozen_at": "2026-01-01T00:00:00Z",
+              "synthesis_pass_complete": True,
+              "page_coverage_complete": True,
+          }
+          final["benchmark_sha256"] = canonical_hash(final)
+          Path("/tmp/source-benchmark.final.json").write_text(json.dumps(final, indent=2) + "\n", encoding="utf-8")
+          PY
+          python evaluate-subject-index/scripts/benchmark_review_cli.py validate-review \
+            --draft evaluate-subject-index/tests/source-benchmark.draft.valid.json \
+            --inventory /tmp/benchmark-review-inventory.json \
+            --review /tmp/benchmark-review.json
+          python evaluate-subject-index/scripts/benchmark_review_cli.py validate-final \
+            --draft evaluate-subject-index/tests/source-benchmark.draft.valid.json \
+            --inventory /tmp/benchmark-review-inventory.json \
+            --review /tmp/benchmark-review.json \
+            --final /tmp/source-benchmark.final.json
       - name: Exercise page mapping and chunk routing
         run: |
           python evaluate-subject-index/scripts/page_chunk_cli.py expand-page-map \
@@ -138,6 +216,15 @@ jobs:
             --document-page-end 10 \
             --intended-readership researchers \
             --storage-mode local
+          python - "$run_dir/study/evaluation-state.json" <<'PY'
+          import json
+          import sys
+
+          state = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert state["schema_version"] == "subject-index-evaluation-state-v4"
+          stages = list(state["stages"])
+          assert stages.index("benchmark_synthesis") < stages.index("benchmark_review") < stages.index("benchmark_freeze")
+          PY
           cp evaluate-subject-index/tests/page-map-input.valid.json \
             "$run_dir/study/source/page-map.json"
           python evaluate-subject-index/scripts/state_cli.py set-stage \

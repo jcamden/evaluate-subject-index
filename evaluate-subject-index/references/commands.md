@@ -111,13 +111,35 @@ The helper copies each artifact to its canonical path, registers it as frozen/pr
 
 The completion test is: all selected PRs are merged; their exact artifact hashes are registered; canonical validation succeeds; a cumulative checkpoint exists; shared control files are committed once; and downstream benchmark locks identify the new canonical commit.
 
+## `synthesize-source-benchmark`
+
+Required: all validated source-subject chunk artifacts and frozen policy. Candidate indexes must remain unseen.
+
+Perform a whole-source reconciliation: merge genuine duplicate concepts without collapsing meaningful distinctions, preserve defensible alternate access, connect cross-chapter treatments, resolve relationships when evidence permits, perform a source-first omission pass, reconcile priorities, consolidate evidence, freeze neither the artifact nor its conclusions, and assign stable `SUBJ-*`, `REL-*`, and `TASK-*` identifiers. Output schema-valid `source-benchmark.draft.vN.json` with schema `source-subject-benchmark-draft-v1` and a synthesis record. Register it as private, required, and unfrozen.
+
+The completion test is that every active chunk artifact is represented, page coverage is complete, the candidate remained unseen, and the deterministic review inventory can be generated without structural errors.
+
+## `review-source-benchmark`
+
+Required: the synthesis draft, exact source, policy, chunk artifacts, and a fresh context that has not seen any candidate index.
+
+Run `scripts/benchmark_review_cli.py screen` to create `validation/source-benchmark-review-inventory.json`. Reconnect the source by SHA-256 and independently review every required ID in full mode. Revisit cross-chapter concepts, disposition unresolved relationships, inspect fallback-generated tasks, check semantic boundaries, meaning, stance, priority, acceptable access, evidence sufficiency, and perform a fresh source-first omission search. Record all decisions and proposed changes in `validation/source-benchmark-review.vN.json`; do not silently edit the draft.
+
+Run `validate-review`. Full mode requires exact review coverage of every inventory queue and an approving recommendation before freeze. Pilot review records a declared sample and limitations, sets `public_claims_allowed` to false, and cannot authorize freeze. Read [benchmark-review.md](benchmark-review.md).
+
 ## `freeze-source-benchmark`
 
-Required: all source-subject chunk artifacts and policy.
+Required: synthesis draft, review inventory, completed independent review ledger, policy, and any approved revised benchmark.
 
-Merge duplicate concepts, preserve defensible alternate access, resolve cross-chapter relationships, perform a source-first omission/synthesis pass, freeze reader tasks, and assign stable concept IDs. Output `source-benchmark.json` with a canonical SHA-256 hash. Candidate blindness must be recorded as `preserved`, `compromised`, or `not_claimed`.
+Apply every approved change, preserve frozen identity fields, and output `source-benchmark.vN.json` with schema `source-subject-benchmark-v2` and a canonical SHA-256 hash. Run `scripts/benchmark_review_cli.py validate-final`; do not complete the stage if review validation or hash recomputation fails. Candidate blindness must be `preserved` for public full-evaluation claims.
 
-Any substantive post-freeze edit creates a new benchmark version and invalidates results tied to the previous hash.
+`retain_draft` keeps canonical benchmark content and version. `approve_revised` requires a changed final benchmark and incremented version. Any substantive post-freeze edit creates a new version and invalidates results tied to the previous hash.
+
+## `upgrade-benchmark-workflow`
+
+Required: a valid v3 evaluation state with no candidate stage started.
+
+Run `python scripts/state_cli.py upgrade-benchmark-workflow --state evaluation-state.json`. The migration changes the state to v4. A completed legacy benchmark becomes the synthesis baseline; independent review and final freeze are reset to `not_started`. The command is idempotent for v4 states and refuses migration after candidate work has begun.
 
 ## `normalize-index`
 

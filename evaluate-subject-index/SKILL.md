@@ -1,6 +1,6 @@
 ---
 name: evaluate-subject-index
-description: Run a repeatable, source-grounded evaluation of a finished subject index using a built-in standard policy. Use when a user wants to map PDF document pages to Arabic, Roman, prefixed, or irregular source labels; define and prepare audit chunks; discover substantively treated subjects serially or through parallel branch-and-pull-request workers; integrate distributed discoveries; freeze a candidate-blind source benchmark; normalize and route index locators; audit every locator; find missing access; judge hierarchy, density, and navigation; persist outputs to Library or portable bundles; resume an evaluation; or produce JSON for a web report.
+description: Run a repeatable, source-grounded evaluation of a finished subject index using a built-in standard policy. Use when a user wants to map PDF document pages to Arabic, Roman, prefixed, or irregular source labels; define and prepare audit chunks; discover substantively treated subjects serially or through parallel branch-and-pull-request workers; integrate distributed discoveries; synthesize, independently review, and freeze a candidate-blind source benchmark; normalize and route index locators; audit every locator; find missing access; judge hierarchy, density, and navigation; persist outputs to Library or portable bundles; resume an evaluation; or produce JSON for a web report.
 ---
 
 # Evaluate Subject Index
@@ -24,6 +24,8 @@ Supported commands:
 - `discover-source-subjects [chunk-id]`
 - `worker-discovery [chunk-id] --project [repository]`
 - `integrate-discoveries --project [repository] [pull-request-or-branch ...]`
+- `synthesize-source-benchmark`
+- `review-source-benchmark`
 - `freeze-source-benchmark`
 - `normalize-index`
 - `prepare-locator-chunks`
@@ -35,6 +37,7 @@ Supported commands:
 - `checkpoint`
 - `export-bundle`
 - `import-bundle`
+- `upgrade-benchmark-workflow`
 - `validate`
 
 Read [commands.md](references/commands.md) for inputs, outputs, dependencies, and command-specific behavior. If no command is supplied, run `status` when a state file is present; otherwise run `help`.
@@ -44,7 +47,7 @@ Read [commands.md](references/commands.md) for inputs, outputs, dependencies, an
 1. Discover source subjects before inspecting a candidate index. If the candidate was visible in the same context, label candidate blindness `compromised` and recommend rerunning discovery in a fresh context for public claims.
 2. Distinguish one-based document-page ordinals from source page labels. Store every source label as a string, including Arabic, Roman, prefixed, alphabetic, and exceptional labels. Expand the user-supplied mapping to one record per document page before chunking or locator filtering.
 3. Require the user to approve document-page ranges for every chunk. Use chapters as the primary intellectual units, but never infer final boundaries silently. Use context overlap without assigning the same document page to two judgment owners.
-4. Apply and freeze the built-in standard policy before candidate scoring. Infer readership from the source unless genuinely ambiguous; record the inference and ask only about material deviations. Freeze source-specific scope facts, the source-subject graph, locator classes, and reader tasks. Hash the canonical policy and benchmark JSON.
+4. Apply and freeze the built-in standard policy before discovery. After discovery, synthesize an unfrozen whole-source benchmark draft, review every required benchmark item independently in a fresh candidate-blind context, and only then freeze the source-subject graph, locator classes, and reader tasks. Hash the canonical policy and final benchmark JSON.
 5. Audit the complete heading path at every expanded locator. This establishes locator precision, not coverage.
 6. For each locator-audit chunk, include only paths having locator assignments mapped to document pages owned by that chunk. Preserve the complete path and in-chunk assignments; report but do not include other assignments.
 7. Separately compare the frozen source-subject graph with the candidate. This establishes missing access and locator recall.
@@ -83,7 +86,7 @@ Default to JSON artifacts and concise JSON responses because results are intende
 
 Use the schemas in `references/schemas/`. Put display-ready facts in structured fields, retain complete evidence ledgers, and identify `not_measured`, `uninspectable`, and `uncertain` explicitly rather than treating them as failures or zeros.
 
-Use `scripts/state_cli.py` for deterministic state initialization, status, dependency-aware next-step selection, state transitions, artifact registration, hashing, manifest updates, and validation. Use `scripts/policy_cli.py` to instantiate and hash the built-in policy. Use `scripts/bundle_cli.py` for portable/private checkpoints, exports, artifact inventories, and safe imports. Use `scripts/page_chunk_cli.py` to expand page-label maps, validate user-approved chunk ranges, split source PDFs, and create locator-only chunk packets. Use `scripts/item_grade_cli.py` to create stable display-item identities and deterministic diagnostic grades. Use `scripts/score_cli.py` for chapter-level density and overall score arithmetic. Do not ask the language model to maintain arithmetic, item-grade aggregation, or workflow state when a script can do it.
+Use `scripts/state_cli.py` for deterministic state initialization, status, dependency-aware next-step selection, state transitions, artifact registration, hashing, manifest updates, legacy workflow migration, and validation. Use `scripts/policy_cli.py` to instantiate and hash the built-in policy. Use `scripts/bundle_cli.py` for portable/private checkpoints, exports, artifact inventories, and safe imports. Use `scripts/page_chunk_cli.py` to expand page-label maps, validate user-approved chunk ranges, split source PDFs, and create locator-only chunk packets. Use `scripts/benchmark_review_cli.py` to enumerate benchmark-review denominators and enforce full-review and final-freeze gates. Use `scripts/item_grade_cli.py` to create stable display-item identities and deterministic diagnostic grades. Use `scripts/score_cli.py` for chapter-level density and overall score arithmetic. Do not ask the language model to maintain arithmetic, item-grade aggregation, or workflow state when a script can do it.
 
 Use `scripts/parallel_discovery_cli.py` for distributed discovery. `worker-receipt` validates one candidate-blind chapter artifact against canonical source, policy, page-map, and chunk hashes without mutating shared state. `integrate` validates all supplied worker artifacts before copying or registering any of them, then updates the canonical manifest and state once.
 
@@ -94,6 +97,12 @@ Use `worker-discovery` when independent chats should discover different chunks c
 Publish only `source/source-subject-chunk.<chunk-id>.json` on the worker branch. Create one commit and one pull request into the configured base branch; never merge it, update canonical control files, publish a worker checkpoint, or update a candidate evaluation repository. Before a public write, inspect the exact JSON for unexpected verbatim source text or secrets and keep the allowed public path explicit. Treat the command invocation naming the repository as authorization for this bounded branch and pull-request workflow; stop for any materially broader publication. After one explicit Auto-review denial, preserve the Library recovery copy and report the rationale without retrying the same action.
 
 Use `integrate-discoveries` only in a coordinating chat. Require the project plus explicit pull-request numbers, URLs, or branch refs; never sweep or merge unspecified pull requests. First verify every selected change is open, targets the expected base, changes exactly one allowed chapter artifact, and contains no restricted or shared control files. Fetch all artifacts and validate them together with `parallel_discovery_cli.py`; if any fails, merge none. After the full set passes, merge the selected pull requests, materialize the resulting base head, run the integration helper once, validate canonical state and manifest, create one cumulative portable checkpoint, and commit the shared control-file update. Update any candidate evaluation benchmark lock only after that canonical integration commit. Record merged PRs, commits, chunk IDs, artifact hashes, and the new benchmark head.
+
+## Benchmark synthesis, review, and freeze
+
+Do not collapse synthesis and QA into one stage. `synthesize-source-benchmark` produces an unfrozen whole-source draft from all validated chunk artifacts. `review-source-benchmark` runs in a fresh context with the candidate unseen and reconnects the exact source by SHA-256. In full mode it reviews every subject, relationship, and reader task by ID, revisits every cross-chapter subject, dispositions every unresolved relationship, inspects every fallback reader task, and performs an independent source-first omission pass. `freeze-source-benchmark` is the final gate over the draft, review inventory, review ledger, and final benchmark.
+
+Run `scripts/benchmark_review_cli.py screen` before editorial review, then `validate-review` and `validate-final`. Treat duplicate, near-duplicate, priority-distribution, and unresolved-relationship flags as diagnostic prompts, never quotas or automatic decisions. Pilot review may be sampled but cannot authorize a freeze or public completeness claims. Read [benchmark-review.md](references/benchmark-review.md) before any of these commands.
 
 Create item grades as a separate diagnostic layer under [item-grading.md](references/item-grading.md). Grade every measured locator, complete path, heading node, cross-reference, and frozen source subject; emit neutral `not_measured` records for unaudited pilot items. Include a public-safe popover payload with factors, weights or caps, confidence, explanations, and evidence IDs for every assessment. Never sum item grades into the overall 100-point result.
 
@@ -123,5 +132,6 @@ Use two built-in chapter-level calibration targets based on indexable source wor
 - Weights, metrics, density penalty, gates, grades, and public claims: [rubric.md](references/rubric.md)
 - Customer-facing method, presentation layers, and expandable evaluation criteria: [customer-methodology.md](references/customer-methodology.md)
 - Per-locator, path, heading, reference, omission grades and popover contract: [item-grading.md](references/item-grading.md)
+- Independent benchmark synthesis, QA, and final-freeze gates: [benchmark-review.md](references/benchmark-review.md)
 - Machine-readable artifact map: [json-contracts.md](references/json-contracts.md)
 - Storage modes, study layout, checkpoints, imports, and public/private separation: [storage-and-checkpoints.md](references/storage-and-checkpoints.md)

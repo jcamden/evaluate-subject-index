@@ -42,6 +42,7 @@ study-root/
 │   ├── evaluation-policy.json
 │   ├── chunks/                         restricted PDFs and sidecars
 │   ├── source-subjects/
+│   ├── source-benchmark.draft.v1.json
 │   └── source-benchmark.v1.json
 ├── candidates/
 │   └── candidate-id/
@@ -59,7 +60,7 @@ study-root/
 └── exports/
 ```
 
-The source benchmark, mapping, chunks, and policy are source-level artifacts. Candidate normalization, audits, scores, and web reports are candidate-level artifacts. Never duplicate or rebuild the source benchmark merely to evaluate another candidate.
+The benchmark draft, independent review inventory and ledger, final source benchmark, mapping, chunks, and policy are source-level artifacts. Candidate normalization, audits, scores, and web reports are candidate-level artifacts. Never duplicate or rebuild the source benchmark merely to evaluate another candidate.
 
 ## Visibility and retention
 
@@ -74,6 +75,8 @@ Retention classes:
 
 `web-report.json` must not embed restricted text. `item-assessments.json` uses short paraphrases and evidence IDs but may also reproduce candidate headings and locator labels, so register it as private by default. Register a public copy only after confirming both public-safety and authority to redistribute the candidate display. `item-inventory.json` remains private because it reproduces the complete normalized candidate structure. Public publishing is a separate action and never follows automatically from creating a bundle.
 
+Register synthesis drafts, review inventories, and review ledgers as private and required by default. They may contain source-derived analysis, diagnostic queues, and superseded judgments. Publication requires an explicit safety and authority check separate from final benchmark publication.
+
 ## Frozen artifacts
 
 Do not overwrite a frozen artifact with different bytes. Create a versioned filename, record `supersedes`, recompute dependent artifacts, and invalidate affected stages. The state and artifact manifest may be replaced because they are control files; their hashes are recorded in checkpoint metadata rather than inside themselves.
@@ -83,7 +86,7 @@ Do not overwrite a frozen artifact with different bytes. Create a versioned file
 Create a checkpoint at minimum:
 
 1. after page mapping, chunks, and policy are frozen;
-2. after the source benchmark is frozen;
+2. after the final source benchmark passes independent review and is frozen;
 3. after each candidate's complete audit and score;
 4. after the final web report; and
 5. before a conversation, environment, or operator handoff.

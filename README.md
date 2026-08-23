@@ -12,7 +12,7 @@ It evaluates one index independently against its source and a frozen policy. Com
 
 The workflow separates three questions that should not be conflated:
 
-1. **What does the source substantively treat?** Build and freeze a candidate-blind source-subject benchmark.
+1. **What does the source substantively treat?** Build, independently review, and freeze a candidate-blind source-subject benchmark.
 2. **Are the candidate's headings and locators legitimate?** Audit every expanded locator assignment against the relevant source page.
 3. **Does the complete index work as a navigation system?** Audit missing access, hierarchy, terminology, cross-references, organization, density, and mechanics.
 
@@ -69,6 +69,8 @@ prepare-source-chunks
 discover-source-subjects [chunk-id]
 worker-discovery [chunk-id] --project [repository]
 integrate-discoveries --project [repository] [pull-request-or-branch ...]
+synthesize-source-benchmark
+review-source-benchmark
 freeze-source-benchmark
 normalize-index
 prepare-locator-chunks
@@ -80,6 +82,7 @@ build-web-report
 checkpoint
 export-bundle
 import-bundle
+upgrade-benchmark-workflow
 validate
 status
 next
@@ -95,6 +98,12 @@ Source discovery can be distributed safely across independent chats:
 - `integrate-discoveries --project owner/repository <PRs...>` validates an explicit pull-request batch before merging any member, rejects shared-control or restricted files, integrates accepted chapter artifacts together, updates canonical state and manifest once, creates one cumulative checkpoint, and only then advances downstream benchmark locks.
 
 Parallel workers never edit canonical `evaluation-state.json`, `artifact-manifest.json`, cumulative checkpoints, or candidate-evaluation locks. See [`commands.md`](evaluate-subject-index/references/commands.md) and [`workflow.md`](evaluate-subject-index/references/workflow.md).
+
+## Independent benchmark QA
+
+Benchmark construction is a three-stage gate. Synthesis produces an unfrozen whole-source draft. A fresh candidate-blind review then covers every subject, relationship, and reader task by stable ID, revisits cross-chapter concepts and unresolved relationships, inspects fallback tasks, and performs an independent omission pass. Only an approving full review can authorize the final canonical freeze. Deterministic tooling inventories every denominator and rejects incomplete full-mode review ledgers.
+
+See [`benchmark-review.md`](evaluate-subject-index/references/benchmark-review.md).
 
 ## Storage and checkpoints
 
@@ -132,7 +141,7 @@ OpenAI's documentation describes a skill as a directory containing `SKILL.md` pl
 - Python 3.10 or newer
 - [`pypdf`](https://pypi.org/project/pypdf/) for physically splitting source PDFs
 
-The state manager, standard-policy builder, checkpoint/export/import tooling, page-map expansion, chunk validation, locator routing, stable item inventory, diagnostic item grading, chapter-level density calculation, and scoring arithmetic otherwise use the Python standard library.
+The state manager, standard-policy builder, benchmark-review gate, checkpoint/export/import tooling, page-map expansion, chunk validation, locator routing, stable item inventory, diagnostic item grading, chapter-level density calculation, and scoring arithmetic otherwise use the Python standard library.
 
 Install the PDF dependency with:
 
@@ -142,7 +151,7 @@ python -m pip install -r requirements.txt
 
 ## Validation
 
-The included workflow checks JSON parsing, Python syntax, page-map expansion, chunk validation, candidate-locator routing, stable item identities, granular grades and popovers, rubric arithmetic, artifact registration, portable checkpoint creation, and safe resume.
+The included workflow checks JSON parsing, Python syntax, page-map expansion, chunk validation, candidate-locator routing, benchmark-review completeness and final-freeze validation, stable item identities, granular grades and popovers, rubric arithmetic, artifact registration, portable checkpoint creation, and safe resume.
 
 Run the deterministic smoke tests locally:
 

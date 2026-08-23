@@ -5,7 +5,7 @@
   "type": "object",
   "required": ["schema_version", "evaluation_id", "artifact_manifest_path", "source", "configuration", "stages", "artifacts", "blockers"],
   "properties": {
-    "schema_version": {"const": "subject-index-evaluation-state-v3"},
+    "schema_version": {"enum": ["subject-index-evaluation-state-v3", "subject-index-evaluation-state-v4"]},
     "evaluation_id": {"type": "string", "minLength": 1},
     "artifact_manifest_path": {"const": "artifact-manifest.json"},
     "created_at": {"type": "string"},

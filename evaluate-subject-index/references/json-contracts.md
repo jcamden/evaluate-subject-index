@@ -14,7 +14,10 @@ The schemas in `schemas/` are web-oriented contracts. Additional fields are allo
 | Policy | `evaluation-policy.schema.json` | Run-specific instance of standard policy v1 with frozen scope, audience provenance, gates, and density rules |
 | Source chunk | `source-subject-chunk.schema.json` | Candidate-blind chapter/page discoveries |
 | Parallel discovery receipt | `parallel-source-discovery-receipt.schema.json` | Branch base, validation summary, publication scope, and PR handoff for one worker chunk |
-| Benchmark | `source-benchmark.schema.json` | Frozen whole-source subject graph and evidence denominator |
+| Benchmark draft | `source-benchmark-draft.schema.json` | Unfrozen whole-source synthesis awaiting independent review |
+| Benchmark review inventory | `source-benchmark-review-inventory.schema.json` | Deterministic review denominators, queues, and diagnostics |
+| Benchmark review | `source-benchmark-review.schema.json` | Independent candidate-blind editorial review and freeze recommendation |
+| Benchmark | `source-benchmark.schema.json` | Final frozen whole-source subject graph and evidence denominator |
 | Normalized candidate | `candidate-index.schema.json` | Complete paths, references, and expanded locator assignments |
 | Item inventory | `item-inventory.schema.json` | Stable path, locator, heading-node, and cross-reference identities for display and audit joins |
 | Candidate locator chunk | `candidate-locator-chunk.schema.json` | Only paths and assignments owned by one audit chunk |
@@ -49,7 +52,7 @@ Use explicit measurement states such as `measured`, `not_measured`, `uninspectab
 
 ## Canonical hashes
 
-For frozen JSON artifacts, remove the artifact's own hash field, serialize UTF-8 JSON with keys sorted and compact separators, then compute SHA-256. Record schema version, generator version, timestamp, input hashes, and superseded artifact hash when applicable.
+For frozen JSON artifacts, remove the artifact's own hash field, serialize UTF-8 JSON with keys sorted and compact separators, then compute SHA-256. Drafts also receive a deterministic canonical hash in the review inventory, but that hash does not imply freeze. Record schema version, generator version, timestamp, input hashes, and superseded artifact hash when applicable.
 
 Use relative POSIX paths rooted at the evaluation directory in state and manifests. Never store ephemeral absolute paths or make canonical identity depend on a Library ID. Register each artifact only after validation; update state last. Read [storage-and-checkpoints.md](storage-and-checkpoints.md).
 
