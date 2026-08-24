@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "candidate-audit-repository-state.schema.json",
+  "title": "GitHub-observed candidate-audit repository state",
+  "type": "object",
+  "required": ["schema_version", "candidate_project", "is_empty", "default_branch", "base_commit", "branches", "observed_at"],
+  "properties": {
+    "schema_version": {"const": "candidate-audit-repository-state-v1"},
+    "candidate_project": {"type": "string", "pattern": "^[^/\\s]+/[^/\\s]+$", "maxLength": 256},
+    "is_empty": {"type": "boolean"},
+    "default_branch": {"type": "string", "minLength": 1, "maxLength": 256},
+    "base_commit": {"type": ["string", "null"], "pattern": "^[a-fA-F0-9]{40}$"},
+    "branches": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 256}, "uniqueItems": true},
+    "observed_at": {"type": "string", "format": "date-time"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"is_empty": {"const": true}}, "required": ["is_empty"]},
+      "then": {"properties": {"base_commit": {"type": "null"}, "branches": {"maxItems": 0}}}
+    },
+    {
+      "if": {"properties": {"is_empty": {"const": false}}, "required": ["is_empty"]},
+      "then": {"properties": {"base_commit": {"type": "string", "pattern": "^[a-fA-F0-9]{40}$"}, "branches": {"minItems": 1}}}
+    }
+  ],
+  "additionalProperties": false
+}

@@ -11,6 +11,9 @@
     "candidate_sha256": {"type": "string"},
     "chunk_id": {"type": "string", "pattern": "^CHUNK-"},
     "expected_subject_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "expected_reader_task_ids": {"type": "array", "items": {"type": "string", "pattern": "^TASK-"}, "uniqueItems": true},
+    "expected_treatment_ids": {"type": "array", "items": {"type": "string", "pattern": "^TREAT-"}, "uniqueItems": true},
+    "missing_access_ownership_sha256": {"$ref": "#/$defs/sha256"},
     "subject_judgments": {
       "type": "array",
       "items": {
@@ -28,20 +31,193 @@
           "found_document_pages": {"type": "array", "items": {"type": "integer"}},
           "missed_document_pages": {"type": "array", "items": {"type": "integer"}},
           "severity": {"enum": ["none", "minor", "major", "critical"]},
-          "confidence": {"enum": ["high", "medium", "low"]}
+          "confidence": {"enum": ["high", "medium", "low"]},
+          "realistic_first_lookup_success": {"enum": ["yes", "partly", "no", "uninspectable"]},
+          "treatment_recall": {"$ref": "#/$defs/treatmentRecall"},
+          "locator_recall": {"$ref": "#/$defs/recallCounts"},
+          "missing_routes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "route_type": {"enum": ["direct", "cross_reference"]},
+                "reason_code": {"type": "string", "minLength": 1},
+                "evidence_ids": {"$ref": "#/$defs/evidenceIds"}
+              },
+              "additionalProperties": true
+            }
+          },
+          "missed_treatments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "document_page": {"type": "integer", "minimum": 1},
+                "locator_class": {"enum": ["principal", "supporting", "synthesis_or_conclusion"]},
+                "reason_code": {"type": "string", "minLength": 1},
+                "evidence_ids": {"$ref": "#/$defs/evidenceIds"}
+              },
+              "additionalProperties": true
+            }
+          },
+          "error_codes": {
+            "type": "array",
+            "items": {"enum": ["SCP", "COV", "SEL", "CON", "STA", "LOC_POS", "LOC_NEG", "CMP", "HED", "SUB", "XRF", "DEN", "MEC"]},
+            "uniqueItems": true
+          },
+          "evidence_ids": {"$ref": "#/$defs/evidenceIds"},
+          "uncertainty": {
+            "type": "object",
+            "properties": {
+              "status": {"enum": ["none", "uncertain", "uninspectable"]},
+              "reason": {"type": "string"},
+              "evidence_ids": {"$ref": "#/$defs/evidenceIds"}
+            },
+            "additionalProperties": true
+          },
+          "dependency_defects": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "defect_id": {"type": "string", "pattern": "^DEFECT-"},
+                "dependency_type": {"const": "locator_audit"},
+                "locator_id": {"type": "string", "pattern": "^LOC-"},
+                "summary": {"type": "string"},
+                "evidence_ids": {"$ref": "#/$defs/evidenceIds"}
+              },
+              "additionalProperties": true
+            }
+          }
         },
         "additionalProperties": true
       }
     },
-    "reader_task_results": {"type": "array", "items": {"type": "object"}},
+    "reader_task_results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "task_id": {"type": "string", "pattern": "^TASK-"},
+          "subject_ids": {"type": "array", "items": {"type": "string", "pattern": "^SUBJ-"}, "uniqueItems": true},
+          "result": {"enum": ["succeeds", "partially_succeeds", "fails", "uninspectable"]},
+          "access_mode": {"enum": ["direct", "cross_reference", "mixed", "none", "uninspectable"]},
+          "matched_path_ids": {"type": "array", "items": {"type": "string", "pattern": "^PATH-"}, "uniqueItems": true},
+          "severity": {"enum": ["none", "cosmetic", "minor", "major", "critical"]},
+          "confidence": {"enum": ["high", "medium", "low"]},
+          "evidence_ids": {"$ref": "#/$defs/evidenceIds"}
+        },
+        "additionalProperties": true
+      }
+    },
+    "treatment_judgments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "treatment_id": {"type": "string", "pattern": "^TREAT-"},
+          "subject_id": {"type": "string", "pattern": "^SUBJ-"},
+          "document_page": {"type": "integer", "minimum": 1},
+          "locator_class": {"enum": ["principal", "supporting", "synthesis_or_conclusion"]},
+          "status": {"enum": ["found", "missed", "uninspectable"]},
+          "evidence_ids": {"$ref": "#/$defs/evidenceIds"}
+        },
+        "additionalProperties": true
+      }
+    },
+    "reader_task_completion": {"$ref": "#/$defs/exactCompletion"},
+    "treatment_completion": {"$ref": "#/$defs/exactCompletion"},
     "completion": {
       "type": "object",
       "required": ["expected", "judged", "complete"],
       "properties": {
         "expected": {"type": "integer", "minimum": 0},
         "judged": {"type": "integer", "minimum": 0},
-        "complete": {"type": "boolean"}
+        "complete": {"type": "boolean"},
+        "subjects_unique": {"type": "boolean"},
+        "reader_tasks_expected": {"type": "integer", "minimum": 0},
+        "reader_tasks_judged": {"type": "integer", "minimum": 0},
+        "reader_tasks_unique": {"type": "boolean"},
+        "concept_coverage_counts": {"$ref": "#/$defs/coverageCounts"},
+        "locator_recall": {"$ref": "#/$defs/recallCounts"}
       }
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "benchmark_file_sha256": {"$ref": "#/$defs/sha256"},
+        "benchmark_lock_sha256": {"$ref": "#/$defs/sha256"},
+        "policy_sha256": {"$ref": "#/$defs/sha256"},
+        "page_map_sha256": {"$ref": "#/$defs/sha256"},
+        "chunk_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "normalized_candidate_file_sha256": {"$ref": "#/$defs/sha256"},
+        "item_inventory_file_sha256": {"$ref": "#/$defs/sha256"},
+        "locator_audit_set_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "evidenceIds": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^EVID-"},
+      "uniqueItems": true
+    },
+    "pageSet": {
+      "type": "array",
+      "items": {"type": "integer", "minimum": 1},
+      "uniqueItems": true
+    },
+    "recallCounts": {
+      "type": "object",
+      "properties": {
+        "expected": {"type": "integer", "minimum": 0},
+        "found": {"type": "integer", "minimum": 0},
+        "missed": {"type": "integer", "minimum": 0},
+        "rate": {"type": ["number", "null"], "minimum": 0, "maximum": 1}
+      },
+      "additionalProperties": false
+    },
+    "treatmentClassPages": {
+      "type": "object",
+      "properties": {
+        "expected_document_pages": {"$ref": "#/$defs/pageSet"},
+        "found_document_pages": {"$ref": "#/$defs/pageSet"},
+        "missed_document_pages": {"$ref": "#/$defs/pageSet"},
+        "uninspectable_document_pages": {"$ref": "#/$defs/pageSet"}
+      },
+      "additionalProperties": false
+    },
+    "treatmentRecall": {
+      "type": "object",
+      "properties": {
+        "principal": {"$ref": "#/$defs/treatmentClassPages"},
+        "supporting": {"$ref": "#/$defs/treatmentClassPages"},
+        "synthesis_or_conclusion": {"$ref": "#/$defs/treatmentClassPages"}
+      },
+      "additionalProperties": false
+    },
+    "coverageCounts": {
+      "type": "object",
+      "properties": {
+        "complete": {"type": "integer", "minimum": 0},
+        "partial": {"type": "integer", "minimum": 0},
+        "missing": {"type": "integer", "minimum": 0},
+        "uninspectable": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "exactCompletion": {
+      "type": "object",
+      "properties": {
+        "expected": {"type": "integer", "minimum": 0},
+        "judged": {"type": "integer", "minimum": 0},
+        "unique": {"type": "boolean"},
+        "complete": {"type": "boolean"}
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": true

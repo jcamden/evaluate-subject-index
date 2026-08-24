@@ -25,6 +25,8 @@ Each stage status is `not_started`, `in_progress`, `completed`, or `blocked`. A 
 
 Candidate preparation is a parallel worker lane, not a numbered state stage. It may begin after source identity, edition, page map, chunks, policy, rubric, and audit mode are frozen, while source discovery or benchmark synthesis/review continues in candidate-blind contexts. `integrate-candidate-preparation` is blocked until final benchmark freeze; successful integration fulfills stage 10 (`candidate_normalization`) without changing the state schema or weakening the linear candidate-audit dependencies.
 
+Parallel locator and missing-access workers are also auxiliary lanes, not numbered stages. Coordinator integration fulfills the existing stage 12 (`locator_audit`) or stage 13 (`missing_access_audit`). A partial accepted batch keeps that stage `in_progress`; only exact coverage of every required frozen chunk and denominator completes it. The canonical sequential commands remain valid and `next` continues to name them, while `help`, `status`, and `next` may report dependency-satisfied parallel alternatives separately.
+
 Each completion artifact is registered in `artifact-manifest.json` using a relative path, SHA-256, visibility, retention class, and frozen status. Save the manifest before marking the stage complete in `evaluation-state.json`. Chat text is never a completion artifact.
 
 `checkpoint`, `export-bundle`, and `import-bundle` are persistence commands rather than evaluation stages. They do not change editorial judgments or dependency order. Read [storage-and-checkpoints.md](storage-and-checkpoints.md).
@@ -83,6 +85,38 @@ The preparation worker may extract layout, normalize delivered content, expand l
 
 The coordinator owns the fan-in. It validates one explicitly named PR/branch and one explicitly named private receipt/recovery root, resolves the explicit final benchmark commit, and obtains fresh premerge-publication and benchmark Git evidence directly from connector/API output. After merging only the public-safe proposal, it obtains separate merged-PR API evidence, creates a compatible benchmark lock binding all evidence hashes and the public blobs, and registers the exact private bytes. User-authored assertions never substitute for API evidence. The manifest is updated before state, and state is updated once. Read [candidate-preparation.md](candidate-preparation.md).
 
+## Parallel candidate-audit workers
+
+Use this schedule; do not overlap locator and missing-access workers across the stage boundary:
+
+```text
+candidate preparation worker
+        ↓
+integrate candidate preparation
+        ↓
+prepare locator chunks
+        ↓
+locator-audit workers in parallel
+        ↓
+integrate explicit locator-audit PR batches
+        ↓
+missing-access workers in parallel
+        ↓
+integrate explicit missing-access PR batches
+        ↓
+single global structure audit
+        ↓
+item assessments and scoring
+        ↓
+web report
+```
+
+Every locator worker owns exactly one frozen locator packet. Every missing-access worker owns the exact benchmark subjects and reader tasks assigned to one chunk by the deterministic ownership rule. Workers retain complete audit ledgers, receipts, and recovery checkpoints privately; each public branch contains one aggregate safety-checked report and no candidate content or shared controls. Workers never update canonical state, manifests, benchmark locks, cumulative checkpoints, integration records, or later-stage artifacts.
+
+The coordinator receives an explicit proposal list plus a one-to-one private receipt/recovery binding for each member. It obtains fresh GitHub evidence directly from connector/API output, validates the whole selected batch in a disposable area, and merges none if any member fails. After merging the selected public-safe reports, it obtains fresh merged evidence, materializes exact private bytes, records provenance, saves the manifest before state, validates, checkpoints, and makes one shared-control commit. Partial batches are supported without permitting missing-access work before full canonical locator completion.
+
+The global structure audit remains coordinated and single because its judgment unit is the index as a whole. Read [parallel-candidate-audits.md](parallel-candidate-audits.md) for ownership, privacy, recovery, integration, and evidence contracts.
+
 ## Benchmark QA gate
 
 The benchmark is not frozen when synthesis ends. Synthesis creates a draft; a fresh, candidate-blind reviewer then checks the draft against the exact source and complete deterministic review inventory. Full review requires exact ID coverage for every subject, relationship, reader task, cross-chapter subject, unresolved relationship, and fallback reader task, plus an independent omission pass. Only an approving full review can authorize the final freeze. Read [benchmark-review.md](benchmark-review.md).
@@ -92,6 +126,8 @@ The workflow uses state schema v4 only. An isolated preparation receipt does not
 ## Resume behavior
 
 `status` trusts neither filenames nor conversational memory alone. It checks the state file, hashes, manifests, and completion counts. `next` returns the earliest valid unfinished stage. If a completed artifact's hash changes, mark that stage and all dependent stages `blocked` until revalidated or rerun.
+
+For `locator_audit` and `missing_access_audit`, `next` retains the canonical sequential command. Parallel worker and coordinator operations are reported as auxiliary alternatives only when their exact dependency gates are satisfied. Missing-access worker availability requires the entire canonical locator-audit stage, not merely the matching chunk.
 
 When resuming in another chat or environment, materialize the active Library folder or import the latest checkpoint, validate it, reconnect excluded restricted inputs by SHA-256, then run `status` and `next`.
 
@@ -108,6 +144,8 @@ When resuming in another chat or environment, materialize the active Library fol
 - Changing source edition identity, page mapping, chunk identity, policy, rubric, or audit mode invalidates any pending candidate-preparation receipt. A preparation worker may survive benchmark-content revisions only when every receipt-bound source-level identity remains exact.
 - Changing prepared candidate bytes, layout extraction, normalization, inventory, exception ledger, or QA invalidates the worker receipt, public projection, recovery bundle, and any pending integration. Never edit accepted normalization during integration.
 - Changing candidate normalization or item inventory invalidates locator packets, locator audit, missing-access, structure, item assessments, score, and web report stages.
+- Changing a locator packet invalidates its locator worker receipt, public report, recovery bundle, integrated audit, and every dependent missing-access artifact. Changing the accepted canonical locator-audit set invalidates all pending missing-access worker receipts, reports, and integrations.
+- Changing missing-access ownership inputs, required subject/task denominators, or the canonical locator dependency invalidates the affected missing-access worker receipt, public report, recovery bundle, and integrated artifact.
 - Adjudicating a judgment invalidates item assessments, scoring, and web reporting only unless it changes the benchmark.
 - Changing presentation text without changing evaluation facts requires only rebuilding the web report.
 

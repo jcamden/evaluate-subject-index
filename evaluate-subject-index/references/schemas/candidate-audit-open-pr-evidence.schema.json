@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "candidate-audit-open-pr-evidence.schema.json",
+  "title": "GitHub-observed open candidate-audit worker pull request",
+  "type": "object",
+  "required": [
+    "schema_version", "evidence_source", "audit_kind", "candidate_project", "pull_request",
+    "pull_request_url", "state", "merged", "base_branch", "observed_base_head_commit",
+    "head_branch", "head_commit", "worker_base_commit", "merge_base_commit", "commit_count",
+    "changed_files", "observed_at"
+  ],
+  "properties": {
+    "schema_version": {"const": "candidate-audit-open-pr-evidence-v1"},
+    "evidence_source": {"const": "github_api"},
+    "audit_kind": {"enum": ["locator_audit", "missing_access"]},
+    "candidate_project": {"$ref": "#/$defs/project"},
+    "pull_request": {"type": "integer", "minimum": 1},
+    "pull_request_url": {"type": "string", "pattern": "^https://github\\.com/[^/]+/[^/]+/pull/[1-9][0-9]*$"},
+    "state": {"const": "open"},
+    "merged": {"const": false},
+    "base_branch": {"type": "string", "minLength": 1, "maxLength": 256},
+    "observed_base_head_commit": {"$ref": "#/$defs/commit"},
+    "head_branch": {"type": "string", "minLength": 1, "maxLength": 256},
+    "head_commit": {"$ref": "#/$defs/commit"},
+    "worker_base_commit": {"$ref": "#/$defs/commit"},
+    "merge_base_commit": {"$ref": "#/$defs/commit"},
+    "commit_count": {"const": 1},
+    "changed_files": {"$ref": "#/$defs/changedFiles"},
+    "observed_at": {"type": "string", "format": "date-time"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"audit_kind": {"const": "locator_audit"}}, "required": ["audit_kind"]},
+      "then": {
+        "properties": {
+          "head_branch": {"type": "string", "pattern": "^locator-audit/chunk-[a-z0-9._-]+$"},
+          "changed_files": {
+            "type": "array", "minItems": 1, "maxItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["path", "blob_sha", "file_sha256"],
+              "properties": {
+                "path": {"type": "string", "pattern": "^validation/locator-audit-worker\\.CHUNK-[A-Za-z0-9._-]+\\.json$"},
+                "blob_sha": {"$ref": "#/$defs/blob"},
+                "file_sha256": {"$ref": "#/$defs/sha256"}
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"audit_kind": {"const": "missing_access"}}, "required": ["audit_kind"]},
+      "then": {
+        "properties": {
+          "head_branch": {"type": "string", "pattern": "^missing-access-audit/chunk-[a-z0-9._-]+$"},
+          "changed_files": {
+            "type": "array", "minItems": 1, "maxItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["path", "blob_sha", "file_sha256"],
+              "properties": {
+                "path": {"type": "string", "pattern": "^validation/missing-access-audit-worker\\.CHUNK-[A-Za-z0-9._-]+\\.json$"},
+                "blob_sha": {"$ref": "#/$defs/blob"},
+                "file_sha256": {"$ref": "#/$defs/sha256"}
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "commit": {"type": "string", "pattern": "^[a-fA-F0-9]{40}$"},
+    "blob": {"type": "string", "pattern": "^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$"},
+    "project": {"type": "string", "pattern": "^[^/\\s]+/[^/\\s]+$", "maxLength": 256},
+    "changedFiles": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["path", "blob_sha", "file_sha256"],
+        "properties": {
+          "path": {"type": "string", "pattern": "^validation/(?:locator-audit-worker|missing-access-audit-worker)\\.CHUNK-[A-Za-z0-9._-]+\\.json$"},
+          "blob_sha": {"$ref": "#/$defs/blob"},
+          "file_sha256": {"$ref": "#/$defs/sha256"}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -387,6 +387,42 @@ def candidate_preparation_action(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def candidate_audit_parallel_actions(state: dict[str, Any]) -> list[dict[str, Any]]:
+    """Describe additive worker lanes without changing the canonical v4 next stage."""
+    stages = state.get("stages", {}) if isinstance(state.get("stages"), dict) else {}
+    locator_ready = stages.get("locator_chunk_preparation", {}).get("status") == "completed"
+    locator_complete = stages.get("locator_audit", {}).get("status") == "completed"
+    missing_complete = stages.get("missing_access_audit", {}).get("status") == "completed"
+
+    locator_status = "completed" if locator_complete else ("available" if locator_ready else "blocked")
+    missing_ready = locator_complete
+    missing_status = "completed" if missing_complete else ("available" if missing_ready else "blocked")
+    return [
+        {
+            "command": "worker-locator-audit",
+            "coordinator_command": "integrate-locator-audits",
+            "lane": "auxiliary_isolated_chunk_workers",
+            "fulfills_stage": "locator_audit",
+            "status": locator_status,
+            "available": locator_status == "available",
+            "unmet_dependencies": [] if locator_ready else ["locator_chunk_preparation"],
+            "canonical_next_unchanged": True,
+            "selection_rule": "Coordinator integration requires explicit pull requests and exact receipt/recovery bindings.",
+        },
+        {
+            "command": "worker-missing-access-audit",
+            "coordinator_command": "integrate-missing-access-audits",
+            "lane": "auxiliary_isolated_chunk_workers",
+            "fulfills_stage": "missing_access_audit",
+            "status": missing_status,
+            "available": missing_status == "available",
+            "unmet_dependencies": [] if missing_ready else ["locator_audit"],
+            "canonical_next_unchanged": True,
+            "selection_rule": "Coordinator integration requires explicit pull requests and exact receipt/recovery bindings.",
+        },
+    ]
+
+
 def state_summary(state: dict[str, Any], state_path: Path | None = None) -> dict[str, Any]:
     errors, warnings = validate_state(state, state_path=state_path)
     stages = state.get("stages", {})
@@ -404,7 +440,7 @@ def state_summary(state: dict[str, Any], state_path: Path | None = None) -> dict
         "artifacts": state.get("artifacts", []),
         "blockers": state.get("blockers", []),
         "next_actions": [] if next_stage(state) is None else [next_stage(state)],
-        "parallel_actions": [candidate_preparation_action(state)],
+        "parallel_actions": [candidate_preparation_action(state), *candidate_audit_parallel_actions(state)],
         "errors": errors,
         "warnings": warnings,
     }
@@ -497,7 +533,7 @@ def command_next(args: argparse.Namespace) -> None:
         "ok": not errors,
         "evaluation_id": state.get("evaluation_id"),
         "next_actions": [] if next_stage(state) is None else [next_stage(state)],
-        "parallel_actions": [candidate_preparation_action(state)],
+        "parallel_actions": [candidate_preparation_action(state), *candidate_audit_parallel_actions(state)],
         "errors": errors,
         "warnings": warnings,
     }

@@ -1,6 +1,6 @@
 ---
 name: evaluate-subject-index
-description: Run a repeatable, source-grounded evaluation of a finished subject index using a built-in standard policy. Use when a user wants to map PDF document pages to Arabic, Roman, prefixed, or irregular source labels; define and prepare audit chunks; discover substantively treated subjects serially or through parallel branch-and-pull-request workers; integrate distributed discoveries; synthesize, independently review, and freeze a candidate-blind source benchmark; prepare candidate intake, provenance, layout normalization, and full QA in an isolated parallel worker; normalize and route index locators; audit every locator; find missing access; judge hierarchy, density, and navigation; persist outputs to Library or portable bundles; resume an evaluation; or produce JSON for a web report.
+description: Run a repeatable, source-grounded evaluation of a finished subject index using a built-in standard policy. Use when a user wants to map PDF document pages to Arabic, Roman, prefixed, or irregular source labels; define and prepare audit chunks; discover substantively treated subjects serially or through parallel branch-and-pull-request workers; integrate distributed discoveries; synthesize, independently review, and freeze a candidate-blind source benchmark; prepare candidate intake, provenance, layout normalization, and full QA in an isolated parallel worker; normalize and route index locators; audit locators and missing access serially or through collision-safe chapter workers and coordinator integration; judge hierarchy, density, and navigation; persist outputs to Library or portable bundles; resume an evaluation; or produce JSON for a web report.
 ---
 
 # Evaluate Subject Index
@@ -32,7 +32,11 @@ Supported commands:
 - `normalize-index`
 - `prepare-locator-chunks`
 - `audit-locators [chunk-id]`
+- `worker-locator-audit [chunk-id] --project [repository]`
+- `integrate-locator-audits --project [repository] [pull-request-or-branch ...]`
 - `audit-missing-access [chunk-id]`
+- `worker-missing-access-audit [chunk-id] --project [repository]`
+- `integrate-missing-access-audits --project [repository] [pull-request-or-branch ...]`
 - `audit-index-structure`
 - `score-index`
 - `build-web-report`
@@ -93,6 +97,8 @@ Use `scripts/parallel_discovery_cli.py` for distributed discovery. `worker-recei
 
 Use `scripts/candidate_preparation_cli.py` for isolated candidate preparation. Candidate preparation is mechanical fidelity work, not candidate evaluation: it may extract layout, normalize delivered records, expand locators through the frozen page map, construct the item inventory, and account for every normalized item without consulting benchmark subjects or making quality judgments. Use `scripts/candidate_layout_adapters.py` for the common geometry contract and adapter registry. Read [candidate-preparation.md](references/candidate-preparation.md) before either candidate-preparation command.
 
+Use `scripts/parallel_candidate_audit_cli.py` for parallel locator and missing-access audit workers and coordinator integration. It deterministically binds private worker artifacts to one public-safe proposal, validates identities and denominators, preflights explicit batches, integrates accepted private bytes, and computes stage completion. It does not replace the canonical locator-audit or missing-access judgment schemas.
+
 ## Parallel source discovery
 
 Use `worker-discovery` when independent chats should discover different chunks concurrently. Require a chunk ID and GitHub project/repository. Resolve an immutable base commit, derive the default branch `source-discovery/<lowercase-chunk-id>`, and stop if that branch already exists. Import the same validated checkpoint in an isolated worker directory, reconnect the exact source by SHA-256, perform normal candidate-blind discovery, and generate a worker receipt. Keep branch-local recovery control files and checkpoints under a chunk-specific Library worker folder.
@@ -123,6 +129,14 @@ The JSON evidence helpers validate shape, freshness, hashes, and cross-artifact 
 
 Preserve every delivered hierarchy level and every mixed or malformed record during preparation. A third-level heading is retained in candidate schema v2 and later fails the applicable quality gate; it is not flattened, repaired, or discarded. Keep extraction confidence separate from editorial judgment and keep authoritative-copy fidelity separate from internal PDF completeness.
 
+## Parallel candidate audits
+
+After locator packets are complete, locator-audit workers may run concurrently by chunk. Only `integrate-locator-audits` may accept their private artifacts and advance the existing `locator_audit` stage. Missing-access workers remain blocked until every locator audit is canonically integrated and the evaluation validates; only then may they run concurrently by chunk, with `integrate-missing-access-audits` advancing the existing `missing_access_audit` stage. These lanes add no numbered state stages, and the sequential commands remain valid alternatives.
+
+Each worker preserves its complete audit, receipt, state, manifest, and recovery bundle privately before publishing one aggregate public-safe report on a unique branch. A coordinator accepts only explicitly named pull requests or branches, each bound one-to-one to an explicitly named private receipt and recovery root. It obtains fresh GitHub evidence directly from connector/API output, validates the entire selected batch before merging any member, registers exact private bytes, updates the manifest before state, and completes a stage only at full frozen-manifest coverage.
+
+Read [parallel-candidate-audits.md](references/parallel-candidate-audits.md) before either worker or integration command.
+
 ## Persistence rule
 
 Never leave a required artifact only in chat text or an ephemeral workspace. Keep the canonical representation in a user-selected evaluation directory with relative paths, `evaluation-state.json`, and `artifact-manifest.json`. Validate and hash each artifact, persist it, update the manifest, and update state last. In ChatGPT, prefer `hybrid` storage when Library is available: save the active study folder to Library and produce downloadable checkpoints. Otherwise use `local` and provide a checkpoint before a conversation boundary. Read [storage-and-checkpoints.md](references/storage-and-checkpoints.md) before initializing, checkpointing, exporting, importing, or resuming a study.
@@ -152,4 +166,5 @@ Use two built-in chapter-level calibration targets based on indexable source wor
 - Independent benchmark synthesis, QA, and final-freeze gates: [benchmark-review.md](references/benchmark-review.md)
 - Machine-readable artifact map: [json-contracts.md](references/json-contracts.md)
 - Parallel candidate preparation, adapters, QA, publication safety, and benchmark locking: [candidate-preparation.md](references/candidate-preparation.md)
+- Parallel locator and missing-access workers, coordinator integration, privacy, and recovery: [parallel-candidate-audits.md](references/parallel-candidate-audits.md)
 - Storage modes, study layout, checkpoints, imports, and public/private separation: [storage-and-checkpoints.md](references/storage-and-checkpoints.md)

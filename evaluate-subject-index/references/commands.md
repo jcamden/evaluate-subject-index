@@ -4,7 +4,7 @@ Commands are a prompt vocabulary implemented by the skill, not assumed to be nat
 
 ## `help [command]`
 
-Show purpose, syntax, required inputs, generated artifact, dependencies, completion test, and likely next command. With no argument, return every command in workflow order and identify whether each is available, blocked, or complete from the current state.
+Show purpose, syntax, required inputs, generated artifact, dependencies, completion test, and likely next command. With no argument, return every canonical stage command plus applicable worker and coordinator commands in workflow order, and identify whether each is available, blocked, or complete from the current state. Label parallel commands as auxiliary lanes rather than numbered stages.
 
 ## `initialize`
 
@@ -14,11 +14,11 @@ Infer intended readership from the source. Do not ask unless confidence is low o
 
 ## `status`
 
-Read `evaluation-state.json`; validate it; return completed, active, blocked, and available stages, relevant artifact paths and hashes, and comparability warnings. Do no substantive evaluation.
+Read `evaluation-state.json`; validate it; return completed, active, blocked, and available stages, relevant artifact paths and hashes, and comparability warnings. When a candidate audit stage can be parallelized, also report the applicable worker and coordinator alternatives without changing canonical stage order. Do no substantive evaluation.
 
 ## `next`
 
-Return exactly the earliest dependency-satisfied incomplete stage, the command to run, required inputs, completion test, and blockers. Do not skip a dependency because later files happen to exist.
+Return exactly the earliest dependency-satisfied incomplete stage, its canonical sequential command, required inputs, completion test, and blockers. Report dependency-satisfied worker or coordinator alternatives separately; never replace the canonical stage command or skip a dependency because later files happen to exist.
 
 ## `map-pages`
 
@@ -189,11 +189,51 @@ For each supplied assignment, test whether its mapped source page substantively 
 
 This command measures proposed-locator precision and entry legitimacy. It does not measure omissions or recall.
 
+This remains the sequential command. It uses the same substantive judgment contract and canonical `locator-audit-v1` artifact as `worker-locator-audit`.
+
+## `worker-locator-audit [chunk-id] --project [candidate-evaluation-repository]`
+
+Required: one exact chunk ID and candidate-evaluation repository; completed and validated candidate normalization; final candidate benchmark lock; complete locator-packet preparation; the corresponding locator-only packet; the exact source chunk and sidecar reconnected by source SHA-256; frozen policy, page map, and chunk manifest; normalized candidate and item inventory; an immutable candidate-repository base commit; and a unique private worker recovery root.
+
+Import the validated candidate checkpoint in isolation and verify every source, candidate, benchmark, policy, page-map, chunk-manifest, normalized-candidate, inventory, and packet identity. Audit every packet assignment exactly once, preserve the complete heading path, exclude foreign-chunk assignments, and use only `supported`, `partially_supported`, `unsupported`, or `uninspectable`. Store public-safe paraphrased evidence, evidence IDs, error codes, severity, and confidence in the complete private `locator-audit-v1` artifact. Do not perform missing-access, global-structure, density, item-assessment, scoring, or reporting work.
+
+Default the branch to `locator-audit/<lowercase-chunk-id>` and refuse an existing branch. Preserve the private audit, receipt, worker state, worker manifest, and recovery ZIP beneath `workers/locator-audit/<chunk-id>/` before publication. Publish exactly `validation/locator-audit-worker.<chunk-id>.json`, in one commit and one open, unmerged pull request. Never publish the complete audit or receipt, update canonical state or manifests, merge the pull request, or modify the benchmark repository.
+
+Use `scripts/parallel_candidate_audit_cli.py build-locator-worker`, `bind-publication`, and `validate-worker`. Read [parallel-candidate-audits.md](parallel-candidate-audits.md). The completion test is: exact assignment accounting and all private hashes validate; recovery is durable; the aggregate report passes its strict allowlist and safety scan; and the one-file pull request remains open and unmerged. A publication denial preserves private recovery and returns `blocked`.
+
+## `integrate-locator-audits --project [candidate-evaluation-repository] [pull-request-or-branch ...]`
+
+Required: the canonical validated candidate study, candidate repository, an explicit nonempty list of locator-worker pull requests or branches, and one explicit private receipt/recovery-root binding for each proposal. Never sweep open pull requests, worker folders, or Library, and never infer private recovery material from a candidate or chunk ID.
+
+Act as the sole coordinator. Obtain fresh open-PR evidence directly from the GitHub connector/API for every selected proposal. Before merging anything, verify the expected base, `locator-audit/<chunk-id>` head branch, immutable commits, exact one-file public allowlist, public hashes and safety, unique chunk ownership, matching private receipt and recovery bytes, all frozen identities, exact packet and owned-page denominators, and one judgment for every packet assignment. Reject overlaps, duplicate or missing assignment IDs, foreign assignments, stale or caller-authored API evidence, and conflicting reintegration. Preflight the complete selected batch transactionally with `scripts/parallel_candidate_audit_cli.py preflight-batch`; if any member fails, merge none.
+
+After the complete selected batch passes, merge only those proposals and obtain fresh merged-PR evidence directly from the connector/API. Run `integrate-batch` once to materialize the exact accepted private audits at versioned canonical paths, record worker/PR/commit/receipt/recovery provenance, update the artifact manifest before state, and validate the canonical evaluation. Partial batches leave `locator_audit` in progress; complete it only when every frozen locator chunk has one accepted, conflict-free audit whose assignment union exactly matches all packets. Create one cumulative private checkpoint and one shared-control commit. An identical already-integrated chunk is recognized idempotently; different bytes for that chunk are rejected.
+
 ## `audit-missing-access [chunk-id]`
 
 Required: frozen benchmark, normalized candidate, locator judgments, source, and chunk manifest.
 
 For each frozen essential or major source subject owned by the chunk, test whether the candidate provides a plausible direct or cross-referenced access route, preserves required distinctions, and includes principal/supporting/conclusion passages under policy. Test important subsidiary or localized subjects when frozen as scored. Exclude nonindexable or unavailable source matter from denominators. Output concept coverage, locator recall, missing routes, missed treatments, and reader-task results. This is the source-to-index pass that prevents circular evaluation.
+
+This remains the sequential command. It uses the same substantive judgment contract and canonical `missing-access-audit-v1` artifact as `worker-missing-access-audit`.
+
+## `worker-missing-access-audit [chunk-id] --project [candidate-evaluation-repository]`
+
+Required: one exact chunk ID and candidate repository; completed candidate normalization and locator-packet preparation; a canonically complete locator-audit stage; a valid canonical evaluation; frozen final benchmark; complete normalized candidate and inventory; the complete canonical locator-audit set; source/candidate identities; frozen policy, page map, and chunk manifest; exact source chunk and sidecar reconnected by source SHA-256; immutable candidate-repository base commit; and a unique private worker recovery root. A per-chunk locator result never satisfies the complete-locator-stage gate.
+
+For every scored benchmark subject and reader task deterministically owned by the chunk, test direct and cross-reference access, preserved distinctions and stance, principal/supporting/synthesis-or-conclusion treatments, realistic first-lookup success, locator recall, missed treatments, and missing routes. Account for required subject IDs and task IDs exactly once and preserve concept-coverage and locator-recall denominators separately. Record severity, confidence, uncertainty, evidence IDs, and any formal dependency defect without silently reinterpreting locator legitimacy.
+
+Default the branch to `missing-access-audit/<lowercase-chunk-id>` and refuse an existing branch. Preserve the complete private audit, receipt, state, manifest, and recovery ZIP beneath `workers/missing-access-audit/<chunk-id>/`. Publish exactly `validation/missing-access-audit-worker.<chunk-id>.json` in one commit and one open, unmerged pull request. Do not change the benchmark or candidate, perform global-structure or density work, score, report, update canonical state, or merge the pull request.
+
+Use `scripts/parallel_candidate_audit_cli.py build-missing-access-worker`, `bind-publication`, and `validate-worker`. Read [parallel-candidate-audits.md](parallel-candidate-audits.md). The completion test is: exact subject/task and treatment accounting plus all private hashes validate; recovery is durable; the aggregate report passes its allowlist and safety scan; and the one-file pull request remains open and unmerged.
+
+## `integrate-missing-access-audits --project [candidate-evaluation-repository] [pull-request-or-branch ...]`
+
+Required: a valid canonical study with complete integrated locator audits; candidate repository; an explicit nonempty list of missing-access worker pull requests or branches; and one explicit private receipt/recovery-root binding for every proposal. Never sweep or infer proposals or private recovery material.
+
+Obtain fresh open-PR evidence directly from the GitHub connector/API. Validate the exact one-file public allowlist, unique chunk ownership, all frozen identities and dependency hashes, the complete canonical locator-audit set, each private recovery artifact, and exact subject, reader-task, concept-coverage, treatment, and locator-recall denominators. Reject missing, duplicated, foreign-chunk, or conflicting judgments and any incompatible locator-audit dependency. Preflight the entire selected batch with `preflight-batch`; merge none when any member fails.
+
+After successful preflight, merge only the selected proposals, obtain fresh merged-PR evidence, and run `integrate-batch` once. Materialize exact private bytes at versioned canonical paths, record complete provenance, update manifest first and state last, and validate. Partial batches leave `missing_access_audit` in progress; complete it only when all required chunks, subjects, reader tasks, and treatment denominators are accepted exactly once. Then create one cumulative private checkpoint and one shared-control commit. Recognize identical reintegration idempotently and reject conflicting bytes.
 
 ## `audit-index-structure`
 

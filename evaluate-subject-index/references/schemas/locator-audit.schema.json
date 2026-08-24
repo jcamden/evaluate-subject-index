@@ -7,6 +7,7 @@
   "properties": {
     "schema_version": {"const": "locator-audit-v1"},
     "evaluation_id": {"type": "string"},
+    "candidate_id": {"type": "string", "minLength": 1},
     "candidate_sha256": {"type": "string"},
     "chunk_id": {"type": "string", "pattern": "^CHUNK-"},
     "expected_locator_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
@@ -25,6 +26,11 @@
           "treatment_class": {"enum": ["substantive", "passing_mention", "attribution_only", "citation_only", "incidental_example", "absent", "unavailable", "mixed"]},
           "judgment": {"enum": ["supported", "partially_supported", "unsupported", "uninspectable"]},
           "evidence_summary": {"type": "string"},
+          "evidence_ids": {
+            "type": "array",
+            "items": {"type": "string", "pattern": "^EVID-"},
+            "uniqueItems": true
+          },
           "confidence": {"enum": ["high", "medium", "low"]},
           "error_codes": {"type": "array", "items": {"enum": ["SCP", "SEL", "CON", "STA", "LOC_POS", "CMP", "HED", "SUB", "XRF", "DEN", "MEC"]}},
           "severity": {"enum": ["none", "cosmetic", "minor", "major", "critical"]}
@@ -39,8 +45,56 @@
         "expected": {"type": "integer", "minimum": 0},
         "judged": {"type": "integer", "minimum": 0},
         "unique": {"type": "boolean"},
-        "complete": {"type": "boolean"}
+        "complete": {"type": "boolean"},
+        "uninspectable": {"type": "integer", "minimum": 0},
+        "status_counts": {"$ref": "#/$defs/locatorStatusCounts"},
+        "severity_counts": {"$ref": "#/$defs/severityCounts"},
+        "error_code_counts": {"$ref": "#/$defs/errorCodeCounts"}
       }
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "benchmark_sha256": {"$ref": "#/$defs/sha256"},
+        "benchmark_lock_sha256": {"$ref": "#/$defs/sha256"},
+        "policy_sha256": {"$ref": "#/$defs/sha256"},
+        "page_map_sha256": {"$ref": "#/$defs/sha256"},
+        "chunk_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "normalized_candidate_file_sha256": {"$ref": "#/$defs/sha256"},
+        "item_inventory_file_sha256": {"$ref": "#/$defs/sha256"},
+        "locator_packet_file_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "locatorStatusCounts": {
+      "type": "object",
+      "properties": {
+        "supported": {"type": "integer", "minimum": 0},
+        "partially_supported": {"type": "integer", "minimum": 0},
+        "unsupported": {"type": "integer", "minimum": 0},
+        "uninspectable": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "severityCounts": {
+      "type": "object",
+      "properties": {
+        "none": {"type": "integer", "minimum": 0},
+        "cosmetic": {"type": "integer", "minimum": 0},
+        "minor": {"type": "integer", "minimum": 0},
+        "major": {"type": "integer", "minimum": 0},
+        "critical": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "errorCodeCounts": {
+      "type": "object",
+      "propertyNames": {"enum": ["SCP", "COV", "SEL", "CON", "STA", "LOC_POS", "LOC_NEG", "CMP", "HED", "SUB", "XRF", "DEN", "MEC"]},
+      "additionalProperties": {"type": "integer", "minimum": 0}
     }
   },
   "additionalProperties": true

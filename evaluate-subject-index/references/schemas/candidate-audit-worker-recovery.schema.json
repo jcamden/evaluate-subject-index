@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "candidate-audit-worker-recovery.schema.json",
+  "title": "Private candidate-audit worker recovery metadata",
+  "type": "object",
+  "required": ["schema_version", "recovery_metadata_sha256", "audit_kind", "evaluation_id", "candidate_id", "chunk_id", "identities", "checkpoint_ref", "artifacts", "excluded"],
+  "properties": {
+    "schema_version": {"const": "candidate-audit-worker-recovery-v1"},
+    "recovery_metadata_sha256": {"$ref": "#/$defs/sha256"},
+    "audit_kind": {"enum": ["locator_audit", "missing_access"]},
+    "evaluation_id": {"type": "string", "minLength": 1, "maxLength": 256},
+    "candidate_id": {"type": "string", "minLength": 1, "maxLength": 256},
+    "chunk_id": {"type": "string", "pattern": "^CHUNK-[A-Za-z0-9._-]+$"},
+    "identities": {
+      "type": "object",
+      "required": ["source_sha256", "candidate_sha256", "benchmark_sha256", "benchmark_lock_sha256", "policy_sha256", "page_map_sha256", "chunk_manifest_sha256", "normalized_candidate_file_sha256", "item_inventory_file_sha256"],
+      "properties": {
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "candidate_sha256": {"$ref": "#/$defs/sha256"},
+        "benchmark_sha256": {"$ref": "#/$defs/sha256"},
+        "benchmark_lock_sha256": {"$ref": "#/$defs/sha256"},
+        "policy_sha256": {"$ref": "#/$defs/sha256"},
+        "page_map_sha256": {"$ref": "#/$defs/sha256"},
+        "chunk_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "normalized_candidate_file_sha256": {"$ref": "#/$defs/sha256"},
+        "item_inventory_file_sha256": {"$ref": "#/$defs/sha256"},
+        "locator_packet_file_sha256": {"$ref": "#/$defs/sha256"},
+        "missing_access_ownership_sha256": {"$ref": "#/$defs/sha256"},
+        "locator_audit_set_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "checkpoint_ref": {"type": "string", "minLength": 1, "maxLength": 256},
+    "artifacts": {
+      "type": "array",
+      "minItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": ["artifact", "path", "sha256", "byte_length", "visibility"],
+        "properties": {
+          "artifact": {"enum": ["private_audit", "worker_state", "worker_manifest", "public_report", "ownership_plan"]},
+          "path": {"$ref": "#/$defs/relativePath"},
+          "sha256": {"$ref": "#/$defs/sha256"},
+          "byte_length": {"type": "integer", "minimum": 0},
+          "visibility": {"enum": ["private", "public"]}
+        },
+        "additionalProperties": false
+      }
+    },
+    "excluded": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "uniqueItems": true,
+      "items": {"enum": ["source PDF bytes", "candidate PDF bytes", "raw extraction", "absolute local paths", "Library identifiers", "credentials", "secrets"]},
+      "allOf": [
+        {"contains": {"const": "source PDF bytes"}},
+        {"contains": {"const": "candidate PDF bytes"}},
+        {"contains": {"const": "raw extraction"}},
+        {"contains": {"const": "absolute local paths"}},
+        {"contains": {"const": "Library identifiers"}},
+        {"contains": {"const": "credentials"}},
+        {"contains": {"const": "secrets"}}
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"audit_kind": {"const": "locator_audit"}}, "required": ["audit_kind"]},
+      "then": {"properties": {"identities": {"required": ["locator_packet_file_sha256"]}}}
+    },
+    {
+      "if": {"properties": {"audit_kind": {"const": "missing_access"}}, "required": ["audit_kind"]},
+      "then": {"properties": {"identities": {"required": ["missing_access_ownership_sha256", "locator_audit_set_sha256"]}}}
+    }
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "relativePath": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$)).+"}
+  },
+  "additionalProperties": false
+}

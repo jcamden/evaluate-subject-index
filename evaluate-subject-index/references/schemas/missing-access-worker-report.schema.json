@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "missing-access-worker-report.schema.json",
+  "title": "Aggregate public-safe missing-access worker report",
+  "type": "object",
+  "required": [
+    "schema_version", "report_sha256", "audit_kind", "evaluation_id", "candidate_id",
+    "chunk_id", "source_unit_label", "immutable_base_commit", "identities",
+    "owned_document_page_ranges", "subject_denominators", "reader_task_denominators",
+    "treatment_denominators", "concept_coverage_counts", "locator_recall", "treatment_recall",
+    "access_route_counts", "reader_task_result_counts", "severity_counts", "error_code_counts",
+    "dependency_defect_count", "completion", "private_artifact_sha256", "reconnection_status",
+    "limitations", "public_safety"
+  ],
+  "properties": {
+    "schema_version": {"const": "missing-access-worker-report-v1"},
+    "report_sha256": {"$ref": "#/$defs/sha256"},
+    "audit_kind": {"const": "missing_access"},
+    "evaluation_id": {"$ref": "#/$defs/boundedIdentifier"},
+    "candidate_id": {"$ref": "#/$defs/boundedIdentifier"},
+    "chunk_id": {"type": "string", "pattern": "^CHUNK-[A-Za-z0-9._-]+$"},
+    "source_unit_label": {"type": "string", "minLength": 1, "maxLength": 256},
+    "immutable_base_commit": {"$ref": "#/$defs/commit"},
+    "identities": {"$ref": "#/$defs/identities"},
+    "owned_document_page_ranges": {"$ref": "#/$defs/ranges"},
+    "subject_denominators": {"$ref": "#/$defs/exactSetCounts"},
+    "reader_task_denominators": {"$ref": "#/$defs/exactSetCounts"},
+    "treatment_denominators": {"$ref": "#/$defs/exactSetCounts"},
+    "concept_coverage_counts": {
+      "type": "object",
+      "required": ["complete", "partial", "missing", "uninspectable"],
+      "properties": {
+        "complete": {"type": "integer", "minimum": 0},
+        "partial": {"type": "integer", "minimum": 0},
+        "missing": {"type": "integer", "minimum": 0},
+        "uninspectable": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "locator_recall": {"$ref": "#/$defs/recallCounts"},
+    "treatment_recall": {
+      "type": "object",
+      "required": ["principal", "supporting", "synthesis_or_conclusion"],
+      "properties": {
+        "principal": {"$ref": "#/$defs/treatmentRecallCounts"},
+        "supporting": {"$ref": "#/$defs/treatmentRecallCounts"},
+        "synthesis_or_conclusion": {"$ref": "#/$defs/treatmentRecallCounts"}
+      },
+      "additionalProperties": false
+    },
+    "access_route_counts": {
+      "type": "object",
+      "required": ["direct_only", "cross_reference_only", "both", "none", "uninspectable"],
+      "properties": {
+        "direct_only": {"type": "integer", "minimum": 0},
+        "cross_reference_only": {"type": "integer", "minimum": 0},
+        "both": {"type": "integer", "minimum": 0},
+        "none": {"type": "integer", "minimum": 0},
+        "uninspectable": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "reader_task_result_counts": {
+      "type": "object",
+      "required": ["succeeds", "partially_succeeds", "fails", "uninspectable"],
+      "properties": {
+        "succeeds": {"type": "integer", "minimum": 0},
+        "partially_succeeds": {"type": "integer", "minimum": 0},
+        "fails": {"type": "integer", "minimum": 0},
+        "uninspectable": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "severity_counts": {"$ref": "#/$defs/severityCounts"},
+    "error_code_counts": {"$ref": "#/$defs/errorCodeCounts"},
+    "dependency_defect_count": {"type": "integer", "minimum": 0},
+    "completion": {
+      "type": "object",
+      "required": ["status", "subjects_complete", "reader_tasks_complete", "treatments_complete", "foreign_judgments", "duplicate_judgments"],
+      "properties": {
+        "status": {"const": "complete"},
+        "subjects_complete": {"const": true},
+        "reader_tasks_complete": {"const": true},
+        "treatments_complete": {"const": true},
+        "foreign_judgments": {"const": 0},
+        "duplicate_judgments": {"const": 0}
+      },
+      "additionalProperties": false
+    },
+    "private_artifact_sha256": {"$ref": "#/$defs/sha256"},
+    "reconnection_status": {
+      "type": "object",
+      "required": ["source", "candidate", "source_chunk", "source_sidecar", "locator_audit_set"],
+      "properties": {
+        "source": {"const": "verified_by_sha256"},
+        "candidate": {"const": "verified_by_sha256"},
+        "source_chunk": {"const": "verified_by_sha256"},
+        "source_sidecar": {"const": "verified_by_sha256"},
+        "locator_audit_set": {"const": "verified_by_sha256"}
+      },
+      "additionalProperties": false
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "count"],
+        "properties": {
+          "code": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$"},
+          "count": {"type": "integer", "minimum": 0}
+        },
+        "additionalProperties": false
+      }
+    },
+    "public_safety": {"$ref": "#/$defs/publicSafety"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "commit": {"type": "string", "pattern": "^[a-fA-F0-9]{40}$"},
+    "boundedIdentifier": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
+    "ranges": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "prefixItems": [{"type": "integer", "minimum": 1}, {"type": "integer", "minimum": 1}],
+        "minItems": 2,
+        "maxItems": 2
+      }
+    },
+    "identities": {
+      "type": "object",
+      "required": [
+        "source_sha256", "candidate_sha256", "benchmark_version", "benchmark_sha256",
+        "benchmark_file_sha256", "benchmark_lock_sha256", "policy_sha256", "policy_file_sha256",
+        "page_map_sha256", "page_map_file_sha256", "chunk_manifest_sha256", "chunk_manifest_file_sha256",
+        "normalized_candidate_file_sha256", "item_inventory_file_sha256", "source_chunk_file_sha256",
+        "source_sidecar_file_sha256", "missing_access_ownership_sha256", "locator_audit_set_sha256"
+      ],
+      "properties": {
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "candidate_sha256": {"$ref": "#/$defs/sha256"},
+        "benchmark_version": {"type": "integer", "minimum": 1},
+        "benchmark_sha256": {"$ref": "#/$defs/sha256"},
+        "benchmark_file_sha256": {"$ref": "#/$defs/sha256"},
+        "benchmark_lock_sha256": {"$ref": "#/$defs/sha256"},
+        "policy_sha256": {"$ref": "#/$defs/sha256"},
+        "policy_file_sha256": {"$ref": "#/$defs/sha256"},
+        "page_map_sha256": {"$ref": "#/$defs/sha256"},
+        "page_map_file_sha256": {"$ref": "#/$defs/sha256"},
+        "chunk_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "chunk_manifest_file_sha256": {"$ref": "#/$defs/sha256"},
+        "normalized_candidate_file_sha256": {"$ref": "#/$defs/sha256"},
+        "item_inventory_file_sha256": {"$ref": "#/$defs/sha256"},
+        "source_chunk_file_sha256": {"$ref": "#/$defs/sha256"},
+        "source_sidecar_file_sha256": {"$ref": "#/$defs/sha256"},
+        "missing_access_ownership_sha256": {"$ref": "#/$defs/sha256"},
+        "locator_audit_set_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "exactSetCounts": {
+      "type": "object",
+      "required": ["expected", "judged", "unique"],
+      "properties": {
+        "expected": {"type": "integer", "minimum": 0},
+        "judged": {"type": "integer", "minimum": 0},
+        "unique": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "recallCounts": {
+      "type": "object",
+      "required": ["expected", "found", "missed"],
+      "properties": {
+        "expected": {"type": "integer", "minimum": 0},
+        "found": {"type": "integer", "minimum": 0},
+        "missed": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "treatmentRecallCounts": {
+      "type": "object",
+      "required": ["expected", "found", "missed", "uninspectable"],
+      "properties": {
+        "expected": {"type": "integer", "minimum": 0},
+        "found": {"type": "integer", "minimum": 0},
+        "missed": {"type": "integer", "minimum": 0},
+        "uninspectable": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "severityCounts": {
+      "type": "object",
+      "required": ["none", "cosmetic", "minor", "major", "critical"],
+      "properties": {
+        "none": {"type": "integer", "minimum": 0},
+        "cosmetic": {"type": "integer", "minimum": 0},
+        "minor": {"type": "integer", "minimum": 0},
+        "major": {"type": "integer", "minimum": 0},
+        "critical": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "errorCodeCounts": {
+      "type": "object",
+      "propertyNames": {"enum": ["SCP", "COV", "SEL", "CON", "STA", "LOC_POS", "LOC_NEG", "CMP", "HED", "SUB", "XRF", "DEN", "MEC"]},
+      "additionalProperties": {"type": "integer", "minimum": 0}
+    },
+    "publicSafety": {
+      "type": "object",
+      "required": ["schema_validation", "path_allowlist", "forbidden_key_scan", "secret_and_path_scan", "result"],
+      "properties": {
+        "schema_validation": {"const": "passed"},
+        "path_allowlist": {"const": "passed"},
+        "forbidden_key_scan": {"const": "passed"},
+        "secret_and_path_scan": {"const": "passed"},
+        "result": {"const": "passed"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

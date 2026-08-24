@@ -60,6 +60,12 @@ study-root/
 │       ├── item-assessments.json
 │       ├── evaluation-result.json
 │       └── web-report.json
+├── workers/
+│   ├── candidate-preparation/
+│   ├── locator-audit/
+│   │   └── CHUNK-001/                  private isolated worker recovery
+│   └── missing-access-audit/
+│       └── CHUNK-001/                  private isolated worker recovery
 ├── validation/
 └── exports/
 ```
@@ -115,6 +121,16 @@ Candidate-preparation workers use a candidate-specific root such as `workers/can
 The public worker branch is a separate aggregate projection containing exactly `candidate/candidate-ref.json`, `candidate/layout-profile.json`, and `validation/candidate-preparation-report.json`. It never contains private recovery artifacts. After the pull request opens, persist GitHub-API publication evidence privately and finalize the receipt so it binds the observed PR state, base/head, exact Git blob/file hashes, and evidence hash. The receipt-bound evidence is immutable historical proof and does not expire. At coordinator preflight/integration, preserve a distinct, strictly later open-PR publication snapshot, the final-benchmark Git proof, and post-merge `candidate-preparation-merge-evidence-v1` that does not predate the open snapshot. Create all three directly from connector/API output, not user-authored assertions.
 
 At integration, require the coordinator to name one receipt and recovery root explicitly. Resolve its files through receipt-relative POSIX paths and exact hashes; never search broadly for a matching candidate. Require `--publication-evidence` and `--benchmark-proof` for both helper preflight and integration, plus `--merge-evidence` after merge. Bind the fresh premerge hash, merged evidence hash, public blob identities, and benchmark proof identity in `candidate-benchmark-lock.json`; materialize accepted artifacts at new versioned canonical paths, register them, save the manifest, and save state last.
+
+Locator-audit workers use `workers/locator-audit/<chunk-id>/` within an evaluation-specific recovery root. Keep `locator-audit.<chunk-id>.json`, `locator-audit-worker-receipt.json`, isolated `worker-state.json`, `worker-manifest.json`, and `locator-audit-worker-recovery.zip` private. The public branch contains only `validation/locator-audit-worker.<chunk-id>.json`.
+
+Missing-access workers use `workers/missing-access-audit/<chunk-id>/` under the same candidate-specific isolation rule. Keep `missing-access-audit.<chunk-id>.json`, `missing-access-worker-receipt.json`, isolated state and manifest, and `missing-access-worker-recovery.zip` private. The public branch contains only `validation/missing-access-audit-worker.<chunk-id>.json`.
+
+Persist each worker's complete private artifact, receipt, and recovery bundle before attempting publication. Concurrent workers must never replace canonical Library files, another worker's folder, cumulative checkpoints, or shared controls. Public reports contain aggregate counts and identity hashes only; they never contain headings, displayed locators, source-subject labels that reconstruct the audit, detailed evidence, Library identifiers, or absolute local paths.
+
+For coordinator fan-in, supply an explicit binding for every selected proposal: one pull request or branch, one receipt, and one recovery root. Resolve only those bindings and reject missing, duplicated, ambiguous, or extra recovery material. Never sweep `workers/`, Library, or open pull requests and never infer a receipt from a candidate ID or chunk ID alone.
+
+Accepted complete audit ledgers become canonical private required artifacts only after coordinator integration. Cumulative private checkpoints may contain those JSON ledgers while continuing to exclude restricted source and candidate PDFs by default. Public GitHub branches and public bundles never contain the complete ledgers or worker recovery ZIPs. Read [parallel-candidate-audits.md](parallel-candidate-audits.md).
 
 ## Import and resume
 

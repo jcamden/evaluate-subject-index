@@ -38,7 +38,18 @@ The schemas in `schemas/` are machine-readable contracts. Each schema controls e
 | Candidate integration checkpoint | `candidate-integration-checkpoint.schema.json` | Private post-integration bundle inventory and exclusions |
 | Candidate locator chunk | `candidate-locator-chunk.schema.json` | Only paths and assignments owned by one audit chunk |
 | Locator batch | `locator-audit.schema.json` | One judgment for every expanded candidate locator |
+| Parallel locator worker receipt | `parallel-locator-audit-worker-receipt.schema.json` | Private identities, denominators, public binding, recovery inventory, and handoff for one chunk |
+| Public locator worker report | `locator-audit-worker-report.schema.json` | Strict aggregate public projection with no reconstructable candidate audit content |
+| Locator integration batch | `locator-audit-batch-integration.schema.json` | Explicit proposals, accepted private artifacts, provenance, conflicts, and stage-completion accounting |
 | Missing-access batch | `missing-access-audit.schema.json` | Source-to-index concept coverage and locator recall |
+| Parallel missing-access worker receipt | `parallel-missing-access-worker-receipt.schema.json` | Private frozen dependencies, subject/task denominators, public binding, recovery inventory, and handoff |
+| Public missing-access worker report | `missing-access-worker-report.schema.json` | Strict aggregate public projection with no reconstructable subject or candidate audit content |
+| Missing-access integration batch | `missing-access-batch-integration.schema.json` | Explicit proposals, locator dependencies, accepted private artifacts, provenance, and completion accounting |
+| Candidate-audit open-PR evidence | `candidate-audit-open-pr-evidence.schema.json` | Fresh GitHub-API observation of one open exact-allowlist worker pull request |
+| Candidate-audit merge evidence | `candidate-audit-merge-evidence.schema.json` | Fresh GitHub-API observation that the selected pull request merged unchanged |
+| Candidate-audit recovery metadata | `candidate-audit-worker-recovery.schema.json` | Deterministic private ZIP inventory, artifact hashes, and restricted exclusions |
+| Candidate-audit integration binding | `candidate-audit-integration-binding.schema.json` | One-to-one coordinator-private proposal, receipt, recovery-root, report, and evidence binding |
+| Candidate-audit repository state | `candidate-audit-repository-state.schema.json` | Immutable base branch/commit and existing-branch collision evidence for worker setup |
 | Structure audit | `structure-audit.schema.json` | Global hierarchy, navigation, cross-reference, mechanics, and density evidence |
 | Item assessments | `item-assessments.schema.json` | Diagnostic grades, semantic color tokens, popover factors, and evidence joins for every display item |
 | Density input | `density-input.schema.json` | Chapter word, path, and locator counts for deterministic density scoring |
@@ -75,6 +86,12 @@ For frozen JSON artifacts, remove the artifact's own hash field, serialize UTF-8
 Use relative POSIX paths rooted at the evaluation directory in state and manifests. Never store ephemeral absolute paths or make canonical identity depend on a Library ID. Register each artifact only after validation; update state last. Read [storage-and-checkpoints.md](storage-and-checkpoints.md).
 
 Candidate normalization uses candidate-index-v2 and subject-index-item-inventory-v2 only. V2 preserves any delivered third or deeper hierarchy level and `cross_references[]`; it does not imply that those structures satisfy the standard policy. Preparation artifacts remain benchmark-independent, while `candidate-benchmark-lock.json` binds the accepted normalization to the final compatible benchmark before auditing.
+
+Parallel candidate audits reuse `locator-audit-v1` and `missing-access-audit-v1` as their complete private judgment formats. Worker receipts, public reports, GitHub evidence, recovery metadata, and batch-integration records wrap and bind those canonical artifacts; they do not define alternative scoring or judgment policies. Additive accounting fields permitted by the canonical schemas may be required by `parallel_candidate_audit_cli.py` for worker validation without changing sequential-command semantics.
+
+Public worker-report schemas are strict allowlists. Permit only aggregate identities, immutable hashes, owned ranges, denominator and status counts, severity/error-code counts, completion, reconnection status, limitations, the private artifact hash, and a public-safety result. Reject candidate headings or subheadings, complete paths, displayed locators or ranges, cross-reference wording, reconstructable source-subject labels, page-specific comparisons, raw extraction, coordinates, exact or extended source text, detailed evidence tied to candidate records, PDFs, Library identifiers, absolute paths, credentials, and secrets.
+
+Publication and merge evidence schemas validate shape, chronology, freshness, branch/base/commit identities, changed paths, Git blob/file hashes, and cross-artifact bindings. They do not authenticate who created a local JSON file. The coordinator must materialize evidence directly from its own GitHub connector/API output; an `evidence_source` string is a format discriminator, never an attestation.
 
 ## Web safety
 

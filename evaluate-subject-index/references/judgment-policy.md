@@ -52,6 +52,8 @@ For compound or enumerated paths, require every named component on every assigne
 
 For a binary precision measure, count `supported` as correct, `unsupported` as incorrect, and publish `partially_supported` separately. If a project elects fractional credit, freeze the fraction before candidate review and disclose it.
 
+For chunked locator work, the frozen locator packet is the complete denominator. Preserve each packet's full heading path and judge every owned expanded assignment exactly once. Reject duplicate, missing, foreign-chunk, or path-altered assignments rather than repairing the packet. An unavailable or genuinely uninspectable owned page may receive `uninspectable`; an unresolved locator excluded during packet preparation is not silently reassigned to a worker. Parallel and sequential audits use the same four statuses and judgment meaning.
+
 ## Missing access and recall
 
 For every essential and major benchmark subject, record:
@@ -64,6 +66,10 @@ For every essential and major benchmark subject, record:
 - the severity of any missing access.
 
 Concept coverage and page-reference recall have different denominators. A concept may be represented while important treatments are missing.
+
+Account separately for principal, supporting, and synthesis/conclusion treatments, and record realistic first-lookup and reader-task success. Every scored subject and every required reader task belongs to exactly one chunk for worker accounting. Use a valid frozen `owner_chunk_id` when supplied. Otherwise assign a subject to the chunk owning its first principal evidence page in document-page then chunk order; if it has no principal evidence, use its first non-incidental scored evidence by the same order. Assign a task to a valid frozen `owner_chunk_id` when supplied; otherwise use the owner of the first subject in its frozen `subject_ids` order. The deterministic helper, not the language model, computes and hashes this ownership plan.
+
+Missing-access review may use the complete canonical locator-audit set to determine whether another route succeeds. It must not silently reinterpret locator legitimacy. When a coverage judgment depends on a suspected locator error, record a formal dependency defect with the affected IDs, confidence, and evidence needed for adjudication while retaining the canonical locator result.
 
 ## Global structure
 

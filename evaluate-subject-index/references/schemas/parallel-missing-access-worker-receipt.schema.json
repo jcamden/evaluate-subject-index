@@ -1,0 +1,216 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "parallel-missing-access-worker-receipt.schema.json",
+  "title": "Private parallel missing-access worker receipt",
+  "type": "object",
+  "required": [
+    "schema_version", "receipt_id", "receipt_sha256", "created_at", "status",
+    "audit_kind", "evaluation_id", "candidate_id", "chunk", "repositories",
+    "identities", "source_reconnection", "private_artifact", "private_recovery",
+    "public_projection", "validation", "publication", "limitations"
+  ],
+  "properties": {
+    "schema_version": {"const": "parallel-missing-access-worker-receipt-v1"},
+    "receipt_id": {"type": "string", "pattern": "^MAW-[A-F0-9]{12}$"},
+    "receipt_sha256": {"$ref": "#/$defs/sha256"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "status": {"enum": ["ready_for_pull_request", "published_unmerged", "publication_blocked"]},
+    "audit_kind": {"const": "missing_access"},
+    "evaluation_id": {"$ref": "#/$defs/boundedString"},
+    "candidate_id": {"$ref": "#/$defs/boundedString"},
+    "chunk": {"$ref": "#/$defs/chunk"},
+    "repositories": {
+      "type": "object",
+      "required": ["candidate_project", "candidate_base_branch", "immutable_worker_base_commit", "worker_branch", "public_report_path"],
+      "properties": {
+        "candidate_project": {"$ref": "#/$defs/project"},
+        "candidate_base_branch": {"$ref": "#/$defs/branch"},
+        "immutable_worker_base_commit": {"$ref": "#/$defs/commit"},
+        "worker_branch": {"type": "string", "pattern": "^missing-access-audit/chunk-[a-z0-9._-]+$"},
+        "public_report_path": {"type": "string", "pattern": "^validation/missing-access-audit-worker\\.CHUNK-[A-Za-z0-9._-]+\\.json$"}
+      },
+      "additionalProperties": false
+    },
+    "identities": {"$ref": "#/$defs/identities"},
+    "source_reconnection": {"$ref": "#/$defs/reconnection"},
+    "private_artifact": {
+      "type": "object",
+      "required": ["path", "sha256", "byte_length", "schema_version", "expected_subject_count", "judged_subject_count", "expected_reader_task_count", "judged_reader_task_count", "expected_treatment_count", "judged_treatment_count"],
+      "properties": {
+        "path": {"$ref": "#/$defs/relativePath"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "byte_length": {"type": "integer", "minimum": 0},
+        "schema_version": {"const": "missing-access-audit-v1"},
+        "expected_subject_count": {"type": "integer", "minimum": 0},
+        "judged_subject_count": {"type": "integer", "minimum": 0},
+        "expected_reader_task_count": {"type": "integer", "minimum": 0},
+        "judged_reader_task_count": {"type": "integer", "minimum": 0},
+        "expected_treatment_count": {"type": "integer", "minimum": 0},
+        "judged_treatment_count": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "private_recovery": {"$ref": "#/$defs/recovery"},
+    "public_projection": {"$ref": "#/$defs/publicProjection"},
+    "validation": {
+      "type": "object",
+      "required": ["identity_gate", "locator_stage_gate", "locator_set_gate", "ownership_gate", "subject_exact_set", "reader_task_exact_set", "treatment_exact_set", "denominator_gate", "private_artifact_gate", "recovery_gate", "public_safety_gate", "complete"],
+      "properties": {
+        "identity_gate": {"const": "passed"},
+        "locator_stage_gate": {"const": "passed"},
+        "locator_set_gate": {"const": "passed"},
+        "ownership_gate": {"const": "passed"},
+        "subject_exact_set": {"const": "passed"},
+        "reader_task_exact_set": {"const": "passed"},
+        "treatment_exact_set": {"const": "passed"},
+        "denominator_gate": {"const": "passed"},
+        "private_artifact_gate": {"const": "passed"},
+        "recovery_gate": {"const": "passed"},
+        "public_safety_gate": {"const": "passed"},
+        "complete": {"const": true}
+      },
+      "additionalProperties": false
+    },
+    "publication": {"$ref": "#/$defs/publication"},
+    "limitations": {"type": "array", "items": {"type": "string", "maxLength": 500}}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "commit": {"type": "string", "pattern": "^[a-fA-F0-9]{40}$"},
+    "blob": {"type": "string", "pattern": "^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$"},
+    "boundedString": {"type": "string", "minLength": 1, "maxLength": 256},
+    "project": {"type": "string", "pattern": "^[^/\\s]+/[^/\\s]+$", "maxLength": 256},
+    "branch": {"type": "string", "minLength": 1, "maxLength": 256},
+    "relativePath": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$)).+"},
+    "ranges": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "prefixItems": [{"type": "integer", "minimum": 1}, {"type": "integer", "minimum": 1}],
+        "minItems": 2,
+        "maxItems": 2
+      }
+    },
+    "chunk": {
+      "type": "object",
+      "required": ["chunk_id", "source_unit_label", "owned_document_page_ranges"],
+      "properties": {
+        "chunk_id": {"type": "string", "pattern": "^CHUNK-[A-Za-z0-9._-]+$"},
+        "source_unit_label": {"type": "string", "minLength": 1, "maxLength": 256},
+        "owned_document_page_ranges": {"$ref": "#/$defs/ranges"}
+      },
+      "additionalProperties": false
+    },
+    "identities": {
+      "type": "object",
+      "required": [
+        "source_sha256", "candidate_sha256", "benchmark_version", "benchmark_sha256",
+        "benchmark_file_sha256", "benchmark_lock_sha256", "policy_sha256", "policy_file_sha256",
+        "page_map_sha256", "page_map_file_sha256", "chunk_manifest_sha256", "chunk_manifest_file_sha256",
+        "normalized_candidate_file_sha256", "item_inventory_file_sha256", "source_chunk_file_sha256",
+        "source_sidecar_file_sha256", "missing_access_ownership_sha256", "locator_audit_set_sha256"
+      ],
+      "properties": {
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "candidate_sha256": {"$ref": "#/$defs/sha256"},
+        "benchmark_version": {"type": "integer", "minimum": 1},
+        "benchmark_sha256": {"$ref": "#/$defs/sha256"},
+        "benchmark_file_sha256": {"$ref": "#/$defs/sha256"},
+        "benchmark_lock_sha256": {"$ref": "#/$defs/sha256"},
+        "policy_sha256": {"$ref": "#/$defs/sha256"},
+        "policy_file_sha256": {"$ref": "#/$defs/sha256"},
+        "page_map_sha256": {"$ref": "#/$defs/sha256"},
+        "page_map_file_sha256": {"$ref": "#/$defs/sha256"},
+        "chunk_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "chunk_manifest_file_sha256": {"$ref": "#/$defs/sha256"},
+        "normalized_candidate_file_sha256": {"$ref": "#/$defs/sha256"},
+        "item_inventory_file_sha256": {"$ref": "#/$defs/sha256"},
+        "source_chunk_file_sha256": {"$ref": "#/$defs/sha256"},
+        "source_sidecar_file_sha256": {"$ref": "#/$defs/sha256"},
+        "missing_access_ownership_sha256": {"$ref": "#/$defs/sha256"},
+        "locator_audit_set_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "reconnection": {
+      "type": "object",
+      "required": ["status", "source_sha256_verified", "source_chunk_verified", "source_sidecar_verified", "candidate_sha256_verified"],
+      "properties": {
+        "status": {"const": "verified"},
+        "source_sha256_verified": {"const": true},
+        "source_chunk_verified": {"const": true},
+        "source_sidecar_verified": {"const": true},
+        "candidate_sha256_verified": {"const": true}
+      },
+      "additionalProperties": false
+    },
+    "recovery": {
+      "type": "object",
+      "required": ["root_ref", "archive_path", "sha256", "byte_length", "metadata_sha256", "checkpoint_ref"],
+      "properties": {
+        "root_ref": {"$ref": "#/$defs/relativePath"},
+        "archive_path": {"$ref": "#/$defs/relativePath"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "byte_length": {"type": "integer", "minimum": 0},
+        "metadata_sha256": {"$ref": "#/$defs/sha256"},
+        "checkpoint_ref": {"$ref": "#/$defs/boundedString"}
+      },
+      "additionalProperties": false
+    },
+    "publicProjection": {
+      "type": "object",
+      "required": ["path", "sha256", "outgoing_safety_scan"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^validation/missing-access-audit-worker\\.CHUNK-[A-Za-z0-9._-]+\\.json$"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "outgoing_safety_scan": {"const": "passed"}
+      },
+      "additionalProperties": false
+    },
+    "publication": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["status", "pull_request", "head_commit"],
+          "properties": {
+            "status": {"const": "not_yet_published"},
+            "pull_request": {"type": "null"},
+            "head_commit": {"type": "null"}
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["status", "pull_request", "pull_request_url", "base_branch", "observed_base_head_commit", "head_branch", "head_commit", "commit_count", "changed_path", "file_sha256", "blob_sha", "evidence_sha256", "observed_at"],
+          "properties": {
+            "status": {"const": "open_unmerged"},
+            "pull_request": {"type": "integer", "minimum": 1},
+            "pull_request_url": {"type": "string", "pattern": "^https://github\\.com/[^/]+/[^/]+/pull/[1-9][0-9]*$"},
+            "base_branch": {"$ref": "#/$defs/branch"},
+            "observed_base_head_commit": {"$ref": "#/$defs/commit"},
+            "head_branch": {"type": "string", "pattern": "^missing-access-audit/chunk-[a-z0-9._-]+$"},
+            "head_commit": {"$ref": "#/$defs/commit"},
+            "commit_count": {"const": 1},
+            "changed_path": {"type": "string", "pattern": "^validation/missing-access-audit-worker\\.CHUNK-[A-Za-z0-9._-]+\\.json$"},
+            "file_sha256": {"$ref": "#/$defs/sha256"},
+            "blob_sha": {"$ref": "#/$defs/blob"},
+            "evidence_sha256": {"$ref": "#/$defs/sha256"},
+            "observed_at": {"type": "string", "format": "date-time"}
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["status", "reason_code", "blocked_at"],
+          "properties": {
+            "status": {"const": "publication_blocked"},
+            "reason_code": {"type": "string", "minLength": 1, "maxLength": 128},
+            "blocked_at": {"type": "string", "format": "date-time"}
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "additionalProperties": false
+}
