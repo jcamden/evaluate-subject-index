@@ -183,6 +183,7 @@ python evaluate-subject-index/scripts/page_chunk_cli.py filter-candidate \
   --candidate evaluate-subject-index/tests/candidate-index.valid.json \
   --page-map /tmp/page-map.json \
   --chunks /tmp/chunk-manifest.json \
+  --benchmark-lock evaluate-subject-index/tests/candidate-benchmark-lock.valid.json \
   --output-dir /tmp/locator-packets
 
 python evaluate-subject-index/scripts/score_cli.py scorecard \

@@ -81,7 +81,7 @@ class CurrentFormatRegressionTests(unittest.TestCase):
             root = Path(directory)
             page_map = root / "page-map.json"
             chunks = root / "chunk-manifest.json"
-            benchmark_lock = root / "candidate-benchmark-lock.json"
+            benchmark_lock = SKILL_ROOT / "tests" / "candidate-benchmark-lock.valid.json"
             packet_dir = root / "packets"
             commands = [
                 [
@@ -105,43 +105,7 @@ class CurrentFormatRegressionTests(unittest.TestCase):
                 ],
             ]
             payload = None
-            for command_index, arguments in enumerate(commands):
-                if command_index == 2:
-                    candidate = read_json(SKILL_ROOT / "tests" / "candidate-index.valid.json")
-                    expanded_page_map = read_json(page_map)
-                    chunk_manifest = read_json(chunks)
-                    lock = {
-                        "schema_version": "candidate-benchmark-lock-v1",
-                        "status": "locked",
-                        "locked_at": "2026-08-24T00:00:00Z",
-                        "candidate_id": candidate["candidate_id"],
-                        "candidate_sha256": candidate["candidate_sha256"],
-                        "preparation_receipt_sha256": "b" * 64,
-                        "candidate_repository": {
-                            "project": "synthetic-candidate",
-                            "merged_commit": "c" * 40,
-                            "worker_head_commit": "d" * 40,
-                            "pull_request": 17,
-                        },
-                        "benchmark_repository": {
-                            "project": "synthetic-benchmark",
-                            "final_commit": "e" * 40,
-                            "benchmark_sha256": "f" * 64,
-                            "benchmark_file_sha256": "1" * 64,
-                        },
-                        "compatibility": {
-                            "source_sha256": expanded_page_map["source_sha256"],
-                            "source_edition": "Synthetic edition",
-                            "page_map_sha256": expanded_page_map["page_map_sha256"],
-                            "chunk_manifest_sha256": chunk_manifest["chunk_manifest_sha256"],
-                            "policy_sha256": "2" * 64,
-                            "policy_profile": "standard",
-                            "rubric_version": "subject-index-rubric-v4",
-                            "audit_mode": "full",
-                        },
-                    }
-                    lock["lock_sha256"] = preparation.canonical_hash(lock, "lock_sha256")
-                    write_json(benchmark_lock, lock)
+            for arguments in commands:
                 completed = subprocess.run(
                     [sys.executable, str(SCRIPTS / "page_chunk_cli.py"), *arguments],
                     text=True,

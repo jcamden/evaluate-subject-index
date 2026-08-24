@@ -11,8 +11,8 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Install dependencies
@@ -145,6 +145,7 @@ jobs:
             --candidate evaluate-subject-index/tests/candidate-index.valid.json \
             --page-map /tmp/page-map.json \
             --chunks /tmp/chunk-manifest.json \
+            --benchmark-lock evaluate-subject-index/tests/candidate-benchmark-lock.valid.json \
             --output-dir /tmp/locator-packets
       - name: Exercise standard policy and score arithmetic
         run: |

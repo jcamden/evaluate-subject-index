@@ -175,7 +175,7 @@ Every expanded locator assignment must retain `source_page_label` as a string an
 
 ## `prepare-locator-chunks`
 
-Required: normalized candidate, expanded page map, and validated chunk manifest.
+Required: normalized candidate, expanded page map, validated chunk manifest, and a final `candidate-benchmark-lock-v1` whose candidate, page-map, and chunk-manifest identities match those exact inputs. Pass the lock to `scripts/page_chunk_cli.py filter-candidate` with `--benchmark-lock`; never route locator packets from a pending or missing lock.
 
 Create one `candidate-locator-chunk.*.json` packet per chunk. Include a candidate path only when it has at least one resolved locator assignment whose `document_page` is owned by that chunk. Include the complete heading path and only the assignments owned by the chunk. Retain the original displayed locator or range and report `other_locator_assignment_count`, but do not send the other assignments.
 
