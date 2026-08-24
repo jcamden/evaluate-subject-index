@@ -132,7 +132,8 @@ def final_benchmark_structure_errors(benchmark: dict[str, Any]) -> list[str]:
             isinstance(relationship, dict)
             and isinstance(relationship.get("relationship_id"), str) and relationship["relationship_id"].startswith("REL-")
             and relationship.get("source_subject_id") in known_subject_ids
-            and isinstance(relationship.get("relationship_type"), str) and bool(relationship["relationship_type"].strip())
+            and isinstance(relationship.get("relationship_type", relationship.get("type")), str)
+            and bool(relationship.get("relationship_type", relationship.get("type")).strip())
             and isinstance(relationship.get("resolution_status"), str) and bool(relationship["resolution_status"].strip())
             and has_target_id != has_target_label
             and (not has_target_id or relationship.get("target_subject_id") in known_subject_ids)

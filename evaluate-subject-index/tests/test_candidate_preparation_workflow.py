@@ -818,6 +818,45 @@ class WorkerIntegrationTests(unittest.TestCase):
         for path, digest in source_hashes.items():
             self.assertEqual(digest, sha256_file(path), path)
 
+    def test_preflight_accepts_frozen_v3_relationship_type_field(self) -> None:
+        self.study.make_final_benchmark(
+            subjects=[
+                {
+                    "subject_id": "SUBJ-CLOCKWORK",
+                    "label": "Clockwork orchard",
+                    "priority": "major",
+                    "meaning": "A synthetic orchard operated by clockwork mechanisms.",
+                    "stance": "Substantively treated.",
+                    "acceptable_access": ["Clockwork orchard"],
+                    "evidence": [{"chunk_id": "CHUNK-001", "document_page": 1}],
+                },
+                {
+                    "subject_id": "SUBJ-ZEPHYR",
+                    "label": "Zephyr engines",
+                    "priority": "major",
+                    "meaning": "Synthetic wind-powered engines.",
+                    "stance": "Substantively treated.",
+                    "acceptable_access": ["Zephyr engines"],
+                    "evidence": [{"chunk_id": "CHUNK-001", "document_page": 2}],
+                },
+            ],
+            relationships=[
+                {
+                    "relationship_id": "REL-CLOCKWORK-ZEPHYR",
+                    "source_subject_id": "SUBJ-CLOCKWORK",
+                    "type": "related_to",
+                    "resolution_status": "resolved",
+                    "target_subject_id": "SUBJ-ZEPHYR",
+                }
+            ],
+        )
+        self.study.freeze_benchmark_state()
+
+        _, preflight = run_cli("preflight-integration", *self.study.preflight_arguments())
+
+        self.assertTrue(preflight["merge_authorized"])
+        self.assertEqual(BENCHMARK_COMMIT, preflight["benchmark_commit"])
+
     def test_preflight_requires_a_distinct_later_publication_observation(self) -> None:
         self.study.freeze_benchmark_state()
         arguments = self.study.preflight_arguments()

@@ -2631,8 +2631,8 @@ def validate_final_benchmark(
             and relationship["relationship_id"].startswith("REL-")
             and isinstance(relationship.get("source_subject_id"), str)
             and relationship["source_subject_id"] in subject_ids
-            and isinstance(relationship.get("relationship_type"), str)
-            and bool(relationship["relationship_type"].strip())
+            and isinstance(relationship.get("relationship_type", relationship.get("type")), str)
+            and bool(relationship.get("relationship_type", relationship.get("type")).strip())
             and isinstance(relationship.get("resolution_status"), str)
             and bool(relationship["resolution_status"].strip()),
             "benchmark_schema",
