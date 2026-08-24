@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "candidate-benchmark-git-proof.schema.json",
+  "title": "GitHub-observed final benchmark file proof",
+  "type": "object",
+  "required": ["schema_version", "evidence_source", "benchmark_project", "final_commit", "benchmark_path", "blob_sha", "file_sha256", "observed_at"],
+  "properties": {
+    "schema_version": {"const": "candidate-benchmark-git-proof-v1"},
+    "evidence_source": {"const": "github_api"},
+    "benchmark_project": {"type": "string", "pattern": "^[^/\\s]+/[^/\\s]+$"},
+    "final_commit": {"$ref": "#/$defs/commit"},
+    "benchmark_path": {"$ref": "#/$defs/relativePath"},
+    "blob_sha": {"type": "string", "pattern": "^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$"},
+    "file_sha256": {"$ref": "#/$defs/sha256"},
+    "observed_at": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "commit": {"type": "string", "pattern": "^[a-fA-F0-9]{40}$"},
+    "relativePath": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$)).+"}
+  },
+  "additionalProperties": false
+}

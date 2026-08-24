@@ -13,7 +13,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 
-STATE_SCHEMA_VERSION = "subject-index-evaluation-state-v3"
+STATE_SCHEMA_VERSION = "subject-index-evaluation-state-v4"
 MANIFEST_SCHEMA_VERSION = "subject-index-artifact-manifest-v1"
 BUNDLE_SCHEMA_VERSION = "subject-index-bundle-v1"
 

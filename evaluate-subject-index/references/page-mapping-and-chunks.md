@@ -113,6 +113,10 @@ An indexable normalized key must resolve to exactly one document page. If two in
 
 For a displayed range such as `"xii–xiv"`, resolve both labels through the expanded map and walk the intervening document pages in the same `mapping_id`. This also works for alphabetic or prefixed sequences. Do not split a literal label such as `"A-12"` at its hyphen merely because it resembles a range. When endpoint parsing or segment continuity is uncertain, retain the raw display and mark the range unresolved for adjudication.
 
+For an abbreviated numeric endpoint such as `"123–25"`, first resolve `"123"`; then accept `"25"` only when exactly one later acceptable page-map label in the same `mapping_id` ends with that displayed abbreviation. Walk the ordered page-map records between the two resolved endpoints. Multiple matches, no match, reversed order, a segment boundary, or a nonindexable intervening page makes the displayed range unresolved. Never complete an endpoint by unchecked arithmetic.
+
+Candidate-preparation adapters retain PDF page, reading-order region, column, line, bounding box, indentation, continuation, confidence, warnings, and original displayed form in a private layout-extraction artifact. The normalized candidate references this evidence but never treats geometry confidence as an editorial judgment.
+
 ## Chunk manifest
 
 The user supplies or approves owned document-page ranges:

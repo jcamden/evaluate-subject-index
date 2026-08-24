@@ -15,21 +15,45 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
       - name: Parse JSON schemas and fixtures
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
 
-          files = list(Path("evaluate-subject-index/references/schemas").glob("*.json"))
+          schema_dir = Path("evaluate-subject-index/references/schemas")
+          files = list(schema_dir.glob("*.json"))
           files += list(Path("evaluate-subject-index/tests").glob("*.json"))
+          ids = {}
           for path in files:
-              json.loads(path.read_text(encoding="utf-8"))
-          print(f"Parsed {len(files)} JSON files")
+              document = json.loads(path.read_text(encoding="utf-8"))
+              identifier = document.get("$id") if path.parent == schema_dir else None
+              if identifier:
+                  if identifier in ids:
+                      raise SystemExit(f"Duplicate schema $id: {identifier}")
+                  ids[identifier] = path
+              stack = [document]
+              while stack:
+                  value = stack.pop()
+                  if isinstance(value, dict):
+                      reference = value.get("$ref")
+                      if isinstance(reference, str) and not reference.startswith(("#", "http://", "https://")):
+                          target = (path.parent / reference.split("#", 1)[0]).resolve()
+                          if not target.exists():
+                              raise SystemExit(f"Missing local schema reference in {path}: {reference}")
+                      stack.extend(value.values())
+                  elif isinstance(value, list):
+                      stack.extend(value)
+          print(f"Parsed {len(files)} JSON files; schema IDs and local references are valid")
           PY
       - name: Compile deterministic helpers
         run: |
           python -m py_compile evaluate-subject-index/scripts/*.py
+      - name: Run deterministic unit tests
+        run: |
+          python -m unittest discover -s evaluate-subject-index/tests -p 'test_*.py' -v
       - name: Exercise independent benchmark review and freeze gates
         run: |
           python evaluate-subject-index/scripts/benchmark_review_cli.py screen \

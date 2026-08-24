@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "candidate-normalization-qa.schema.json",
+  "title": "Complete candidate normalization fidelity QA",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "candidate_id",
+    "candidate_sha256",
+    "source_sha256",
+    "page_map_sha256",
+    "normalized_candidate_file_sha256",
+    "item_inventory_file_sha256",
+    "layout_extraction_file_sha256",
+    "review_mode",
+    "expected",
+    "reviewed",
+    "page_reviews",
+    "corrections",
+    "exception_dispositions",
+    "completion"
+  ],
+  "properties": {
+    "schema_version": {"const": "candidate-normalization-qa-v1"},
+    "candidate_id": {"type": "string", "minLength": 1},
+    "candidate_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "source_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "page_map_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "normalized_candidate_file_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "item_inventory_file_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "layout_extraction_file_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "review_mode": {"const": "full"},
+    "expected": {"$ref": "#/$defs/inventory"},
+    "reviewed": {"$ref": "#/$defs/inventory"},
+    "page_reviews": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["candidate_pdf_page", "region_ids", "line_ids", "first_record_id", "last_record_id", "first_line_id", "last_line_id", "record_count", "line_count", "continuation_line_ids", "exception_ids", "corrections", "continuation_handling_reviewed", "reproduces_candidate_not_editorial_improvement"],
+        "properties": {
+          "candidate_pdf_page": {"type": "integer", "minimum": 1},
+          "region_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+          "line_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+          "first_record_id": {"type": ["string", "null"], "pattern": "^REC-"},
+          "last_record_id": {"type": ["string", "null"], "pattern": "^REC-"},
+          "first_line_id": {"type": ["string", "null"]},
+          "last_line_id": {"type": ["string", "null"]},
+          "record_count": {"type": "integer", "minimum": 0},
+          "line_count": {"type": "integer", "minimum": 0},
+          "continuation_line_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+          "exception_ids": {"type": "array", "items": {"type": "string", "pattern": "^EXC-"}, "uniqueItems": true},
+          "corrections": {"type": "array", "items": {"type": "object"}},
+          "continuation_handling_reviewed": {"type": "boolean"},
+          "reproduces_candidate_not_editorial_improvement": {"type": "boolean"}
+        },
+        "additionalProperties": true
+      }
+    },
+    "corrections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["correction_id", "before", "after", "reason", "reproduction_only", "editorial_improvement"],
+        "properties": {
+          "correction_id": {"type": "string", "minLength": 1},
+          "affected_ids": {"type": "array", "items": {"type": "string"}},
+          "before": {"type": "string"},
+          "after": {"type": "string"},
+          "reason": {"type": "string", "minLength": 1},
+          "reproduction_only": {"const": true},
+          "editorial_improvement": {"const": false}
+        },
+        "additionalProperties": true
+      }
+    },
+    "exception_dispositions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["exception_id", "disposition"],
+        "properties": {
+          "exception_id": {"type": "string", "pattern": "^EXC-"},
+          "disposition": {"enum": ["confirmed_unresolved", "confirmed_malformed", "confirmed_faithful", "resolved_by_reproduction_correction"]},
+          "rationale": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": true
+      }
+    },
+    "completion": {
+      "type": "object",
+      "required": ["all_denominators_complete", "all_exceptions_dispositioned", "candidate_reproduction_confirmed", "editorial_quality_judgments_performed", "complete"],
+      "properties": {
+        "all_denominators_complete": {"type": "boolean"},
+        "all_exceptions_dispositioned": {"type": "boolean"},
+        "candidate_reproduction_confirmed": {"type": "boolean"},
+        "editorial_quality_judgments_performed": {"const": false},
+        "complete": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "inventory": {
+      "type": "object",
+      "required": ["candidate_pdf_pages", "region_ids", "line_ids", "excluded_line_ids", "main_heading_record_ids", "subheading_record_ids", "path_ids", "display_ids", "locator_ids", "cross_reference_ids", "exception_ids"],
+      "properties": {
+        "candidate_pdf_pages": {"type": "array", "items": {"type": "integer", "minimum": 1}, "uniqueItems": true},
+        "region_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "line_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "excluded_line_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "main_heading_record_ids": {"type": "array", "items": {"type": "string", "pattern": "^REC-"}, "uniqueItems": true},
+        "subheading_record_ids": {"type": "array", "items": {"type": "string", "pattern": "^REC-"}, "uniqueItems": true},
+        "path_ids": {"type": "array", "items": {"type": "string", "pattern": "^PATH-"}, "uniqueItems": true},
+        "display_ids": {"type": "array", "items": {"type": "string", "pattern": "^DISPLAY-"}, "uniqueItems": true},
+        "locator_ids": {"type": "array", "items": {"type": "string", "pattern": "^LOC-"}, "uniqueItems": true},
+        "cross_reference_ids": {"type": "array", "items": {"type": "string", "pattern": "^XREF-"}, "uniqueItems": true},
+        "exception_ids": {"type": "array", "items": {"type": "string", "pattern": "^EXC-"}, "uniqueItems": true}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

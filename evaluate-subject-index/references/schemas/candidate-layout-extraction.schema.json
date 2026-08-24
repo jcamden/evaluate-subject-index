@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "candidate-layout-extraction.schema.json",
+  "title": "Private adapter-neutral candidate layout extraction",
+  "type": "object",
+  "required": ["schema_version", "candidate_id", "candidate_sha256", "adapter_id", "adapter_version", "adapter", "pdf", "pdf_metadata", "pages", "excluded_lines", "counts"],
+  "properties": {
+    "schema_version": {"const": "candidate-layout-extraction-v1"},
+    "candidate_id": {"type": "string", "minLength": 1},
+    "candidate_sha256": {"$ref": "#/$defs/sha256"},
+    "source_sha256": {"oneOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+    "adapter_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"},
+    "adapter_version": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,31}$"},
+    "adapter": {"$ref": "#/$defs/adapter"},
+    "pdf": {"$ref": "#/$defs/pdfSummary"},
+    "pdf_metadata": {
+      "type": "object",
+      "required": ["sha256", "page_count", "is_pdf", "is_encrypted"],
+      "properties": {
+        "file_name": {"type": ["string", "null"]},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "byte_length": {"type": ["integer", "null"], "minimum": 0},
+        "page_count": {"type": "integer", "minimum": 0},
+        "is_pdf": {"type": "boolean"},
+        "is_encrypted": {"type": "boolean"},
+        "title": {"type": ["string", "null"]},
+        "author": {"type": ["string", "null"]},
+        "subject": {"type": ["string", "null"]},
+        "keywords": {"type": ["string", "null"]},
+        "creator": {"type": ["string", "null"]},
+        "producer": {"type": ["string", "null"]},
+        "format": {"type": ["string", "null"]},
+        "creation_date": {"type": ["string", "null"]},
+        "modification_date": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "pages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["candidate_pdf_page", "width", "height", "two_column_layout", "column_split_x", "region_ids", "line_ids", "regions"],
+        "properties": {
+          "candidate_pdf_page": {"type": "integer", "minimum": 1},
+          "width": {"type": "number", "exclusiveMinimum": 0},
+          "height": {"type": "number", "exclusiveMinimum": 0},
+          "two_column_layout": {"type": "boolean"},
+          "column_split_x": {"type": ["number", "null"]},
+          "region_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+          "line_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+          "regions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["region_id", "candidate_pdf_page", "region_order", "reading_order_region", "column", "role", "bbox", "line_ids", "line_count", "column_detection_confidence", "lines"],
+              "properties": {
+                "region_id": {"type": "string", "minLength": 1},
+                "candidate_pdf_page": {"type": "integer", "minimum": 1},
+                "region_order": {"type": "integer", "minimum": 1},
+                "reading_order_region": {"type": "integer", "minimum": 1},
+                "column": {"type": "integer", "minimum": 0},
+                "role": {"enum": ["index_column", "header_footer"]},
+                "bbox": {"$ref": "#/$defs/bbox"},
+                "line_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+                "line_count": {"type": "integer", "minimum": 0},
+                "column_detection_confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                "lines": {"type": "array", "items": {"$ref": "#/$defs/line"}}
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "excluded_lines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["excluded_line_id", "candidate_pdf_page", "bbox", "original_displayed_form", "reason", "confidence"],
+        "properties": {
+          "excluded_line_id": {"type": "string", "minLength": 1},
+          "candidate_pdf_page": {"type": "integer", "minimum": 1},
+          "bbox": {"$ref": "#/$defs/bbox"},
+          "original_displayed_form": {"type": "string"},
+          "reason": {"enum": ["repeated_page_header", "repeated_page_footer", "page_number_footer"]},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "counts": {
+      "type": "object",
+      "required": ["pages", "regions", "lines", "index_lines", "excluded_lines", "excluded_repeated_headers", "excluded_repeated_footers", "excluded_page_number_footers", "lines_with_extraction_warnings", "column_continuations", "page_continuations"],
+      "additionalProperties": {"type": "integer", "minimum": 0}
+    },
+    "limitations": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "bbox": {
+      "type": "array",
+      "prefixItems": [{"type": "number"}, {"type": "number"}, {"type": "number"}, {"type": "number"}],
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "adapter": {
+      "type": "object",
+      "required": ["requested_id", "id", "version", "selection_reason", "selection_evidence"],
+      "properties": {
+        "requested_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"},
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"},
+        "version": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,31}$"},
+        "selection_reason": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"},
+        "selection_evidence": {"type": "object"}
+      },
+      "additionalProperties": false
+    },
+    "pdfSummary": {
+      "type": "object",
+      "required": ["page_count", "producer", "has_embedded_text"],
+      "properties": {
+        "page_count": {"type": "integer", "minimum": 0},
+        "producer": {"type": ["string", "null"]},
+        "has_embedded_text": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "line": {
+      "type": "object",
+      "required": ["line_id", "region_id", "candidate_pdf_page", "reading_order_region", "column", "reading_order", "bbox", "indentation_level", "displayed_line_text", "continuation_status", "inferred_boundary", "confidence", "extraction_warnings", "original_displayed_form"],
+      "properties": {
+        "line_id": {"type": "string", "minLength": 1},
+        "region_id": {"type": "string", "minLength": 1},
+        "candidate_pdf_page": {"type": "integer", "minimum": 1},
+        "reading_order_region": {"type": "integer", "minimum": 1},
+        "column": {"type": "integer", "minimum": 0},
+        "reading_order": {"type": "integer", "minimum": 1},
+        "bbox": {"$ref": "#/$defs/bbox"},
+        "indentation_level": {"type": "integer", "minimum": 0},
+        "displayed_line_text": {"type": "string"},
+        "continuation_status": {"enum": ["standalone", "continued_from_previous_column", "continues_next_column", "continued_from_previous_page", "continues_next_page", "continues_previous", "continues_next", "unknown"]},
+        "inferred_boundary": {"enum": ["main_entry", "subentry", "continuation", "unknown", "header_footer"]},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "extraction_warnings": {"type": "array", "items": {"type": "string"}},
+        "original_displayed_form": {"type": "string"},
+        "excluded_from_index": {"type": "boolean"},
+        "exclusion_reason": {"type": "string"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -131,6 +131,8 @@ Balance useful specificity with coherent grouping. Do not overrepresent thematic
 
 Require every page-bearing entry to have a unique one- or two-level path and at least one valid locator. Merge duplicate paths. Require locator lists to contain no duplicates and follow publication order. Permit only `see` and `see also`; deduplicate reference records and targets. Reject empty entries and invalid references. Require all records to conform to the output schema.
 
+This is an evaluation standard, not a normalization instruction. Candidate preparation must preserve duplicate, empty, malformed, third-level, or deeper delivered structures and mixed locator/reference records in candidate-index-v2. The structure audit then records the applicable defects and gates. Never make a candidate appear compliant by flattening, merging, repairing, or discarding delivered content during normalization.
+
 ## Density calibration
 
 Measure indexable source words for each chapter or approved intellectual unit. For each unit, calculate:

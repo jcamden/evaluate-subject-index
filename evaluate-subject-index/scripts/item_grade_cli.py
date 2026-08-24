@@ -195,6 +195,9 @@ def lowest_confidence(values: Iterable[str | None]) -> str | None:
 
 
 def build_inventory(candidate: dict[str, Any]) -> dict[str, Any]:
+    candidate_schema = candidate.get("schema_version")
+    if candidate_schema != "candidate-index-v2":
+        fail("candidate_schema", "Candidate schema must be candidate-index-v2.")
     candidate_sha = candidate.get("candidate_sha256")
     if not isinstance(candidate_sha, str) or not candidate_sha:
         fail("candidate_identity", "Candidate requires candidate_sha256.")
@@ -220,8 +223,9 @@ def build_inventory(candidate: dict[str, Any]) -> dict[str, Any]:
             fail("path_identity", f"Duplicate or missing path_id: {path_id}")
         if not isinstance(record_id, str) or not record_id:
             fail("record_identity", f"{path_id} requires a non-empty record_id.")
-        if not isinstance(heading_path, list) or not 1 <= len(heading_path) <= 2 or not all(isinstance(item, str) and item for item in heading_path):
-            fail("heading_path", f"{path_id} requires a one- or two-level string heading_path.")
+        valid_depth = isinstance(heading_path, list) and len(heading_path) >= 1
+        if not valid_depth or not all(isinstance(item, str) and item for item in heading_path):
+            fail("heading_path", f"{path_id} requires one or more non-empty string heading levels.")
         seen_path_ids.add(path_id)
 
         node_ids: list[str] = []
@@ -266,36 +270,43 @@ def build_inventory(candidate: dict[str, Any]) -> dict[str, Any]:
                 "mapping_status": assignment.get("mapping_status"),
             })
 
-        reference_id = None
-        cross_reference = record.get("cross_reference")
-        if record.get("record_type") == "cross_reference" or isinstance(cross_reference, dict):
-            if not isinstance(cross_reference, dict):
-                fail("cross_reference_shape", f"{path_id} is a cross-reference without a cross_reference object.")
-            if cross_reference.get("type") not in {"see", "see also"} or not isinstance(cross_reference.get("target"), str):
-                fail("cross_reference_shape", f"{path_id} requires a valid see/see also type and string target.")
-            reference_id = cross_reference.get("reference_id") or stable_id("XREF", candidate_sha, {"record_id": record_id, "path_id": path_id})
+        reference_ids: list[str] = []
+        cross_references = record.get("cross_references")
+        if not isinstance(cross_references, list):
+            fail("cross_reference_shape", f"{path_id}.cross_references must be an array.")
+        if record.get("record_type") == "cross_reference" and not cross_references:
+            fail("cross_reference_shape", f"{path_id} is a cross-reference without a reference object.")
+        for reference_index, reference in enumerate(cross_references):
+            if not isinstance(reference, dict):
+                fail("cross_reference_shape", f"{path_id} has a non-object cross-reference.")
+            if reference.get("type") not in {"see", "see also"} or not isinstance(reference.get("target"), str) or not reference.get("target"):
+                fail("cross_reference_shape", f"{path_id} requires valid see/see also references with non-empty targets.")
+            identity = {"record_id": record_id, "path_id": path_id, "reference_index": reference_index}
+            reference_id = reference.get("reference_id") or stable_id("XREF", candidate_sha, identity)
             if not isinstance(reference_id, str) or reference_id in seen_reference_ids:
                 fail("cross_reference_identity", f"Duplicate or invalid cross-reference identity: {reference_id}")
             seen_reference_ids.add(reference_id)
+            reference_ids.append(reference_id)
             references.append({
                 "reference_id": reference_id,
                 "record_id": record_id,
                 "source_path_id": path_id,
                 "source_node_id": node_ids[-1],
-                "reference_type": cross_reference.get("type"),
-                "target_display": cross_reference.get("target"),
-                "target_path_id": cross_reference.get("target_path_id"),
+                "reference_type": reference.get("type"),
+                "target_display": reference.get("target"),
+                "target_path_id": reference.get("target_path_id"),
             })
 
-        paths.append({
+        path_record = {
             "path_id": path_id,
             "record_id": record_id,
             "record_type": record.get("record_type"),
             "heading_path": heading_path,
             "node_ids": node_ids,
             "locator_ids": locator_ids,
-            "reference_id": reference_id,
-        })
+            "reference_ids": reference_ids,
+        }
+        paths.append(path_record)
 
     nodes = sorted(nodes_by_key.values(), key=lambda item: (item["heading_path"], item["node_id"]))
     for node in nodes:
@@ -312,7 +323,7 @@ def build_inventory(candidate: dict[str, Any]) -> dict[str, Any]:
             if len(matches) == 1:
                 reference["target_path_id"] = matches[0]
     return {
-        "schema_version": "subject-index-item-inventory-v1",
+        "schema_version": "subject-index-item-inventory-v2",
         "candidate_id": candidate.get("candidate_id"),
         "candidate_sha256": candidate_sha,
         "paths": sorted(paths, key=lambda item: item["path_id"]),
@@ -587,11 +598,15 @@ def build_assessments(
             measured = [node_component_scores.get(node_id, {}).get("conceptual_stance_fidelity") for node_id in path.get("node_ids", [])]
             conceptual_score = mean(measured)
         findability_score = mean(node_component_scores.get(node_id, {}).get("findability_navigation") for node_id in path.get("node_ids", []))
-        if path.get("reference_id"):
-            reference_judgment = reference_judgments.get(path["reference_id"])
-            reference_score = REFERENCE_SCORE.get(reference_judgment.get("judgment")) if reference_judgment else None
-            measured_findability = [value for value in (findability_score, reference_score) if value is not None]
-            findability_score = min(measured_findability) if measured_findability else None
+        path_reference_ids = path.get("reference_ids")
+        if not isinstance(path_reference_ids, list):
+            fail("inventory_shape", f"{path.get('path_id')} requires reference_ids.")
+        reference_scores = []
+        for reference_id in path_reference_ids:
+            reference_judgment = reference_judgments.get(reference_id)
+            reference_scores.append(REFERENCE_SCORE.get(reference_judgment.get("judgment")) if reference_judgment else None)
+        measured_findability = [value for value in [findability_score, *reference_scores] if value is not None]
+        findability_score = min(measured_findability) if measured_findability else None
         mechanics_score = mean(node_component_scores.get(node_id, {}).get("mechanics_consistency") for node_id in path.get("node_ids", []))
         component_values = {
             "meaningful_coverage": coverage_score,
@@ -607,7 +622,7 @@ def build_assessments(
             "editorial_selectivity": path.get("locator_ids", []),
             "conceptual_stance_fidelity": path.get("node_ids", []),
             "page_reference_reliability": path.get("locator_ids", []),
-            "findability_navigation": [*path.get("node_ids", []), *([path["reference_id"]] if path.get("reference_id") else [])],
+            "findability_navigation": [*path.get("node_ids", []), *path_reference_ids],
             "mechanics_consistency": path.get("node_ids", []),
         }
         component_summaries = {
@@ -641,7 +656,7 @@ def build_assessments(
             *[locator_judgments.get(locator_id, {}).get("confidence") for locator_id in path.get("locator_ids", [])],
             *[item.get("confidence") for item in path_subjects],
             *[node_judgments.get(node_id, {}).get("confidence") for node_id in path.get("node_ids", [])],
-            reference_judgments.get(path.get("reference_id"), {}).get("confidence") if path.get("reference_id") else None,
+            *[reference_judgments.get(reference_id, {}).get("confidence") for reference_id in path_reference_ids],
         ])
         path_record = {
             **path,
@@ -653,8 +668,8 @@ def build_assessments(
             "matched_subject_ids": sorted(item.get("subject_id") for item in path_subjects if item.get("subject_id")),
             "evidence_ids": sorted(set(path.get("locator_ids", [])) | set(item.get("defect_id") for item in path_defects if item.get("defect_id"))),
         }
-        if path.get("reference_id"):
-            path_record["evidence_ids"] = sorted(set(path_record["evidence_ids"]) | {path["reference_id"]})
+        if path_reference_ids:
+            path_record["evidence_ids"] = sorted(set(path_record["evidence_ids"]) | set(path_reference_ids))
         path_record["popover"] = popover(
             " — ".join(path["heading_path"]),
             "Diagnostic grade for the complete heading path as delivered, including its measured locators and path-specific audit findings.",
@@ -676,7 +691,12 @@ def build_assessments(
                 for item in component_results
             ],
             path_record["evidence_ids"],
-            navigation={"path_id": path_id, "node_ids": path.get("node_ids", []), "locator_ids": path.get("locator_ids", []), "reference_id": path.get("reference_id")},
+            navigation={
+                "path_id": path_id,
+                "node_ids": path.get("node_ids", []),
+                "locator_ids": path.get("locator_ids", []),
+                "reference_ids": path_reference_ids,
+            },
         )
         path_assessments.append(path_record)
 

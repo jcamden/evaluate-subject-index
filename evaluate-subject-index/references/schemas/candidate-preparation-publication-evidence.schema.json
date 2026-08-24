@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "candidate-preparation-publication-evidence.schema.json",
+  "title": "GitHub-observed candidate-preparation pull-request evidence",
+  "type": "object",
+  "required": ["schema_version", "evidence_source", "candidate_project", "pull_request", "pull_request_url", "state", "merged", "base_branch", "base_commit", "head_branch", "head_commit", "commit_count", "changed_files", "bootstrap", "observed_at"],
+  "properties": {
+    "schema_version": {"const": "candidate-preparation-publication-evidence-v1"},
+    "evidence_source": {"const": "github_api"},
+    "candidate_project": {"type": "string", "pattern": "^[^/\\s]+/[^/\\s]+$"},
+    "pull_request": {"type": "integer", "minimum": 1},
+    "pull_request_url": {"type": "string", "pattern": "^https://github\\.com/[^/]+/[^/]+/pull/[1-9][0-9]*$"},
+    "state": {"const": "open"},
+    "merged": {"const": false},
+    "base_branch": {"type": "string", "minLength": 1},
+    "base_commit": {"$ref": "#/$defs/commit"},
+    "head_branch": {"type": "string", "pattern": "^candidate-preparation/"},
+    "head_commit": {"$ref": "#/$defs/commit"},
+    "commit_count": {"const": 1},
+    "bootstrap": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["repository_was_empty", "empty_observed_at", "initialization_commit", "parent_commits", "default_branch", "tree_entries"],
+          "properties": {
+            "repository_was_empty": {"const": true},
+            "empty_observed_at": {"type": "string", "minLength": 1},
+            "initialization_commit": {"$ref": "#/$defs/commit"},
+            "parent_commits": {"type": "array", "maxItems": 0},
+            "default_branch": {"const": "main"},
+            "tree_entries": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "uniqueItems": true,
+              "items": {
+                "type": "object",
+                "required": ["path", "type", "blob_sha", "file_sha256"],
+                "properties": {
+                  "path": {"enum": [".gitignore", "README.md"]},
+                  "type": {"const": "blob"},
+                  "blob_sha": {"type": "string", "pattern": "^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$"},
+                  "file_sha256": {"$ref": "#/$defs/sha256"}
+                },
+                "additionalProperties": false
+              },
+              "allOf": [
+                {"contains": {"type": "object", "properties": {"path": {"const": ".gitignore"}}, "required": ["path"]}},
+                {"contains": {"type": "object", "properties": {"path": {"const": "README.md"}}, "required": ["path"]}}
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "changed_files": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": ["path", "blob_sha", "file_sha256"],
+        "properties": {
+          "path": {"enum": ["candidate/candidate-ref.json", "candidate/layout-profile.json", "validation/candidate-preparation-report.json"]},
+          "blob_sha": {"type": "string", "pattern": "^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$"},
+          "file_sha256": {"$ref": "#/$defs/sha256"}
+        },
+        "additionalProperties": false
+      },
+      "allOf": [
+        {"contains": {"type": "object", "properties": {"path": {"const": "candidate/candidate-ref.json"}}, "required": ["path"]}},
+        {"contains": {"type": "object", "properties": {"path": {"const": "candidate/layout-profile.json"}}, "required": ["path"]}},
+        {"contains": {"type": "object", "properties": {"path": {"const": "validation/candidate-preparation-report.json"}}, "required": ["path"]}}
+      ]
+    },
+    "observed_at": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "commit": {"type": "string", "pattern": "^[a-fA-F0-9]{40}$"}
+  },
+  "additionalProperties": false
+}

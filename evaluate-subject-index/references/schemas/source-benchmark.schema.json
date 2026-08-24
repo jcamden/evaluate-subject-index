@@ -3,13 +3,14 @@
   "$id": "source-benchmark.schema.json",
   "title": "Frozen source subject benchmark",
   "type": "object",
-  "required": ["schema_version", "benchmark_id", "version", "source_sha256", "policy_sha256", "candidate_blindness", "chunk_manifest_sha256", "subjects", "relationships", "reader_tasks", "freeze", "benchmark_sha256"],
+  "required": ["schema_version", "benchmark_id", "version", "source_sha256", "policy_sha256", "page_map_sha256", "candidate_blindness", "chunk_manifest_sha256", "subjects", "relationships", "reader_tasks", "freeze", "benchmark_sha256"],
   "properties": {
     "schema_version": {"const": "source-subject-benchmark-v2"},
-    "benchmark_id": {"type": "string"},
+    "benchmark_id": {"type": "string", "minLength": 1},
     "version": {"type": "integer", "minimum": 1},
     "source_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "policy_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "page_map_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "candidate_blindness": {"enum": ["preserved", "compromised", "not_claimed"]},
     "chunk_manifest_sha256": {"type": "string"},
     "subjects": {
@@ -19,17 +20,36 @@
         "required": ["subject_id", "label", "priority", "meaning", "stance", "acceptable_access", "evidence"],
         "properties": {
           "subject_id": {"type": "string", "pattern": "^SUBJ-"},
-          "label": {"type": "string"},
+          "label": {"type": "string", "minLength": 1},
           "priority": {"enum": ["essential", "major", "optional", "exclude_by_default"]},
-          "meaning": {"type": "string"},
-          "stance": {"type": "string"},
-          "acceptable_access": {"type": "array", "minItems": 1, "items": {"type": "string"}},
-          "evidence": {"type": "array", "items": {"type": "object"}}
+          "meaning": {"type": "string", "minLength": 1},
+          "stance": {"type": "string", "minLength": 1},
+          "acceptable_access": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "evidence": {"type": "array", "minItems": 1, "items": {"type": "object", "minProperties": 1}}
         },
         "additionalProperties": true
       }
     },
-    "relationships": {"type": "array", "items": {"type": "object"}},
+    "relationships": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["relationship_id", "source_subject_id", "relationship_type", "resolution_status"],
+        "properties": {
+          "relationship_id": {"type": "string", "pattern": "^REL-"},
+          "source_subject_id": {"type": "string", "pattern": "^SUBJ-"},
+          "target_subject_id": {"type": "string", "pattern": "^SUBJ-"},
+          "target_label": {"type": "string", "minLength": 1},
+          "relationship_type": {"type": "string", "minLength": 1},
+          "resolution_status": {"type": "string", "minLength": 1}
+        },
+        "oneOf": [
+          {"required": ["target_subject_id"]},
+          {"required": ["target_label"]}
+        ],
+        "additionalProperties": true
+      }
+    },
     "reader_tasks": {
       "type": "array",
       "items": {
@@ -37,8 +57,8 @@
         "required": ["task_id", "question", "subject_ids"],
         "properties": {
           "task_id": {"type": "string", "pattern": "^TASK-"},
-          "question": {"type": "string"},
-          "subject_ids": {"type": "array", "items": {"type": "string"}}
+          "question": {"type": "string", "minLength": 1},
+          "subject_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^SUBJ-"}}
         }
       }
     },

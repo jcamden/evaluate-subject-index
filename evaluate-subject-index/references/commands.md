@@ -42,8 +42,6 @@ Ask only when a matter role is genuinely ambiguous, a publisher specification co
 
 Use the fixed chapter-level density profile: target 8 locator-bearing complete heading paths and 20 expanded locator occurrences per 1,000 indexable source words; target bands 6–10 and 15–25; broad tolerance bands 4–12 and 10–30. Output schema-valid, canonically hashed `evaluation-policy.json` with policy profile `subject-index-standard-policy-v1` and rubric `subject-index-rubric-v4`.
 
-For a legacy state that has not yet frozen policy or started downstream work, run `scripts/state_cli.py adopt-standard-policy` first to record readership provenance and update the state’s policy/rubric identifiers without restarting the evaluation.
-
 ## `prepare-source-chunks`
 
 Required: source PDF and validated chunk manifest.
@@ -135,19 +133,43 @@ Apply every approved change, preserve frozen identity fields, and output `source
 
 `retain_draft` keeps canonical benchmark content and version. `approve_revised` requires a changed final benchmark and incremented version. Any substantive post-freeze edit creates a new version and invalidates results tied to the previous hash.
 
-## `upgrade-benchmark-workflow`
+## `worker-candidate-preparation [candidate-id] --project [repository] --benchmark-project [repository]`
 
-Required: a valid v3 evaluation state with no candidate stage started.
+Required: one candidate ID, restricted candidate PDF, candidate-evaluation repository, benchmark repository, validated source state, edition identity, expanded page map, chunk manifest, and frozen policy/rubric identities. Optional: immutable benchmark preparation ref and adapter (`auto`, `generic-pdf-layout`, or `indexerlabs-two-column`). Resolve and record the benchmark default-branch head once when no ref is supplied.
 
-Run `python scripts/state_cli.py upgrade-benchmark-workflow --state evaluation-state.json`. The migration changes the state to v4. A completed legacy benchmark becomes the synthesis baseline; independent review and final freeze are reset to `not_started`. The command is idempotent for v4 states and refuses migration after candidate work has begun.
+Run in an isolated context that is not used for source discovery, synthesis, or benchmark review. Do not inspect benchmark subjects. Use the common adapter contract to capture geometry and reading order, normalize every delivered hierarchy level, locator/range, and cross-reference without editorial repair, expand locators through the frozen ordered page map, build candidate-index-v2 and item-inventory-v2, and complete the full normalization QA ledger described in [candidate-preparation.md](candidate-preparation.md). Candidate preparation may precede final benchmark freeze because it makes no candidate-quality judgment and does not mutate canonical state.
+
+Create a candidate-specific private recovery root and a deterministic preparation-portable ZIP excluding the candidate PDF. Generate a private receipt that binds every source/candidate/preparation identity and private hash. Default the branch to `candidate-preparation/<normalized-candidate-id>` and refuse an existing branch.
+
+Publish exactly:
+
+```text
+candidate/candidate-ref.json
+candidate/layout-profile.json
+validation/candidate-preparation-report.json
+```
+
+Validate these files against strict public schemas, run the outgoing content scan, inspect the exact diff, create one commit, push one branch, and open one unmerged pull request. If the repository is completely empty, one prior parentless bootstrap commit on `main` must contain exactly `README.md` and `.gitignore`, with GitHub-observed preceding empty state and complete two-blob root-tree evidence; otherwise the exception is forbidden. Query the GitHub API for schema-valid publication evidence and pass it to the helper with `bind-publication --publication-evidence <file>`; the helper must not trust caller assertions about PR state, branches, commits, commit count, or changed files. Record the evidence hash, PR number/URL, base/head branches and commits, and Git blob/file hashes in the finalized private receipt. Do not publish any PDF, raw extraction, normalized index, inventory, detailed QA, private recovery path, absolute path, Library ID, checkpoint, credential, or secret.
+
+The command succeeds only when candidate bytes are verified, all private artifacts validate, full QA is complete, the recovery ZIP exists, the public projection passes its exact allowlist and safety scan, and an open unmerged pull request identifies the receipt facts. It returns `blocked` after one explicit publication denial without repeatedly retrying.
+
+## `integrate-candidate-preparation --project [repository] --benchmark-project [repository] --benchmark-ref [commit] [pull-request-or-branch]`
+
+Required: canonical v4 evaluation state, exactly one explicit preparation PR or branch, its matching private receipt/recovery root, candidate-evaluation repository, benchmark repository, and explicit final canonical benchmark commit. The final source benchmark must be frozen and canonically hashed.
+
+Before merging, verify the unchanged PR head, exact public paths, Git blob/file hashes, public safety, private hashes, candidate/source/edition/page-map/chunk/policy/rubric/audit identities, full QA set parity, and final benchmark compatibility. Resolve private recovery artifacts only from the explicitly supplied receipt/root; never sweep workers or Library. Both helper `preflight-integration` and `integrate` require a fresh GitHub-API-derived open-PR snapshot through `--publication-evidence <file>` and a GitHub-API-derived `candidate-benchmark-git-proof-v1` through `--benchmark-proof <file>`. The original publication evidence bound into the immutable receipt remains historical proof and does not expire, but it cannot replace the fresh premerge snapshot. Verify the benchmark proof's project, commit, path, blob, and file hashes before building `candidate-benchmark-lock.json`. Reject missing, caller-asserted, stale, or incompatible coordinator evidence; pending/missing locks; and any final page-map change.
+
+The helper authenticates neither a local file nor its author: `evidence_source` is a format discriminator, not a signature. The coordinator must create these files only from its own direct GitHub connector/API observations and must reject an evidence file furnished by the user or worker. Deterministic fixtures are permitted only in the synthetic test suite.
+
+After all preflight checks pass, merge the public-safe proposal. Query the GitHub API again, materialize strict `candidate-preparation-merge-evidence-v1` directly from connector output, and pass it through required `integrate --merge-evidence <file>`; never accept user-authored assertions as API evidence. The merged proof must bind the selected PR, closed/merged state, base/head/merge commits, one-commit count, and exact three path/blob/file hashes. Copy the exact accepted private worker bytes to versioned canonical paths, register them and the lock, update the artifact manifest first and evaluation state last, complete the existing `candidate_normalization` stage, run complete validation, and checkpoint. The benchmark lock records `premerge_evidence_sha256`, `merge_evidence_sha256`, the exact public blob map, and the benchmark repository path/blob/proof hash/observation; the integration report records both PR-evidence hashes plus `benchmark_proof_sha256`. Leave `locator_chunk_preparation` as the earliest available candidate-audit stage. Do not update the benchmark repository and do not modify normalized candidate content during integration.
 
 ## `normalize-index`
 
-Required: original candidate index and page mapping.
+Required: original candidate index, page mapping, and a frozen compatible benchmark. This is the serial post-freeze alternative to `worker-candidate-preparation` plus `integrate-candidate-preparation`.
 
-Parse every main heading, subheading, complete heading path, locator/range, and cross-reference. Expand ranges to individual locator assignments while preserving the displayed form. Create stable IDs and retain raw source text or coordinates. Output `candidate-index.json` plus a normalization report. Never repair wording, filing, locators, or references silently.
+Parse every main heading, every delivered subheading level, complete heading path, displayed locator/range, and cross-reference. Expand ranges to individual locator assignments while preserving the displayed form. Create stable IDs and retain raw candidate text or coordinates privately. Emit only candidate-index-v2 and item-inventory-v2. Never repair wording, filing, hierarchy, locators, or references silently. Preserve third-level headings and mixed locator/reference records for later judgment.
 
-Run `scripts/item_grade_cli.py build-inventory` over the normalized candidate and output `item-inventory.json`. The inventory must deterministically enumerate every `PATH-*`, `LOC-*`, unique main-heading/subheading `NODE-*`, and cross-reference `XREF-*`. Register both files as required private artifacts of candidate normalization. The inventory contains identities and display relationships, not judgments.
+Run `scripts/item_grade_cli.py build-inventory` over `candidate-index.v2.json` and output `item-inventory.v2.json`. The inventory must deterministically enumerate every `PATH-*`, `LOC-*`, unique heading-level `NODE-*`, and cross-reference `XREF-*`. Register both files as required private artifacts of candidate normalization. The inventory contains identities and display relationships, not judgments.
 
 Every expanded locator assignment must retain `source_page_label` as a string and resolve to exactly one `document_page` through the frozen page map. Expand displayed ranges by resolving both endpoint labels and walking the ordered document pages within the same mapping segment; do not assume Arabic arithmetic. Mark unresolved or ambiguous labels explicitly; do not guess from an apparent numeric offset.
 

@@ -14,3 +14,7 @@ evaluations/
 exports/
 *-checkpoint-*.zip
 *-bundle-*.zip
+candidate-preparation/
+candidate-preparation-*.json
+candidate-benchmark-*.json
+*-preparation-portable.zip

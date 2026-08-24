@@ -47,8 +47,12 @@ study-root/
 ├── candidates/
 │   └── candidate-id/
 │       ├── candidate-ref.json
-│       ├── candidate-index.json
-│       ├── item-inventory.json
+│       ├── layout-profile.json
+│       ├── candidate-layout-extraction.v1.json
+│       ├── candidate-index.v2.json
+│       ├── item-inventory.v2.json
+│       ├── normalization-exceptions.vN.json
+│       ├── candidate-benchmark-lock.json
 │       ├── locator-packets/
 │       ├── locator-audits/
 │       ├── missing-access-audits/
@@ -105,6 +109,12 @@ Never let parallel workers replace the canonical Library state, manifest, or cum
 Worker recovery files are not canonical and do not belong in the benchmark pull request. The branch publishes only the unique chapter artifact. After accepted pull requests are merged, the coordinating run materializes those artifacts into the canonical study, registers their hashes, validates the complete run, and creates one new cumulative checkpoint.
 
 A Git branch and Library worker recovery copy serve different purposes: the branch is the reviewable merge proposal; the Library copy preserves work if branch publication is blocked. Neither supersedes canonical integration.
+
+Candidate-preparation workers use a candidate-specific root such as `workers/candidate-preparation/<candidate-id>/`. Keep the complete layout extraction, normalized candidate, inventory, exception ledger, normalization report, full QA ledger, receipt, and preparation-portable ZIP there. The candidate PDF remains restricted and is excluded from the ZIP. The ZIP may contain private JSON; it is a recovery artifact, not a public bundle.
+
+The public worker branch is a separate aggregate projection containing exactly `candidate/candidate-ref.json`, `candidate/layout-profile.json`, and `validation/candidate-preparation-report.json`. It never contains private recovery artifacts. After the pull request opens, persist GitHub-API publication evidence privately and finalize the receipt so it binds the observed PR state, base/head, exact Git blob/file hashes, and evidence hash. The receipt-bound evidence is immutable historical proof and does not expire. At coordinator preflight/integration, preserve a distinct, strictly later open-PR publication snapshot, the final-benchmark Git proof, and post-merge `candidate-preparation-merge-evidence-v1` that does not predate the open snapshot. Create all three directly from connector/API output, not user-authored assertions.
+
+At integration, require the coordinator to name one receipt and recovery root explicitly. Resolve its files through receipt-relative POSIX paths and exact hashes; never search broadly for a matching candidate. Require `--publication-evidence` and `--benchmark-proof` for both helper preflight and integration, plus `--merge-evidence` after merge. Bind the fresh premerge hash, merged evidence hash, public blob identities, and benchmark proof identity in `candidate-benchmark-lock.json`; materialize accepted artifacts at new versioned canonical paths, register them, save the manifest, and save state last.
 
 ## Import and resume
 

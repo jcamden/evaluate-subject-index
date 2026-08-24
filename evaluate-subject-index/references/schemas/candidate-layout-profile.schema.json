@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "candidate-layout-profile.schema.json",
+  "title": "Private aggregate candidate layout profile",
+  "type": "object",
+  "required": ["schema_version", "candidate_id", "candidate_sha256", "adapter", "pdf", "layout", "limitations"],
+  "properties": {
+    "schema_version": {"const": "candidate-layout-profile-v1"},
+    "candidate_id": {"type": "string", "minLength": 1},
+    "candidate_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "adapter": {
+      "type": "object",
+      "required": ["requested_id", "id", "version", "selection_reason"],
+      "properties": {
+        "requested_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"},
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"},
+        "version": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,31}$"},
+        "selection_reason": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"},
+        "selection_evidence": {"type": "object", "additionalProperties": {"type": ["string", "number", "integer", "boolean", "null"]}}
+      },
+      "additionalProperties": false
+    },
+    "pdf": {
+      "type": "object",
+      "required": ["page_count", "has_embedded_text"],
+      "properties": {
+        "page_count": {"type": "integer", "minimum": 0},
+        "producer": {"type": ["string", "null"]},
+        "has_embedded_text": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "layout": {
+      "type": "object",
+      "required": ["reading_order", "page_count", "region_count", "line_count", "index_columns_per_page", "header_footer_lines", "continuation_lines"],
+      "properties": {
+        "reading_order": {"const": "page_then_region_then_line"},
+        "page_count": {"type": "integer", "minimum": 0},
+        "region_count": {"type": "integer", "minimum": 0},
+        "line_count": {"type": "integer", "minimum": 0},
+        "index_columns_per_page": {"type": "array", "items": {"type": "integer", "minimum": 0}},
+        "header_footer_lines": {"type": "integer", "minimum": 0},
+        "continuation_lines": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "limitations": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": false
+}

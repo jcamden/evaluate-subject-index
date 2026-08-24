@@ -50,7 +50,7 @@ This is not keyword extraction. A concept can matter even if it appears only onc
 
 The chapter findings are first reconciled into an unfrozen publication-level draft. A second, fresh candidate-blind review then checks every subject, relationship, and reader task, revisits cross-chapter concepts and unresolved links, and searches the source independently for omissions. Only after that review approves the draft is it frozen as the source benchmark: a checklist of substantive reader needs. It describes what the source treats and how readers might reasonably look for it; it does not prescribe one ideal wording or index structure.
 
-Freezing the benchmark before opening the candidate prevents the circular method of discovering concepts from the index and then crediting the same index for containing them.
+Freezing the benchmark before candidate evaluation prevents the circular method of discovering concepts from the index and then crediting the same index for containing them. A separate quarantined worker may mechanically extract and normalize candidate layout while the benchmark is being finalized, but the benchmark discoverers and independent reviewer never see that material, and preparation makes no quality judgments.
 
 ### 4. Audit the candidate in both directions
 
@@ -157,6 +157,7 @@ A failed check does not secretly change the arithmetic score. The report shows t
 
 - **Source-first:** Important subjects are identified from the publication before the candidate is reviewed.
 - **Candidate-blind benchmark:** The candidate does not define the concepts used to measure its own coverage.
+- **Isolated preparation:** Mechanical candidate preparation may run concurrently, but its artifacts cannot enter benchmark discovery or review and cannot unlock evaluation before a final benchmark lock.
 - **Independent benchmark QA:** A fresh candidate-blind review checks the complete synthesis draft before it can become the frozen denominator.
 - **No index is the gold standard:** A publisher’s index or competing index is not assumed to be correct.
 - **Independent evaluation:** Each candidate is audited separately. Scores can be placed side by side only when the source, benchmark, policy, page map, chunk design, audit mode, and uncertainty rules match.

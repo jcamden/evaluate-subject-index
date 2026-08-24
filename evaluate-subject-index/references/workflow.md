@@ -23,6 +23,8 @@
 
 Each stage status is `not_started`, `in_progress`, `completed`, or `blocked`. A stage may start only when every earlier required stage is complete. `validate` may run at any time.
 
+Candidate preparation is a parallel worker lane, not a numbered state stage. It may begin after source identity, edition, page map, chunks, policy, rubric, and audit mode are frozen, while source discovery or benchmark synthesis/review continues in candidate-blind contexts. `integrate-candidate-preparation` is blocked until final benchmark freeze; successful integration fulfills stage 10 (`candidate_normalization`) without changing the state schema or weakening the linear candidate-audit dependencies.
+
 Each completion artifact is registered in `artifact-manifest.json` using a relative path, SHA-256, visibility, retention class, and frozen status. Save the manifest before marking the stage complete in `evaluation-state.json`. Chat text is never a completion artifact.
 
 `checkpoint`, `export-bundle`, and `import-bundle` are persistence commands rather than evaluation stages. They do not change editorial judgments or dependency order. Read [storage-and-checkpoints.md](storage-and-checkpoints.md).
@@ -40,8 +42,6 @@ The diagnostic item layer asks, “What should a customer see when inspecting th
 ## Standard policy and minimal elicitation
 
 Infer readership during initialization and instantiate [standard-policy.md](standard-policy.md) at `define-policy`. Do not pause to ask the user to select routine content, entity, example, locator, heading, cross-reference, uncertainty, gate, or density rules. Pause only for a material ambiguity, a publisher specification, or an explicit requested deviation. Record the evidence and provenance of every inference or override.
-
-If a legacy evaluation has reached chunk definition but has not frozen policy or started later work, use `scripts/state_cli.py adopt-standard-policy` to migrate its policy/rubric identifiers and readership provenance in place. Do not migrate after policy freeze; create a new policy version and follow normal invalidation instead.
 
 Use source discovery to establish what deserves access; use locator audit to test proposed path/page legitimacy; use missing-access audit to test source-to-index coverage; and use structure audit to test the index as a whole. Density is measured only in the structure audit. Source discovery records indexable word counts for its denominator but never targets a subject count.
 
@@ -75,11 +75,19 @@ This two-phase pattern prevents lost updates:
 
 If a selected batch contains any invalid, incompatible, unexpected, or restricted change, merge none of that batch. A later coordinator run may integrate a corrected subset explicitly.
 
+## Parallel candidate-preparation workers
+
+Parallel candidate preparation uses the same fan-out/fan-in ownership pattern with a different privacy boundary. One isolated worker owns one candidate, its private recovery artifacts, and one public-safe pull request. It receives only frozen source-level identities and never receives benchmark subjects. Benchmark discovery, synthesis, and review workers never receive candidate artifacts.
+
+The preparation worker may extract layout, normalize delivered content, expand locators through the page map, create item identities, and prove complete normalization accounting. These are fidelity operations. It cannot make candidate-quality judgments or update shared state. Its branch contains only the three strict public projections; complete normalized content remains private.
+
+The coordinator owns the fan-in. It validates one explicitly named PR/branch and one explicitly named private receipt/recovery root, resolves the explicit final benchmark commit, and obtains fresh premerge-publication and benchmark Git evidence directly from connector/API output. After merging only the public-safe proposal, it obtains separate merged-PR API evidence, creates a compatible benchmark lock binding all evidence hashes and the public blobs, and registers the exact private bytes. User-authored assertions never substitute for API evidence. The manifest is updated before state, and state is updated once. Read [candidate-preparation.md](candidate-preparation.md).
+
 ## Benchmark QA gate
 
 The benchmark is not frozen when synthesis ends. Synthesis creates a draft; a fresh, candidate-blind reviewer then checks the draft against the exact source and complete deterministic review inventory. Full review requires exact ID coverage for every subject, relationship, reader task, cross-chapter subject, unresolved relationship, and fallback reader task, plus an independent omission pass. Only an approving full review can authorize the final freeze. Read [benchmark-review.md](benchmark-review.md).
 
-New evaluations use state schema v4. State schema v3 remains readable for historical runs. Before candidate work begins, `upgrade-benchmark-workflow` may convert a v3 run: a completed legacy freeze is treated as a synthesis baseline, while review and final freeze are reopened. Never migrate after candidate normalization or later work has started.
+The workflow uses state schema v4 only. An isolated preparation receipt does not alter canonical state and can be integrated only into the same compatible v4 evaluation after final benchmark freeze.
 
 ## Resume behavior
 
@@ -97,6 +105,8 @@ When resuming in another chat or environment, materialize the active Library fol
 - Changing the standard-policy or rubric version invalidates policy and every later stage.
 - Correcting only the recorded readership rationale without changing its label or any operative rule does not invalidate judgments; changing the readership label invalidates reader tasks, benchmark synthesis, and every candidate stage.
 - Changing the synthesis draft invalidates benchmark review, final freeze, and every candidate stage. Changing review dispositions invalidates final freeze and every candidate stage. Changing final benchmark meaning, priority, evidence, or reader tasks creates a new version and invalidates every candidate stage.
+- Changing source edition identity, page mapping, chunk identity, policy, rubric, or audit mode invalidates any pending candidate-preparation receipt. A preparation worker may survive benchmark-content revisions only when every receipt-bound source-level identity remains exact.
+- Changing prepared candidate bytes, layout extraction, normalization, inventory, exception ledger, or QA invalidates the worker receipt, public projection, recovery bundle, and any pending integration. Never edit accepted normalization during integration.
 - Changing candidate normalization or item inventory invalidates locator packets, locator audit, missing-access, structure, item assessments, score, and web report stages.
 - Adjudicating a judgment invalidates item assessments, scoring, and web reporting only unless it changes the benchmark.
 - Changing presentation text without changing evaluation facts requires only rebuilding the web report.

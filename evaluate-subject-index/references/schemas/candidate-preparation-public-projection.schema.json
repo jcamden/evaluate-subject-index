@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "candidate-preparation-public-projection.schema.json",
+  "title": "One strict document in the candidate-preparation public projection",
+  "oneOf": [
+    {"$ref": "#/$defs/publicRef"},
+    {"$ref": "#/$defs/publicLayoutProfile"},
+    {"$ref": "candidate-preparation-report.schema.json"}
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "finding": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {"enum": ["verified", "not_independently_verified", "incomplete", "conflicting_evidence", "not_applicable"]}
+      },
+      "additionalProperties": false
+    },
+    "publicRef": {
+      "type": "object",
+      "required": ["schema_version", "candidate_id", "candidate_sha256", "file_origin", "source_identity", "page_map_sha256", "chunk_manifest_sha256", "policy_identity", "provenance", "benchmark_lock_status"],
+      "properties": {
+        "schema_version": {"const": "candidate-preparation-public-ref-v1"},
+        "candidate_id": {"type": "string", "minLength": 1},
+        "candidate_sha256": {"$ref": "#/$defs/sha256"},
+        "file_origin": {"enum": ["delivered_pdf", "reconstructed_pdf", "transcription"]},
+        "source_identity": {
+          "type": "object",
+          "required": ["sha256", "edition"],
+          "properties": {
+            "sha256": {"$ref": "#/$defs/sha256"},
+            "edition": {"type": "string", "minLength": 1}
+          },
+          "additionalProperties": false
+        },
+        "page_map_sha256": {"$ref": "#/$defs/sha256"},
+        "chunk_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "policy_identity": {
+          "type": "object",
+          "required": ["profile", "sha256", "rubric_version", "audit_mode"],
+          "properties": {
+            "profile": {"type": "string", "minLength": 1},
+            "sha256": {"$ref": "#/$defs/sha256"},
+            "rubric_version": {"const": "subject-index-rubric-v4"},
+            "audit_mode": {"enum": ["full", "pilot"]}
+          },
+          "additionalProperties": false
+        },
+        "provenance": {
+          "type": "object",
+          "required": ["candidate_bytes", "internal_pdf_completeness", "structural_continuity", "source_edition_compatibility", "locator_page_map_compatibility", "authoritative_copy_fidelity"],
+          "properties": {
+            "candidate_bytes": {"$ref": "#/$defs/finding"},
+            "internal_pdf_completeness": {"$ref": "#/$defs/finding"},
+            "structural_continuity": {"$ref": "#/$defs/finding"},
+            "source_edition_compatibility": {"$ref": "#/$defs/finding"},
+            "locator_page_map_compatibility": {"$ref": "#/$defs/finding"},
+            "authoritative_copy_fidelity": {"$ref": "#/$defs/finding"}
+          },
+          "additionalProperties": false
+        },
+        "benchmark_lock_status": {"const": "pending_final_benchmark"}
+      },
+      "additionalProperties": false
+    },
+    "publicLayoutProfile": {
+      "type": "object",
+      "required": ["schema_version", "candidate_id", "candidate_sha256", "adapter", "pdf_summary", "layout_summary", "limitation_count", "content_included"],
+      "properties": {
+        "schema_version": {"const": "candidate-preparation-public-layout-profile-v1"},
+        "candidate_id": {"type": "string", "minLength": 1},
+        "candidate_sha256": {"$ref": "#/$defs/sha256"},
+        "adapter": {
+          "type": "object",
+          "required": ["requested_id", "id", "version", "selection_reason"],
+          "properties": {
+            "requested_id": {"type": "string", "minLength": 1},
+            "id": {"type": "string", "minLength": 1},
+            "version": {"type": "string", "minLength": 1},
+            "selection_reason": {"type": "string", "minLength": 1}
+          },
+          "additionalProperties": false
+        },
+        "pdf_summary": {
+          "type": "object",
+          "required": ["page_count", "has_embedded_text"],
+          "properties": {
+            "page_count": {"type": "integer", "minimum": 0},
+            "has_embedded_text": {"type": "boolean"}
+          },
+          "additionalProperties": false
+        },
+        "layout_summary": {
+          "type": "object",
+          "required": ["reading_order", "page_count", "region_count", "line_count", "header_footer_lines", "continuation_lines", "index_column_count_histogram"],
+          "properties": {
+            "reading_order": {"const": "page_then_region_then_line"},
+            "page_count": {"type": "integer", "minimum": 0},
+            "region_count": {"type": "integer", "minimum": 0},
+            "line_count": {"type": "integer", "minimum": 0},
+            "header_footer_lines": {"type": "integer", "minimum": 0},
+            "continuation_lines": {"type": "integer", "minimum": 0},
+            "index_column_count_histogram": {
+              "type": "object",
+              "propertyNames": {"pattern": "^[0-9]+$"},
+              "additionalProperties": {"type": "integer", "minimum": 0}
+            }
+          },
+          "additionalProperties": false
+        },
+        "limitation_count": {"type": "integer", "minimum": 0},
+        "content_included": {"const": false}
+      },
+      "additionalProperties": false
+    }
+  }
+}

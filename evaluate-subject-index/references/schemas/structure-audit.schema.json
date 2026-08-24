@@ -48,7 +48,7 @@
         "required": ["node_id", "heading_path", "role", "component_judgments", "summary", "confidence", "evidence_ids"],
         "properties": {
           "node_id": {"type": "string", "pattern": "^NODE-"},
-          "heading_path": {"type": "array", "minItems": 1, "maxItems": 2, "items": {"type": "string"}},
+          "heading_path": {"type": "array", "minItems": 1, "items": {"type": "string"}},
           "role": {"enum": ["main_heading", "subheading"]},
           "component_judgments": {
             "type": "object",

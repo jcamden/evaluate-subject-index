@@ -23,14 +23,14 @@ Use grading policy `subject-index-item-grading-v1`. Treat it as a presentation a
 
 ## Artifacts and identities
 
-At `normalize-index`, create both:
+At `normalize-index`, or when integrating an accepted preparation worker, create both:
 
 - `candidate-index.json`, preserving every normalized record, `PATH-*`, and `LOC-*`; and
 - `item-inventory.json`, deterministically adding `NODE-*` and `XREF-*` identities.
 
-Generate a node from each unique heading-path prefix. All records beginning with the same main heading share one level-one node. A subheading node represents its exact two-level prefix. Generate identities from the candidate hash plus canonical identity data so repeated runs over identical normalized input produce the same IDs.
+Generate a node from each unique heading-path prefix. All records beginning with the same main heading share one level-one node. Each delivered subheading level receives its exact prefix node. Candidate-index-v2 preserves third and deeper levels even though the standard policy later treats them as defects; normalization must not flatten them. Generate identities from the candidate hash plus canonical identity data so repeated runs over identical normalized input produce the same IDs.
 
-Resolve a cross-reference target to `target_path_id` when its normalized display text uniquely matches an inventory path. Leave it null when no unique match exists; the global reference audit must then record whether the target is unresolved, ambiguous, or otherwise defective.
+Resolve each cross-reference target to `target_path_id` when its normalized display text uniquely matches an inventory path. Leave it null when no unique match exists; the global reference audit must then record whether the target is unresolved, ambiguous, or otherwise defective. Candidate-index-v2 and item-inventory-v2 retain `cross_references[]` and `reference_ids[]` so a record may contain locators and more than one reference without loss.
 
 At `score-index`, create `item-assessments.json` before `evaluation-result.json`. The item artifact contains locator, path, node, cross-reference, and source-subject assessments, plus a color legend and summary counts.
 

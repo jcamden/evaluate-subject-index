@@ -2,7 +2,7 @@
   "schema_version": "structure-audit-v3",
   "evaluation_id": "eval-item-test",
   "candidate_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "item_inventory_sha256": "9f2a454b2ff0bdef21c37a8640e3a428e2aa73086ca75837b50e7cd27ee6841e",
+  "item_inventory_sha256": "2b3032cb85387728e20a454b5ced845b319e499148a4fdb6b8f97819112b3fe8",
   "scope_complete": true,
   "metrics": {"page_bearing_paths": 2, "expanded_locators": 3, "cross_references": 1},
   "density": {

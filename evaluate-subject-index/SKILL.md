@@ -1,6 +1,6 @@
 ---
 name: evaluate-subject-index
-description: Run a repeatable, source-grounded evaluation of a finished subject index using a built-in standard policy. Use when a user wants to map PDF document pages to Arabic, Roman, prefixed, or irregular source labels; define and prepare audit chunks; discover substantively treated subjects serially or through parallel branch-and-pull-request workers; integrate distributed discoveries; synthesize, independently review, and freeze a candidate-blind source benchmark; normalize and route index locators; audit every locator; find missing access; judge hierarchy, density, and navigation; persist outputs to Library or portable bundles; resume an evaluation; or produce JSON for a web report.
+description: Run a repeatable, source-grounded evaluation of a finished subject index using a built-in standard policy. Use when a user wants to map PDF document pages to Arabic, Roman, prefixed, or irregular source labels; define and prepare audit chunks; discover substantively treated subjects serially or through parallel branch-and-pull-request workers; integrate distributed discoveries; synthesize, independently review, and freeze a candidate-blind source benchmark; prepare candidate intake, provenance, layout normalization, and full QA in an isolated parallel worker; normalize and route index locators; audit every locator; find missing access; judge hierarchy, density, and navigation; persist outputs to Library or portable bundles; resume an evaluation; or produce JSON for a web report.
 ---
 
 # Evaluate Subject Index
@@ -27,6 +27,8 @@ Supported commands:
 - `synthesize-source-benchmark`
 - `review-source-benchmark`
 - `freeze-source-benchmark`
+- `worker-candidate-preparation [candidate-id] --project [repository] --benchmark-project [repository]`
+- `integrate-candidate-preparation --project [repository] --benchmark-project [repository] --benchmark-ref [commit] [pull-request-or-branch]`
 - `normalize-index`
 - `prepare-locator-chunks`
 - `audit-locators [chunk-id]`
@@ -37,7 +39,6 @@ Supported commands:
 - `checkpoint`
 - `export-bundle`
 - `import-bundle`
-- `upgrade-benchmark-workflow`
 - `validate`
 
 Read [commands.md](references/commands.md) for inputs, outputs, dependencies, and command-specific behavior. If no command is supplied, run `status` when a state file is present; otherwise run `help`.
@@ -86,9 +87,11 @@ Default to JSON artifacts and concise JSON responses because results are intende
 
 Use the schemas in `references/schemas/`. Put display-ready facts in structured fields, retain complete evidence ledgers, and identify `not_measured`, `uninspectable`, and `uncertain` explicitly rather than treating them as failures or zeros.
 
-Use `scripts/state_cli.py` for deterministic state initialization, status, dependency-aware next-step selection, state transitions, artifact registration, hashing, manifest updates, legacy workflow migration, and validation. Use `scripts/policy_cli.py` to instantiate and hash the built-in policy. Use `scripts/bundle_cli.py` for portable/private checkpoints, exports, artifact inventories, and safe imports. Use `scripts/page_chunk_cli.py` to expand page-label maps, validate user-approved chunk ranges, split source PDFs, and create locator-only chunk packets. Use `scripts/benchmark_review_cli.py` to enumerate benchmark-review denominators and enforce full-review and final-freeze gates. Use `scripts/item_grade_cli.py` to create stable display-item identities and deterministic diagnostic grades. Use `scripts/score_cli.py` for chapter-level density and overall score arithmetic. Do not ask the language model to maintain arithmetic, item-grade aggregation, or workflow state when a script can do it.
+Use `scripts/state_cli.py` for deterministic v4 state initialization, status, dependency-aware next-step selection, state transitions, artifact registration, hashing, manifest updates, and validation. Use `scripts/policy_cli.py` to instantiate and hash the built-in policy. Use `scripts/bundle_cli.py` for portable/private checkpoints, exports, artifact inventories, and safe imports. Use `scripts/page_chunk_cli.py` to expand page-label maps, validate user-approved chunk ranges, split source PDFs, and create locator-only chunk packets. Use `scripts/benchmark_review_cli.py` to enumerate benchmark-review denominators and enforce full-review and final-freeze gates. Use `scripts/item_grade_cli.py` to create stable display-item identities and deterministic diagnostic grades. Use `scripts/score_cli.py` for chapter-level density and overall score arithmetic. Do not ask the language model to maintain arithmetic, item-grade aggregation, or workflow state when a script can do it.
 
 Use `scripts/parallel_discovery_cli.py` for distributed discovery. `worker-receipt` validates one candidate-blind chapter artifact against canonical source, policy, page-map, and chunk hashes without mutating shared state. `integrate` validates all supplied worker artifacts before copying or registering any of them, then updates the canonical manifest and state once.
+
+Use `scripts/candidate_preparation_cli.py` for isolated candidate preparation. Candidate preparation is mechanical fidelity work, not candidate evaluation: it may extract layout, normalize delivered records, expand locators through the frozen page map, construct the item inventory, and account for every normalized item without consulting benchmark subjects or making quality judgments. Use `scripts/candidate_layout_adapters.py` for the common geometry contract and adapter registry. Read [candidate-preparation.md](references/candidate-preparation.md) before either candidate-preparation command.
 
 ## Parallel source discovery
 
@@ -105,6 +108,20 @@ Do not collapse synthesis and QA into one stage. `synthesize-source-benchmark` p
 Run `scripts/benchmark_review_cli.py screen` before editorial review, then `validate-review` and `validate-final`. Treat duplicate, near-duplicate, priority-distribution, and unresolved-relationship flags as diagnostic prompts, never quotas or automatic decisions. Pilot review may be sampled but cannot authorize a freeze or public completeness claims. Read [benchmark-review.md](references/benchmark-review.md) before any of these commands.
 
 Create item grades as a separate diagnostic layer under [item-grading.md](references/item-grading.md). Grade every measured locator, complete path, heading node, cross-reference, and frozen source subject; emit neutral `not_measured` records for unaudited pilot items. Include a public-safe popover payload with factors, weights or caps, confidence, explanations, and evidence IDs for every assessment. Never sum item grades into the overall 100-point result.
+
+## Parallel candidate preparation
+
+Candidate preparation may begin after the source SHA-256, edition identity, expanded page map, chunk manifest, policy profile/hash, rubric version, and audit mode are frozen. It does not require a synthesized, reviewed, or frozen benchmark. Run it in an isolated worker context that does not expose candidate material to any source-discovery, synthesis, or benchmark-review context. Normalized candidate data is never benchmark evidence, and a publisher index is never ground truth.
+
+This is a current-only preparation contract: use `candidate-index-v2`, `item-inventory-v2`, and v4 evaluation state. When the one existing preparation predates these contracts and no candidate judgment has begun, regenerate that preparation in place, rerun full QA, and replace its pending receipt and recovery bundle. Do not retain compatibility readers for superseded preparation artifacts. If candidate judgment has begun, refuse the rewrite and create a new evaluation identity.
+
+`worker-candidate-preparation` prepares exactly one candidate, creates complete private normalization and QA artifacts plus a private recovery bundle, and opens one public-safe pull request. It must not perform locator-support, missing-access, structural-quality, density, scoring, or reporting work; modify canonical evaluation state; inspect benchmark subjects; or merge its pull request. Its default branch is `candidate-preparation/<normalized-candidate-id>`, and an existing branch is a hard stop. The public branch may contain only `candidate/candidate-ref.json`, `candidate/layout-profile.json`, and `validation/candidate-preparation-report.json`. An empty repository may receive one root bootstrap commit on `main` containing exactly `README.md` and `.gitignore`; bind GitHub-observed empty-state, parentless-commit, and exact two-blob-tree evidence in the receipt.
+
+`integrate-candidate-preparation` is the sole coordinator authority. Require one explicit pull request or branch and an explicit final benchmark commit. Treat fresh GitHub-API publication evidence and final-benchmark Git proof as required observed preflight evidence; after merge, require separate GitHub-API merged-pull-request evidence. Create every API evidence JSON directly from connector output, never from user-authored assertions about branch state, commits, paths, or bytes. Both helper preflight and integration require `--publication-evidence` and `--benchmark-proof`. The historical publication evidence bound into the immutable receipt does not expire, but it does not replace the distinct, strictly later premerge snapshot; merged evidence cannot predate that snapshot. Before merging anything, validate the unchanged public diff, matching private recovery artifacts, full QA denominators, candidate/source/page-map/chunk/policy/rubric/audit/edition identities, and the final benchmark canonical hash. Then merge the public-safe proposal, pass the fresh merged observation as `integrate --merge-evidence <file>`, copy the exact accepted private normalization bytes to versioned canonical paths, write `candidate-benchmark-lock.json`, register all artifacts in the manifest, update state last, validate, and checkpoint. This fulfills the existing `candidate_normalization` stage and leaves the next stage at locator-packet preparation. Do not add a parallel-preparation state stage or update the benchmark repository.
+
+The JSON evidence helpers validate shape, freshness, hashes, and cross-artifact bindings; they cannot authenticate who created a local file. The trusted acquisition boundary is the orchestrator's direct GitHub connector/API call. Never accept an evidence file supplied by the user or worker, and never treat the `evidence_source` field itself as an attestation. Synthetic tests may construct fixtures only to exercise deterministic validation.
+
+Preserve every delivered hierarchy level and every mixed or malformed record during preparation. A third-level heading is retained in candidate schema v2 and later fails the applicable quality gate; it is not flattened, repaired, or discarded. Keep extraction confidence separate from editorial judgment and keep authoritative-copy fidelity separate from internal PDF completeness.
 
 ## Persistence rule
 
@@ -134,4 +151,5 @@ Use two built-in chapter-level calibration targets based on indexable source wor
 - Per-locator, path, heading, reference, omission grades and popover contract: [item-grading.md](references/item-grading.md)
 - Independent benchmark synthesis, QA, and final-freeze gates: [benchmark-review.md](references/benchmark-review.md)
 - Machine-readable artifact map: [json-contracts.md](references/json-contracts.md)
+- Parallel candidate preparation, adapters, QA, publication safety, and benchmark locking: [candidate-preparation.md](references/candidate-preparation.md)
 - Storage modes, study layout, checkpoints, imports, and public/private separation: [storage-and-checkpoints.md](references/storage-and-checkpoints.md)

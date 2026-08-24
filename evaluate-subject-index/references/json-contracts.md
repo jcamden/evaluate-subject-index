@@ -1,6 +1,6 @@
 # JSON artifact contracts
 
-The schemas in `schemas/` are web-oriented contracts. Additional fields are allowed so an implementation can preserve richer evidence, but required identity, status, score, and provenance fields must remain stable.
+The schemas in `schemas/` are machine-readable contracts. Each schema controls extensibility explicitly: strict preparation, publication, proof, lock, and integration contracts reject unexpected fields, while broader evaluation artifacts may preserve richer evidence where their schema permits it. Required identity, status, score, and provenance fields must remain stable.
 
 | Artifact | Schema | Purpose |
 | --- | --- | --- |
@@ -18,8 +18,24 @@ The schemas in `schemas/` are web-oriented contracts. Additional fields are allo
 | Benchmark review inventory | `source-benchmark-review-inventory.schema.json` | Deterministic review denominators, queues, and diagnostics |
 | Benchmark review | `source-benchmark-review.schema.json` | Independent candidate-blind editorial review and freeze recommendation |
 | Benchmark | `source-benchmark.schema.json` | Final frozen whole-source subject graph and evidence denominator |
-| Normalized candidate | `candidate-index.schema.json` | Complete paths, references, and expanded locator assignments |
-| Item inventory | `item-inventory.schema.json` | Stable path, locator, heading-node, and cross-reference identities for display and audit joins |
+| Normalized candidate | `candidate-index-v2.schema.json` | Fidelity-preserving arbitrary-depth paths, displayed locators, mixed/multiple references, and private evidence joins |
+| Item inventory | `item-inventory-v2.schema.json` | Stable identities for candidate-index-v2, including arbitrary heading depth and multiple references |
+| Candidate reference | `candidate-ref.schema.json` | Candidate/source identity plus separate provenance, completeness, compatibility, and authoritative-fidelity findings |
+| Layout profile | `candidate-layout-profile.schema.json` | Private aggregate PDF/layout and adapter facts used to derive the minimized public profile |
+| Layout extraction | `candidate-layout-extraction.schema.json` | Private adapter-neutral page, region, line, coordinate, continuation, and extraction evidence |
+| Normalization exceptions | `candidate-normalization-exceptions.schema.json` | Every malformed, unresolved, or fidelity-sensitive preparation exception |
+| Normalization report | `candidate-normalization-report.schema.json` | Private aggregate normalization results and private artifact hashes |
+| Normalization QA | `candidate-normalization-qa.schema.json` | Complete review denominators, page accounting, corrections, and fidelity gate |
+| Preparation receipt | `candidate-preparation-receipt.schema.json` | Worker, repository, source/candidate, private/public hash, PR, recovery, and pending-lock handoff |
+| Publication evidence | `candidate-preparation-publication-evidence.schema.json` | GitHub-API proof of the open unmerged one-commit exact-allowlist worker pull request |
+| Merge evidence | `candidate-preparation-merge-evidence.schema.json` | GitHub-API proof that the selected exact-allowlist worker pull request closed and merged unchanged |
+| Public preparation projection | `candidate-preparation-public-projection.schema.json` | Strict union of the three allowlisted aggregate public documents |
+| Public preparation report | `candidate-preparation-report.schema.json` | Strict aggregate public projection with no reconstructable index content |
+| Preparation recovery metadata | `candidate-preparation-bundle-metadata.schema.json` | Deterministic private recovery ZIP inventory and restricted exclusions |
+| Candidate benchmark lock | `candidate-benchmark-lock.schema.json` | Final benchmark repository/commit/hash and all comparison identities required before candidate audit |
+| Benchmark Git proof | `candidate-benchmark-git-proof.schema.json` | GitHub-API proof binding the selected final benchmark path and bytes to its commit |
+| Candidate integration report | `candidate-preparation-integration.schema.json` | Selected proposal, immutable hashes, and transaction ordering for accepted preparation |
+| Candidate integration checkpoint | `candidate-integration-checkpoint.schema.json` | Private post-integration bundle inventory and exclusions |
 | Candidate locator chunk | `candidate-locator-chunk.schema.json` | Only paths and assignments owned by one audit chunk |
 | Locator batch | `locator-audit.schema.json` | One judgment for every expanded candidate locator |
 | Missing-access batch | `missing-access-audit.schema.json` | Source-to-index concept coverage and locator recall |
@@ -35,6 +51,8 @@ Use opaque IDs rather than mutable labels:
 
 - `SUBJ-*` for benchmark subjects;
 - `PATH-*` for complete candidate heading paths;
+- `DISPLAY-*` for displayed locator or range tokens;
+- `RANGE-*` for displayed range groupings;
 - `LOC-*` for expanded locator assignments;
 - `NODE-*` for unique displayed main-heading and subheading nodes;
 - `XREF-*` for individual cross-reference records;
@@ -55,6 +73,8 @@ Use explicit measurement states such as `measured`, `not_measured`, `uninspectab
 For frozen JSON artifacts, remove the artifact's own hash field, serialize UTF-8 JSON with keys sorted and compact separators, then compute SHA-256. Drafts also receive a deterministic canonical hash in the review inventory, but that hash does not imply freeze. Record schema version, generator version, timestamp, input hashes, and superseded artifact hash when applicable.
 
 Use relative POSIX paths rooted at the evaluation directory in state and manifests. Never store ephemeral absolute paths or make canonical identity depend on a Library ID. Register each artifact only after validation; update state last. Read [storage-and-checkpoints.md](storage-and-checkpoints.md).
+
+Candidate normalization uses candidate-index-v2 and subject-index-item-inventory-v2 only. V2 preserves any delivered third or deeper hierarchy level and `cross_references[]`; it does not imply that those structures satisfy the standard policy. Preparation artifacts remain benchmark-independent, while `candidate-benchmark-lock.json` binds the accepted normalization to the final compatible benchmark before auditing.
 
 ## Web safety
 

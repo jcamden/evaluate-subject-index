@@ -95,6 +95,75 @@ def task_id(task: dict[str, Any]) -> str:
     return str(task.get("task_id", ""))
 
 
+def final_benchmark_structure_errors(benchmark: dict[str, Any]) -> list[str]:
+    """Validate the shared current frozen-benchmark content contract."""
+    errors: list[str] = []
+    subjects = benchmark.get("subjects")
+    relationships = benchmark.get("relationships")
+    tasks = benchmark.get("reader_tasks")
+    if not isinstance(subjects, list) or not isinstance(relationships, list) or not isinstance(tasks, list):
+        return ["subjects, relationships, and reader_tasks must be arrays."]
+    subject_ids: list[str] = []
+    for subject in subjects:
+        valid = (
+            isinstance(subject, dict)
+            and isinstance(subject.get("subject_id"), str) and subject["subject_id"].startswith("SUBJ-")
+            and isinstance(subject.get("label"), str) and bool(subject["label"].strip())
+            and subject.get("priority") in {"essential", "major", "optional", "exclude_by_default"}
+            and isinstance(subject.get("meaning"), str) and bool(subject["meaning"].strip())
+            and isinstance(subject.get("stance"), str) and bool(subject["stance"].strip())
+            and isinstance(subject.get("acceptable_access"), list) and bool(subject["acceptable_access"])
+            and all(isinstance(value, str) and bool(value.strip()) for value in subject["acceptable_access"])
+            and isinstance(subject.get("evidence"), list) and bool(subject["evidence"])
+            and all(isinstance(value, dict) and bool(value) for value in subject["evidence"])
+        )
+        if not valid:
+            errors.append("Every subject must satisfy the nonempty frozen subject contract.")
+        elif isinstance(subject, dict):
+            subject_ids.append(subject["subject_id"])
+    if len(subject_ids) != len(set(subject_ids)):
+        errors.append("Subject identifiers must be unique.")
+    known_subject_ids = set(subject_ids)
+    relationship_ids: list[str] = []
+    for relationship in relationships:
+        has_target_id = isinstance(relationship, dict) and "target_subject_id" in relationship
+        has_target_label = isinstance(relationship, dict) and "target_label" in relationship
+        valid = (
+            isinstance(relationship, dict)
+            and isinstance(relationship.get("relationship_id"), str) and relationship["relationship_id"].startswith("REL-")
+            and relationship.get("source_subject_id") in known_subject_ids
+            and isinstance(relationship.get("relationship_type"), str) and bool(relationship["relationship_type"].strip())
+            and isinstance(relationship.get("resolution_status"), str) and bool(relationship["resolution_status"].strip())
+            and has_target_id != has_target_label
+            and (not has_target_id or relationship.get("target_subject_id") in known_subject_ids)
+            and (not has_target_label or (isinstance(relationship.get("target_label"), str) and bool(relationship["target_label"].strip())))
+        )
+        if not valid:
+            errors.append("Every relationship must identify a known source, type, status, and known or labeled target.")
+        elif isinstance(relationship, dict):
+            relationship_ids.append(relationship["relationship_id"])
+    if len(relationship_ids) != len(set(relationship_ids)):
+        errors.append("Relationship identifiers must be unique.")
+    task_ids: list[str] = []
+    for task in tasks:
+        valid = (
+            isinstance(task, dict)
+            and isinstance(task.get("task_id"), str) and task["task_id"].startswith("TASK-")
+            and isinstance(task.get("question"), str) and bool(task["question"].strip())
+            and isinstance(task.get("subject_ids"), list) and bool(task["subject_ids"])
+            and all(isinstance(value, str) for value in task["subject_ids"])
+            and len(task["subject_ids"]) == len(set(task["subject_ids"]))
+            and set(task["subject_ids"]).issubset(known_subject_ids)
+        )
+        if not valid:
+            errors.append("Every reader task must have a nonempty question and at least one known subject.")
+        elif isinstance(task, dict):
+            task_ids.append(task["task_id"])
+    if len(task_ids) != len(set(task_ids)):
+        errors.append("Reader-task identifiers must be unique.")
+    return errors
+
+
 def build_inventory(draft_path: Path, threshold: float) -> dict[str, Any]:
     draft = load_json(draft_path)
     subjects = require_list(draft, "subjects")
@@ -364,6 +433,7 @@ def command_validate_final(args: argparse.Namespace) -> None:
     errors, review = validate_review_data(draft_path, Path(args.inventory), Path(args.review))
     draft = load_json(draft_path)
     final = load_json(final_path)
+    errors.extend(final_benchmark_structure_errors(final))
     for field in ("evaluation_id", "source_sha256", "policy_sha256", "page_map_sha256", "chunk_manifest_sha256"):
         if final.get(field) != draft.get(field):
             errors.append(f"Final benchmark changed frozen identity field: {field}")

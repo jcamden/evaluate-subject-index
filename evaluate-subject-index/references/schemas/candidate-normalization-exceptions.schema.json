@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "candidate-normalization-exceptions.schema.json",
+  "title": "Candidate normalization exception ledger",
+  "type": "object",
+  "required": ["schema_version", "candidate_id", "candidate_sha256", "page_map_sha256", "exceptions", "counts"],
+  "properties": {
+    "schema_version": {"const": "candidate-normalization-exceptions-v1"},
+    "candidate_id": {"type": "string", "minLength": 1},
+    "candidate_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "page_map_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "exceptions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["exception_id", "type", "status", "related_ids", "detail"],
+        "properties": {
+          "exception_id": {"type": "string", "pattern": "^EXC-"},
+          "type": {"type": "string", "minLength": 1},
+          "status": {"enum": ["unresolved", "confirmed_as_delivered", "corrected_to_match_candidate", "not_applicable"]},
+          "related_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+          "record_id": {"type": "string", "pattern": "^REC-"},
+          "line_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+          "displayed_form": {"type": ["string", "null"]},
+          "detail": {"type": "string", "minLength": 1},
+          "disposition": {"type": "string"}
+        },
+        "additionalProperties": true
+      }
+    },
+    "counts": {
+      "type": "object",
+      "required": ["total", "unresolved", "by_type"],
+      "properties": {
+        "total": {"type": "integer", "minimum": 0},
+        "unresolved": {"type": "integer", "minimum": 0},
+        "by_type": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "candidate-benchmark-lock.schema.json",
+  "title": "Final candidate-to-benchmark compatibility lock",
+  "type": "object",
+  "required": ["schema_version", "lock_sha256", "status", "locked_at", "candidate_id", "candidate_sha256", "preparation_receipt_sha256", "candidate_repository", "benchmark_repository", "compatibility"],
+  "properties": {
+    "schema_version": {"const": "candidate-benchmark-lock-v1"},
+    "lock_sha256": {"$ref": "#/$defs/sha256"},
+    "status": {"const": "locked"},
+    "locked_at": {"type": "string", "minLength": 1},
+    "candidate_id": {"type": "string", "minLength": 1},
+    "candidate_sha256": {"$ref": "#/$defs/sha256"},
+    "preparation_receipt_sha256": {"$ref": "#/$defs/sha256"},
+    "candidate_repository": {
+      "type": "object",
+      "required": ["project", "merged_commit", "worker_head_commit", "pull_request", "premerge_evidence_sha256", "merge_evidence_sha256", "public_blob_sha"],
+      "properties": {
+        "project": {"type": "string", "minLength": 1},
+        "merged_commit": {"$ref": "#/$defs/commit"},
+        "worker_head_commit": {"$ref": "#/$defs/commit"},
+        "pull_request": {"type": "integer", "minimum": 1},
+        "premerge_evidence_sha256": {"$ref": "#/$defs/sha256"},
+        "merge_evidence_sha256": {"$ref": "#/$defs/sha256"},
+        "public_blob_sha": {"$ref": "#/$defs/publicBlobSha"}
+      },
+      "additionalProperties": false
+    },
+    "benchmark_repository": {
+      "type": "object",
+      "required": ["project", "preparation_base_commit", "final_commit", "benchmark_sha256", "benchmark_file_sha256", "benchmark_path", "blob_sha", "proof_evidence_sha256", "proof_observed_at"],
+      "properties": {
+        "project": {"type": "string", "minLength": 1},
+        "preparation_base_commit": {"$ref": "#/$defs/commit"},
+        "final_commit": {"$ref": "#/$defs/commit"},
+        "benchmark_sha256": {"$ref": "#/$defs/sha256"},
+        "benchmark_file_sha256": {"$ref": "#/$defs/sha256"},
+        "benchmark_path": {"$ref": "#/$defs/relativePath"},
+        "blob_sha": {"$ref": "#/$defs/blobInput"},
+        "proof_evidence_sha256": {"$ref": "#/$defs/sha256"},
+        "proof_observed_at": {"type": "string", "format": "date-time"}
+      },
+      "additionalProperties": false
+    },
+    "compatibility": {
+      "type": "object",
+      "required": ["source_sha256", "source_edition", "page_map_sha256", "chunk_manifest_sha256", "policy_sha256", "policy_profile", "rubric_version", "audit_mode"],
+      "properties": {
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "source_edition": {"type": "string", "minLength": 1},
+        "page_map_sha256": {"$ref": "#/$defs/sha256"},
+        "chunk_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "policy_sha256": {"$ref": "#/$defs/sha256"},
+        "policy_profile": {"type": "string", "minLength": 1},
+        "rubric_version": {"const": "subject-index-rubric-v4"},
+        "audit_mode": {"enum": ["full", "pilot"]}
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "commit": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+    "blob": {"type": "string", "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$"},
+    "blobInput": {"type": "string", "pattern": "^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$"},
+    "relativePath": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$)).+"},
+    "publicBlobSha": {
+      "type": "object",
+      "required": ["candidate/candidate-ref.json", "candidate/layout-profile.json", "validation/candidate-preparation-report.json"],
+      "properties": {
+        "candidate/candidate-ref.json": {"$ref": "#/$defs/blob"},
+        "candidate/layout-profile.json": {"$ref": "#/$defs/blob"},
+        "validation/candidate-preparation-report.json": {"$ref": "#/$defs/blob"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

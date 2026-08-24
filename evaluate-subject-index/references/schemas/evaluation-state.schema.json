@@ -5,7 +5,7 @@
   "type": "object",
   "required": ["schema_version", "evaluation_id", "artifact_manifest_path", "source", "configuration", "stages", "artifacts", "blockers"],
   "properties": {
-    "schema_version": {"enum": ["subject-index-evaluation-state-v3", "subject-index-evaluation-state-v4"]},
+    "schema_version": {"const": "subject-index-evaluation-state-v4"},
     "evaluation_id": {"type": "string", "minLength": 1},
     "artifact_manifest_path": {"const": "artifact-manifest.json"},
     "created_at": {"type": "string"},
@@ -15,6 +15,17 @@
       "required": ["title", "filename", "sha256", "document_page_span"],
       "properties": {
         "title": {"type": "string"},
+        "edition": {"type": "string", "minLength": 1},
+        "edition_identity": {
+          "type": "object",
+          "required": ["label", "status"],
+          "properties": {
+            "label": {"type": "string", "minLength": 1},
+            "status": {"enum": ["verified", "not_independently_verified", "conflicting_evidence"]},
+            "rationale": {"type": "string"}
+          },
+          "additionalProperties": true
+        },
         "filename": {"type": "string"},
         "sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
         "document_page_span": {
@@ -26,7 +37,24 @@
       },
       "additionalProperties": true
     },
-    "candidate": {"type": ["object", "null"]},
+    "candidate": {
+      "type": ["object", "null"],
+      "properties": {
+        "candidate_id": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "schema_version": {"const": "candidate-index-v2"},
+        "candidate_ref_path": {"$ref": "#/$defs/relativePath"},
+        "layout_profile_path": {"$ref": "#/$defs/relativePath"},
+        "normalized_path": {"$ref": "#/$defs/relativePath"},
+        "item_inventory_path": {"$ref": "#/$defs/relativePath"},
+        "normalization_qa_path": {"$ref": "#/$defs/relativePath"},
+        "preparation_receipt_path": {"$ref": "#/$defs/relativePath"},
+        "preparation_receipt_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "benchmark_lock_path": {"$ref": "#/$defs/relativePath"},
+        "benchmark_lock_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      },
+      "additionalProperties": true
+    },
     "configuration": {
       "type": "object",
       "required": ["audit_mode", "index_type", "intended_readership", "output_format", "storage_mode"],
@@ -47,7 +75,7 @@
         "output_format": {"const": "json"},
         "storage_mode": {"enum": ["local", "library", "hybrid"]},
         "policy_profile": {"const": "subject-index-standard-policy-v1"},
-        "rubric_version": {"enum": ["subject-index-rubric-v3", "subject-index-rubric-v4"]}
+        "rubric_version": {"const": "subject-index-rubric-v4"}
       },
       "additionalProperties": true
     },
@@ -89,6 +117,13 @@
       }
     },
     "blockers": {"type": "array", "items": {"type": "object"}}
+  },
+  "$defs": {
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
+    }
   },
   "additionalProperties": true
 }

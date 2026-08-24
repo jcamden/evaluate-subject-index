@@ -8,7 +8,7 @@ The source benchmark has three distinct states: synthesized draft, independently
 2. `review-source-benchmark` opens the draft in a fresh, candidate-blind context, reconnects the exact source by SHA-256, creates `source-benchmark-review-inventory.json`, and records an item-complete editorial review in `source-benchmark-review.vN.json`.
 3. `freeze-source-benchmark` applies approved revisions, validates the final artifact against the draft, inventory, and review, then writes the canonically hashed `source-benchmark.vN.json`.
 
-Candidate normalization cannot begin until all three stages are complete.
+Candidate evaluation and canonical normalization integration cannot begin until all three stages are complete. An isolated worker may mechanically prepare a candidate after the frozen source-level identities exist, but no candidate material may enter this review context, and its preparation receipt cannot satisfy or influence benchmark review. Read [candidate-preparation.md](candidate-preparation.md).
 
 ## Full and pilot review
 
@@ -46,7 +46,3 @@ python scripts/benchmark_review_cli.py validate-final \
   --review validation/source-benchmark-review.v1.json \
   --final source/source-benchmark.v1.json
 ```
-
-## Legacy states
-
-State v3 remains readable. Before any candidate work begins, `scripts/state_cli.py upgrade-benchmark-workflow --state evaluation-state.json` converts it to v4. A completed legacy benchmark becomes the synthesis baseline; independent review and final freeze remain incomplete. Do not migrate a state after candidate normalization or later work has started; preserve that historical run or begin a new evaluation.

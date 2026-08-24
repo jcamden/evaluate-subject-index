@@ -4,22 +4,40 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import mimetypes
 import shutil
 from copy import deepcopy
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 
-STATE_SCHEMA_VERSION = "subject-index-evaluation-state-v3"
+STATE_SCHEMA_VERSION = "subject-index-evaluation-state-v4"
 MANIFEST_SCHEMA_VERSION = "subject-index-artifact-manifest-v1"
 CHUNK_SCHEMA_VERSION = "source-subject-chunk-v1"
 RECEIPT_SCHEMA_VERSION = "parallel-source-discovery-receipt-v1"
 VALID_PRIORITIES = {"essential", "major", "optional", "exclude_by_default"}
 VALID_LOCATOR_CLASSES = {"principal", "supporting", "synthesis_or_conclusion", "incidental"}
+
+
+@contextmanager
+def evaluation_mutation_lock(state_path: Path):
+    """Share the canonical evaluation lock with every state/manifest writer."""
+    lock_path = state_path.resolve().parent / ".candidate-preparation-integration.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+b") as handle:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            fail("evaluation_lock_busy", "Another process owns the canonical evaluation lock.")
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def now() -> str:
@@ -517,7 +535,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
-    args.func(args)
+    if args.command == "integrate":
+        with evaluation_mutation_lock(Path(args.state)):
+            args.func(args)
+    else:
+        args.func(args)
 
 
 if __name__ == "__main__":

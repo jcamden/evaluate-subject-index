@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "candidate-ref.schema.json",
+  "title": "Candidate preparation identity and provenance",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "candidate_id",
+    "candidate_sha256",
+    "file_origin",
+    "source",
+    "page_map_sha256",
+    "chunk_manifest_sha256",
+    "policy",
+    "pdf",
+    "provenance",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": {"const": "candidate-ref-v1"},
+    "candidate_id": {"type": "string", "minLength": 1},
+    "candidate_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "candidate_filename": {"type": "string"},
+    "file_origin": {"enum": ["delivered_pdf", "reconstructed_pdf", "transcription"]},
+    "source": {
+      "type": "object",
+      "required": ["sha256", "edition"],
+      "properties": {
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "edition": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "page_map_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "chunk_manifest_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "policy": {
+      "type": "object",
+      "required": ["profile", "sha256", "rubric_version", "audit_mode"],
+      "properties": {
+        "profile": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "rubric_version": {"type": "string", "minLength": 1},
+        "audit_mode": {"enum": ["full", "pilot"]}
+      },
+      "additionalProperties": false
+    },
+    "pdf": {
+      "type": "object",
+      "required": ["page_count", "has_embedded_text"],
+      "properties": {
+        "page_count": {"type": "integer", "minimum": 0},
+        "producer": {"type": ["string", "null"]},
+        "has_embedded_text": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "candidate_bytes",
+        "internal_pdf_completeness",
+        "structural_continuity",
+        "source_edition_compatibility",
+        "locator_page_map_compatibility",
+        "authoritative_copy_fidelity"
+      ],
+      "properties": {
+        "candidate_bytes": {"$ref": "#/$defs/finding"},
+        "internal_pdf_completeness": {"$ref": "#/$defs/finding"},
+        "structural_continuity": {"$ref": "#/$defs/finding"},
+        "source_edition_compatibility": {"$ref": "#/$defs/finding"},
+        "locator_page_map_compatibility": {"$ref": "#/$defs/finding"},
+        "authoritative_copy_fidelity": {
+          "allOf": [
+            {"$ref": "#/$defs/finding"},
+            {
+              "type": "object",
+              "properties": {"claimed_original_publisher_pdf": {"type": "boolean"}}
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "created_at": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "required": ["status", "rationale"],
+      "properties": {
+        "status": {"enum": ["verified", "not_independently_verified", "incomplete", "conflicting_evidence", "not_applicable"]},
+        "rationale": {"type": "string", "minLength": 1},
+        "evidence": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

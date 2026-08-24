@@ -426,8 +426,31 @@ def command_filter_candidate(args: argparse.Namespace) -> None:
     candidate = load_json(Path(args.candidate))
     page_map = load_json(Path(args.page_map))
     manifest = load_json(Path(args.chunks))
-    if candidate.get("schema_version") != "candidate-index-v1":
-        fail("schema_version", "Expected candidate-index-v1")
+    candidate_schema = candidate.get("schema_version")
+    if candidate_schema != "candidate-index-v2":
+        fail("schema_version", "Expected candidate-index-v2")
+    benchmark_lock = load_json(Path(args.benchmark_lock))
+    if benchmark_lock.get("schema_version") != "candidate-benchmark-lock-v1":
+        fail("invalid_benchmark_lock", "Expected candidate-benchmark-lock-v1")
+    if benchmark_lock.get("lock_sha256") != canonical_hash(benchmark_lock, "lock_sha256"):
+        fail("invalid_benchmark_lock_hash", "Benchmark lock canonical hash does not recompute")
+    if benchmark_lock.get("candidate_id") != candidate.get("candidate_id"):
+        fail("benchmark_lock_candidate_mismatch", "Benchmark lock and candidate IDs do not match")
+    if benchmark_lock.get("candidate_sha256") != candidate.get("candidate_sha256"):
+        fail("benchmark_lock_candidate_mismatch", "Benchmark lock and candidate hashes do not match")
+    compatibility = benchmark_lock.get("compatibility", {})
+    if compatibility.get("page_map_sha256") != page_map.get("page_map_sha256"):
+        fail("benchmark_lock_page_map_mismatch", "Benchmark lock and page-map hashes do not match")
+    if compatibility.get("chunk_manifest_sha256") != manifest.get("chunk_manifest_sha256"):
+        fail("benchmark_lock_chunk_manifest_mismatch", "Benchmark lock and chunk-manifest hashes do not match")
+    if benchmark_lock.get("status") != "locked":
+        fail("benchmark_lock_pending", "Benchmark lock must have status=locked before locator routing")
+    final_commit = benchmark_lock.get("benchmark_repository", {}).get("final_commit")
+    benchmark_sha = benchmark_lock.get("benchmark_repository", {}).get("benchmark_sha256")
+    if not isinstance(final_commit, str) or not re.fullmatch(r"[a-fA-F0-9]{40}", final_commit):
+        fail("invalid_benchmark_lock", "Benchmark lock requires an immutable final benchmark commit")
+    if not isinstance(benchmark_sha, str) or not re.fullmatch(r"[a-f0-9]{64}", benchmark_sha):
+        fail("invalid_benchmark_lock", "Benchmark lock requires the final canonical benchmark hash")
     if candidate.get("page_map_sha256") != page_map.get("page_map_sha256"):
         fail("page_map_mismatch", "Candidate and page map hashes do not match")
     owner: dict[int, str] = {}
@@ -544,6 +567,7 @@ def build_parser() -> argparse.ArgumentParser:
     filter_candidate.add_argument("--candidate", required=True)
     filter_candidate.add_argument("--page-map", required=True)
     filter_candidate.add_argument("--chunks", required=True)
+    filter_candidate.add_argument("--benchmark-lock", required=True)
     filter_candidate.add_argument("--output-dir", required=True)
     filter_candidate.set_defaults(func=command_filter_candidate)
     return parser

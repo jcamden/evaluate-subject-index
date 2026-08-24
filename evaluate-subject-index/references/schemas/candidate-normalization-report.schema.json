@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "candidate-normalization-report.schema.json",
+  "title": "Private candidate normalization report",
+  "type": "object",
+  "required": ["schema_version", "candidate_id", "candidate_sha256", "source_sha256", "page_map_sha256", "adapter", "counts", "status", "benchmark_lock_status", "candidate_quality_judgments_performed", "private_artifact_hashes"],
+  "properties": {
+    "schema_version": {"const": "candidate-normalization-report-v1"},
+    "candidate_id": {"type": "string", "minLength": 1},
+    "candidate_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "source_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "page_map_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "adapter": {"type": "object"},
+    "counts": {"type": "object"},
+    "status": {"enum": ["awaiting_full_normalization_qa", "complete", "blocked"]},
+    "benchmark_lock_status": {"enum": ["pending_final_benchmark", "locked"]},
+    "candidate_quality_judgments_performed": {"const": false},
+    "private_artifact_hashes": {
+      "type": "object",
+      "required": ["layout_extraction", "candidate_index", "item_inventory", "normalization_exceptions"],
+      "additionalProperties": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+    },
+    "limitations": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": true
+}

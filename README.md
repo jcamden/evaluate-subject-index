@@ -72,6 +72,8 @@ integrate-discoveries --project [repository] [pull-request-or-branch ...]
 synthesize-source-benchmark
 review-source-benchmark
 freeze-source-benchmark
+worker-candidate-preparation [candidate-id] --project [repository] --benchmark-project [repository] [--adapter auto|generic|indexerlabs]
+integrate-candidate-preparation --project [repository] --benchmark-project [repository] --benchmark-ref [commit] [pull-request-or-branch]
 normalize-index
 prepare-locator-chunks
 audit-locators [chunk-id]
@@ -82,7 +84,6 @@ build-web-report
 checkpoint
 export-bundle
 import-bundle
-upgrade-benchmark-workflow
 validate
 status
 next
@@ -98,6 +99,14 @@ Source discovery can be distributed safely across independent chats:
 - `integrate-discoveries --project owner/repository <PRs...>` validates an explicit pull-request batch before merging any member, rejects shared-control or restricted files, integrates accepted chapter artifacts together, updates canonical state and manifest once, creates one cumulative checkpoint, and only then advances downstream benchmark locks.
 
 Parallel workers never edit canonical `evaluation-state.json`, `artifact-manifest.json`, cumulative checkpoints, or candidate-evaluation locks. See [`commands.md`](evaluate-subject-index/references/commands.md) and [`workflow.md`](evaluate-subject-index/references/workflow.md).
+
+## Parallel candidate preparation
+
+Candidate layout extraction and normalization may run in an isolated worker before the source benchmark is finalized. The worker preserves every delivered hierarchy level, mixed locator/reference record, malformed record, continuation, display form, and private coordinate/text trace; it performs no candidate judgment. It publishes exactly three aggregate, public-safe JSON files in one pull request while keeping the candidate PDF, normalized index, inventory, detailed QA, raw extraction, and recovery bundle private.
+
+`integrate-candidate-preparation` is the sole coordinator authority. It validates one explicit proposal, fresh GitHub-observed path/blob/file identities, the matching private recovery artifacts, exact QA denominators, and an explicit final benchmark commit before merging and registering immutable normalized bytes. Candidate auditing remains blocked until that integration pins the benchmark lock.
+
+The preparation contracts are deliberately current-only: `candidate-index-v2`, `item-inventory-v2`, and v4 evaluation state. If the one existing preparation predates them and no candidate judgment has begun, regenerate it in place instead of retaining legacy readers. See [`candidate-preparation.md`](evaluate-subject-index/references/candidate-preparation.md).
 
 ## Independent benchmark QA
 
@@ -140,10 +149,11 @@ OpenAI's documentation describes a skill as a directory containing `SKILL.md` pl
 
 - Python 3.10 or newer
 - [`pypdf`](https://pypi.org/project/pypdf/) for physically splitting source PDFs
+- [`PyMuPDF`](https://pypi.org/project/PyMuPDF/) for geometry-aware candidate-index extraction
 
 The state manager, standard-policy builder, benchmark-review gate, checkpoint/export/import tooling, page-map expansion, chunk validation, locator routing, stable item inventory, diagnostic item grading, chapter-level density calculation, and scoring arithmetic otherwise use the Python standard library.
 
-Install the PDF dependency with:
+Install the PDF dependencies with:
 
 ```bash
 python -m pip install -r requirements.txt
@@ -151,11 +161,15 @@ python -m pip install -r requirements.txt
 
 ## Validation
 
-The included workflow checks JSON parsing, Python syntax, page-map expansion, chunk validation, candidate-locator routing, benchmark-review completeness and final-freeze validation, stable item identities, granular grades and popovers, rubric arithmetic, artifact registration, portable checkpoint creation, and safe resume.
+The included workflow checks JSON parsing and local schema references, Python syntax, the complete synthetic test suite, page-map expansion, chunk validation, candidate-layout reading order and normalization, private/public separation, evidence-bound transactional integration, benchmark-review completeness and final-freeze validation, stable item identities, granular grades and popovers, rubric arithmetic, artifact registration, portable checkpoint creation, and safe resume.
 
-Run the deterministic smoke tests locally:
+Run the complete deterministic suite locally:
 
 ```bash
+python -m unittest discover -s evaluate-subject-index/tests -p 'test_*.py'
+
+# Selected smoke commands:
+
 python evaluate-subject-index/scripts/page_chunk_cli.py expand-page-map \
   --input evaluate-subject-index/tests/page-map-input.valid.json \
   --output /tmp/page-map.json
@@ -198,7 +212,7 @@ python evaluate-subject-index/scripts/item_grade_cli.py build-assessments \
 
 ## Audit integrity
 
-- Build the source benchmark before inspecting a candidate index.
+- Complete candidate-blind source discovery before candidate preparation; require the frozen benchmark lock before any candidate judgment.
 - Instantiate and freeze standard policy v1, page mapping, chunk ownership, source-specific scope, density calibration, reader tasks, and uncertainty treatment before candidate scoring.
 - Use both index-to-source and source-to-index audits; locator precision alone cannot reveal omissions.
 - Preserve original candidate output and record every normalization.

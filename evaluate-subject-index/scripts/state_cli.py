@@ -4,30 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import mimetypes
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-
-LEGACY_STAGES_V3 = [
-    "initialize",
-    "page_mapping",
-    "chunk_definition",
-    "define_policy",
-    "source_chunk_preparation",
-    "source_subject_discovery",
-    "benchmark_freeze",
-    "candidate_normalization",
-    "locator_chunk_preparation",
-    "locator_audit",
-    "missing_access_audit",
-    "structure_audit",
-    "scoring",
-    "web_report",
-]
 
 STAGES = [
     "initialize",
@@ -107,12 +92,27 @@ COMPLETION_TESTS = {
 
 VALID_STATUSES = {"not_started", "in_progress", "completed", "blocked"}
 STATE_SCHEMA_VERSION = "subject-index-evaluation-state-v4"
-LEGACY_STATE_SCHEMA_VERSION = "subject-index-evaluation-state-v3"
-SUPPORTED_STATE_SCHEMA_VERSIONS = {LEGACY_STATE_SCHEMA_VERSION, STATE_SCHEMA_VERSION}
+SUPPORTED_STATE_SCHEMA_VERSIONS = {STATE_SCHEMA_VERSION}
 MANIFEST_SCHEMA_VERSION = "subject-index-artifact-manifest-v1"
 MANIFEST_FILENAME = "artifact-manifest.json"
 VALID_VISIBILITY = {"public", "private", "restricted"}
 VALID_RETENTION = {"required", "cache"}
+
+
+@contextmanager
+def evaluation_mutation_lock(state_path: Path):
+    """Share the canonical evaluation lock with every state/manifest writer."""
+    lock_path = state_path.resolve().parent / ".candidate-preparation-integration.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+b") as handle:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            fail("evaluation_lock_busy", "Another process owns the canonical evaluation lock.")
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def now() -> str:
@@ -206,8 +206,6 @@ def fail(code: str, message: str, details: Any = None) -> None:
 
 
 def stages_for_state(state: dict[str, Any]) -> list[str]:
-    if state.get("schema_version") == LEGACY_STATE_SCHEMA_VERSION:
-        return LEGACY_STAGES_V3
     return STAGES
 
 
@@ -216,7 +214,12 @@ def stage_dependencies(stage: str, stage_order: list[str]) -> list[str]:
     return stage_order[:index]
 
 
-def validate_state(state: dict[str, Any], state_path: Path | None = None, check_files: bool = True) -> tuple[list[str], list[str]]:
+def validate_state(
+    state: dict[str, Any],
+    state_path: Path | None = None,
+    check_files: bool = True,
+    manifest_document: dict[str, Any] | None = None,
+) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
     for key in ("schema_version", "evaluation_id", "artifact_manifest_path", "source", "configuration", "stages", "artifacts", "blockers"):
@@ -292,7 +295,7 @@ def validate_state(state: dict[str, Any], state_path: Path | None = None, check_
     if state_path:
         try:
             manifest_path = manifest_path_for_state(state_path, state)
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest = manifest_document if manifest_document is not None else json.loads(manifest_path.read_text(encoding="utf-8"))
         except (FileNotFoundError, json.JSONDecodeError, ValueError) as exc:
             errors.append(f"Artifact manifest is unavailable or invalid: {exc}")
         else:
@@ -344,6 +347,46 @@ def next_stage(state: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def candidate_preparation_action(state: dict[str, Any]) -> dict[str, Any]:
+    """Describe the auxiliary preparation lane without changing canonical stage order."""
+    missing: list[str] = []
+    source = state.get("source", {}) if isinstance(state.get("source"), dict) else {}
+    configuration = state.get("configuration", {}) if isinstance(state.get("configuration"), dict) else {}
+    if not source.get("sha256"):
+        missing.append("source_sha256")
+    if not source.get("edition"):
+        missing.append("edition_identity")
+    if not configuration.get("policy_profile"):
+        missing.append("policy_identity")
+    if not configuration.get("rubric_version"):
+        missing.append("rubric_identity")
+    if configuration.get("audit_mode") not in {"full", "pilot"}:
+        missing.append("audit_mode")
+    artifact_types = {
+        str(item.get("artifact_type", "")).replace("-", "_")
+        for item in state.get("artifacts", [])
+        if isinstance(item, dict)
+    }
+    for dependency, accepted in (
+        ("expanded_page_map", {"page_map"}),
+        ("chunk_manifest", {"chunk_manifest"}),
+        ("frozen_evaluation_policy", {"evaluation_policy"}),
+    ):
+        if not artifact_types.intersection(accepted):
+            missing.append(dependency)
+    candidate = state.get("candidate")
+    integrated = isinstance(candidate, dict) and bool(candidate.get("preparation_receipt_sha256"))
+    return {
+        "command": "worker-candidate-preparation",
+        "lane": "auxiliary_isolated_worker",
+        "status": "completed" if integrated else ("available" if not missing else "blocked"),
+        "available": not missing and not integrated,
+        "unmet_dependencies": missing,
+        "canonical_next_unchanged": True,
+        "benchmark_lock_status": "locked" if integrated else "pending_final_benchmark",
+    }
+
+
 def state_summary(state: dict[str, Any], state_path: Path | None = None) -> dict[str, Any]:
     errors, warnings = validate_state(state, state_path=state_path)
     stages = state.get("stages", {})
@@ -361,6 +404,7 @@ def state_summary(state: dict[str, Any], state_path: Path | None = None) -> dict
         "artifacts": state.get("artifacts", []),
         "blockers": state.get("blockers", []),
         "next_actions": [] if next_stage(state) is None else [next_stage(state)],
+        "parallel_actions": [candidate_preparation_action(state)],
         "errors": errors,
         "warnings": warnings,
     }
@@ -392,6 +436,7 @@ def command_init(args: argparse.Namespace) -> None:
         "updated_at": stamp,
         "source": {
             "title": args.source_title,
+            **({"edition": args.source_edition} if args.source_edition else {}),
             "filename": source_path.name,
             "sha256": source_hash,
             "document_page_span": [args.document_page_start, args.document_page_end],
@@ -452,6 +497,7 @@ def command_next(args: argparse.Namespace) -> None:
         "ok": not errors,
         "evaluation_id": state.get("evaluation_id"),
         "next_actions": [] if next_stage(state) is None else [next_stage(state)],
+        "parallel_actions": [candidate_preparation_action(state)],
         "errors": errors,
         "warnings": warnings,
     }
@@ -589,67 +635,6 @@ def command_adopt_standard_policy(args: argparse.Namespace) -> None:
     emit(payload, 0 if payload["ok"] else 1)
 
 
-def command_upgrade_benchmark_workflow(args: argparse.Namespace) -> None:
-    state_path = Path(args.state)
-    state = load_state(state_path)
-    if state.get("schema_version") == STATE_SCHEMA_VERSION:
-        payload = state_summary(state, state_path)
-        payload.update({"command": "upgrade-benchmark-workflow", "changed": False})
-        emit(payload, 0 if payload["ok"] else 1)
-    if state.get("schema_version") != LEGACY_STATE_SCHEMA_VERSION:
-        fail("unsupported_upgrade_source", "Only v3 evaluation states can be upgraded to the reviewed-benchmark workflow.")
-    later_started = [
-        name for name in LEGACY_STAGES_V3[LEGACY_STAGES_V3.index("candidate_normalization"):]
-        if state.get("stages", {}).get(name, {}).get("status") != "not_started"
-    ]
-    if later_started:
-        fail(
-            "candidate_work_already_started",
-            "Upgrade the benchmark workflow before candidate normalization or later candidate work.",
-            later_started,
-        )
-    stamp = now()
-    old_stages = state["stages"]
-    old_freeze = old_stages.get("benchmark_freeze", {"status": "not_started", "updated_at": None, "notes": []})
-    if old_freeze.get("status") == "completed":
-        synthesis_status = "completed"
-        synthesis_notes = list(old_freeze.get("notes", [])) + [
-            "Legacy frozen benchmark adopted as the candidate-blind synthesis baseline for independent post-freeze review."
-        ]
-    else:
-        synthesis_status = old_freeze.get("status", "not_started")
-        synthesis_notes = list(old_freeze.get("notes", []))
-    new_stages: dict[str, Any] = {}
-    for name in STAGES:
-        if name == "benchmark_synthesis":
-            new_stages[name] = {
-                "status": synthesis_status,
-                "updated_at": stamp if synthesis_status == "completed" else old_freeze.get("updated_at"),
-                "notes": synthesis_notes,
-            }
-        elif name == "benchmark_review":
-            new_stages[name] = {
-                "status": "not_started",
-                "updated_at": None,
-                "notes": ["Independent candidate-blind benchmark review required before final freeze."],
-            }
-        elif name == "benchmark_freeze":
-            new_stages[name] = {
-                "status": "not_started",
-                "updated_at": None,
-                "notes": ["Final freeze must follow completed independent benchmark review."],
-            }
-        else:
-            new_stages[name] = old_stages[name]
-    state["schema_version"] = STATE_SCHEMA_VERSION
-    state["stages"] = new_stages
-    state["updated_at"] = stamp
-    save_state(state_path, state)
-    payload = state_summary(state, state_path)
-    payload.update({"command": "upgrade-benchmark-workflow", "changed": True, "state_path": str(state_path.resolve())})
-    emit(payload, 0 if payload["ok"] else 1)
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -658,6 +643,7 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument("--output", required=True)
     init_parser.add_argument("--evaluation-id", required=True)
     init_parser.add_argument("--source-title", required=True)
+    init_parser.add_argument("--source-edition")
     init_parser.add_argument("--source-file", required=True)
     init_parser.add_argument("--document-page-start", "--page-start", dest="document_page_start", type=int, required=True)
     init_parser.add_argument("--document-page-end", "--page-end", dest="document_page_end", type=int, required=True)
@@ -680,7 +666,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     set_parser = subparsers.add_parser("set-stage", help="Update one stage after dependency checks")
     set_parser.add_argument("--state", required=True)
-    set_parser.add_argument("--stage", required=True, choices=sorted(set(STAGES + LEGACY_STAGES_V3)))
+    set_parser.add_argument("--stage", required=True, choices=sorted(STAGES))
     set_parser.add_argument("--status", required=True, choices=sorted(VALID_STATUSES))
     set_parser.add_argument("--artifact-type")
     set_parser.add_argument("--artifact-path")
@@ -704,9 +690,6 @@ def build_parser() -> argparse.ArgumentParser:
     adopt_parser.add_argument("--readership-rationale", required=True)
     adopt_parser.set_defaults(func=command_adopt_standard_policy)
 
-    upgrade_parser = subparsers.add_parser("upgrade-benchmark-workflow")
-    upgrade_parser.add_argument("--state", required=True)
-    upgrade_parser.set_defaults(func=command_upgrade_benchmark_workflow)
     return parser
 
 
@@ -715,7 +698,12 @@ def main() -> None:
     args = parser.parse_args()
     if getattr(args, "document_page_start", 0) and args.document_page_end < args.document_page_start:
         fail("invalid_page_span", "document-page-end must be greater than or equal to document-page-start.")
-    args.func(args)
+    if args.command in {"init", "set-stage", "adopt-standard-policy"}:
+        state_path = Path(args.output if args.command == "init" else args.state)
+        with evaluation_mutation_lock(state_path):
+            args.func(args)
+    else:
+        args.func(args)
 
 
 if __name__ == "__main__":

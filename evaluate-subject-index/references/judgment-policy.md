@@ -2,6 +2,8 @@
 
 Apply [standard-policy.md](standard-policy.md). This file defines judgment units and evidence handling; the standard policy defines the substantive rules and stage ownership.
 
+Layout extraction and normalization confidence are fidelity metadata, not editorial judgments. Candidate-preparation QA may decide whether a line, boundary, continuation, or transcription reproduces the delivered candidate; it must not decide whether the resulting heading, locator, hierarchy, or reference is good. Those judgments remain owned by the candidate-audit stages after a final benchmark lock.
+
 ## Source scope
 
 Inspect only matter frozen as indexable. Treat mixed pages at the region level. Record unavailable notes, missing pages, illegible regions, and role ambiguity as source limitations. Do not put excluded or unavailable matter in coverage denominators. A candidate locator into excluded matter is a scope defect when its mapping is known; a locator into unavailable matter is `uninspectable`, not automatically wrong.
