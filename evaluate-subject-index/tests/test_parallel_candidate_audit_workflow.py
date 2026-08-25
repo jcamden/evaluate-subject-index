@@ -87,15 +87,15 @@ def frozen_fixture(*, locator_complete: bool = True) -> dict[str, Any]:
                 "subject_id": "SUBJECT-001",
                 "priority": "essential",
                 "evidence": [
-                    {"document_page": 1, "locator_class": "principal"},
-                    {"document_page": 3, "locator_class": "supporting"},
-                    {"document_page": 2, "locator_class": "synthesis_or_conclusion"},
+                    {"evidence_id": "BENCH-EVID-001", "document_page": 1, "locator_class": "principal"},
+                    {"evidence_id": "BENCH-EVID-002", "document_page": 3, "locator_class": "supporting"},
+                    {"evidence_id": "BENCH-EVID-003", "document_page": 2, "locator_class": "synthesis_or_conclusion"},
                 ],
             },
             {
                 "subject_id": "SUBJECT-002",
                 "priority": "major",
-                "evidence": [{"document_page": 3, "locator_class": "principal"}],
+                "evidence": [{"evidence_id": "BENCH-EVID-004", "document_page": 3, "locator_class": "principal"}],
             },
         ],
         "reader_tasks": [
@@ -279,9 +279,12 @@ def missing_audit(frozen: dict[str, Any], chunk_id: str) -> dict[str, Any]:
     for index, item in enumerate(workset["treatments"]):
         status = "missed" if item["locator_class"] == "supporting" else "found"
         judgment = {
-            **item,
+            "treatment_id": item["treatment_id"],
+            "subject_id": item["subject_id"],
+            "document_page": item["document_page"],
+            "locator_class": item["locator_class"],
             "status": status,
-            "evidence_ids": [f"MA-TREAT-{index + 1}"],
+            "evidence_ids": [*item["evidence_ids"], f"MA-TREAT-{index + 1}"],
         }
         treatment_judgments.append(judgment)
         treatments_by_subject.setdefault(item["subject_id"], []).append(judgment)
@@ -601,6 +604,68 @@ class MissingAccessWorkerContractTests(ErrorAssertionsMixin, unittest.TestCase):
         # passages that physically lie in another chunk.
         self.assertEqual(3, len(worksets["CHUNK-001"]["treatment_ids"]))
         self.assertEqual(1, len(worksets["CHUNK-002"]["treatment_ids"]))
+
+    def test_repeated_subject_page_class_evidence_coalesces_deterministically(self) -> None:
+        frozen = copy.deepcopy(self.frozen)
+        evidence = frozen["benchmark"]["subjects"][0]["evidence"]
+        evidence.append({
+            "evidence_id": "BENCH-EVID-005",
+            "source_evidence_id": "SOURCE-EVID-005",
+            "document_page": 1,
+            "locator_class": "principal",
+        })
+        first = parallel.build_missing_worksets(frozen)["CHUNK-001"]
+        principal = next(
+            item for item in first["treatments"]
+            if item["subject_id"] == "SUBJECT-001"
+            and item["document_page"] == 1
+            and item["locator_class"] == "principal"
+        )
+        self.assertEqual(3, len(first["treatment_ids"]))
+        self.assertEqual(["BENCH-EVID-001", "BENCH-EVID-005"], principal["evidence_ids"])
+        self.assertEqual(2, principal["evidence_count"])
+        evidence.reverse()
+        second = parallel.build_missing_worksets(frozen)["CHUNK-001"]
+        self.assertEqual(first["workset_sha256"], second["workset_sha256"])
+
+    def test_treatment_judgment_retains_all_coalesced_evidence_ids(self) -> None:
+        frozen = copy.deepcopy(self.frozen)
+        frozen["benchmark"]["subjects"][0]["evidence"].append({
+            "evidence_id": "BENCH-EVID-005",
+            "document_page": 1,
+            "locator_class": "principal",
+        })
+        workset = parallel.build_missing_worksets(frozen)["CHUNK-001"]
+        audit = missing_audit(frozen, "CHUNK-001")
+        judgment = next(
+            item for item in audit["treatment_judgments"]
+            if item["document_page"] == 1 and item["locator_class"] == "principal"
+        )
+        judgment["evidence_ids"].remove("BENCH-EVID-005")
+        self.assert_error(
+            "treatment_evidence_incomplete",
+            parallel.validate_missing_access_audit,
+            audit,
+            frozen,
+            workset,
+            "CHUNK-001",
+        )
+
+    def test_missing_worker_cli_omits_source_inputs_but_locator_requires_them(self) -> None:
+        parser = parallel.build_parser()
+        choices = parser._subparsers._group_actions[0].choices
+        missing_options = {
+            option
+            for action in choices["build-missing-access-worker"]._actions
+            for option in action.option_strings
+        }
+        locator_options = {
+            option
+            for action in choices["build-locator-worker"]._actions
+            for option in action.option_strings
+        }
+        self.assertFalse({"--source-file", "--source-chunk", "--source-sidecar"} & missing_options)
+        self.assertTrue({"--source-file", "--source-chunk", "--source-sidecar"}.issubset(locator_options))
 
     def test_direct_cross_reference_coverage_recall_and_dependency_defect(self) -> None:
         audit = missing_audit(self.frozen, "CHUNK-001")
@@ -955,7 +1020,6 @@ class PublicProjectionAndRepositoryTests(ErrorAssertionsMixin, unittest.TestCase
             self.frozen,
             "CHUNK-001",
             "1" * 40,
-            self.reconnect,
             workset,
             {"sha256": "d" * 64},
             result,
@@ -1912,7 +1976,6 @@ class CompletionAccountingTests(ErrorAssertionsMixin, unittest.TestCase):
                 frozen,
                 chunk_id,
                 "1" * 40,
-                reconnect,
                 workset,
                 {"sha256": "b" * 64},
                 result,

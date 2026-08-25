@@ -69,7 +69,11 @@ Concept coverage and page-reference recall have different denominators. A concep
 
 Account separately for principal, supporting, and synthesis/conclusion treatments, and record realistic first-lookup and reader-task success. Every scored subject and every required reader task belongs to exactly one chunk for worker accounting. Use a valid frozen `owner_chunk_id` when supplied. Otherwise assign a subject to the chunk owning its first principal evidence page in document-page then chunk order; if it has no principal evidence, use its first non-incidental scored evidence by the same order. Assign a task to a valid frozen `owner_chunk_id` when supplied; otherwise use the owner of the first subject in its frozen `subject_ids` order. The deterministic helper, not the language model, computes and hashes this ownership plan.
 
+Define one treatment-recall unit by unique subject ID, document page, and locator class. When the benchmark retains multiple evidence records for that unit, coalesce them without losing their evidence IDs. The records remain distinct benchmark evidence, while the page/class treatment is judged once and counted once. Require the treatment judgment to cite every coalesced benchmark evidence ID.
+
 Missing-access review may use the complete canonical locator-audit set to determine whether another route succeeds. It must not silently reinterpret locator legitimacy. When a coverage judgment depends on a suspected locator error, record a formal dependency defect with the affected IDs, confidence, and evidence needed for adjudication while retaining the canonical locator result.
+
+Missing-access review is benchmark-first and does not routinely reopen the source. The benchmark supplies the source-grounded concept, meaning, stance, acceptable-access, reader-task, page, class, and evidence denominator; the canonical locator set supplies already source-grounded candidate-page legitimacy. If these frozen derivatives do not support a defensible judgment, use an explicit uncertain or uninspectable result, retain the relevant evidence IDs, state what evidence is needed, and route that exception to a centralized source adjudication. Do not let source re-entry become an informal second discovery pass or a worker-level benchmark rewrite.
 
 ## Global structure
 

@@ -10,7 +10,7 @@
     "public_projection", "validation", "publication", "limitations"
   ],
   "properties": {
-    "schema_version": {"const": "parallel-missing-access-worker-receipt-v1"},
+    "schema_version": {"const": "parallel-missing-access-worker-receipt-v2"},
     "receipt_id": {"type": "string", "pattern": "^MAW-[A-F0-9]{12}$"},
     "receipt_sha256": {"$ref": "#/$defs/sha256"},
     "created_at": {"type": "string", "format": "date-time"},
@@ -107,8 +107,8 @@
         "source_sha256", "candidate_sha256", "benchmark_version", "benchmark_sha256",
         "benchmark_file_sha256", "benchmark_lock_sha256", "policy_sha256", "policy_file_sha256",
         "page_map_sha256", "page_map_file_sha256", "chunk_manifest_sha256", "chunk_manifest_file_sha256",
-        "normalized_candidate_file_sha256", "item_inventory_file_sha256", "source_chunk_file_sha256",
-        "source_sidecar_file_sha256", "missing_access_ownership_sha256", "locator_audit_set_sha256"
+        "normalized_candidate_file_sha256", "item_inventory_file_sha256",
+        "missing_access_ownership_sha256", "locator_audit_set_sha256"
       ],
       "properties": {
         "source_sha256": {"$ref": "#/$defs/sha256"},
@@ -125,8 +125,6 @@
         "chunk_manifest_file_sha256": {"$ref": "#/$defs/sha256"},
         "normalized_candidate_file_sha256": {"$ref": "#/$defs/sha256"},
         "item_inventory_file_sha256": {"$ref": "#/$defs/sha256"},
-        "source_chunk_file_sha256": {"$ref": "#/$defs/sha256"},
-        "source_sidecar_file_sha256": {"$ref": "#/$defs/sha256"},
         "missing_access_ownership_sha256": {"$ref": "#/$defs/sha256"},
         "locator_audit_set_sha256": {"$ref": "#/$defs/sha256"}
       },
@@ -134,12 +132,13 @@
     },
     "reconnection": {
       "type": "object",
-      "required": ["status", "source_sha256_verified", "source_chunk_verified", "source_sidecar_verified", "candidate_sha256_verified"],
+      "required": ["status", "source_identity_bound", "source_bytes_inspected", "source_chunk_required", "source_sidecar_required", "candidate_sha256_verified"],
       "properties": {
-        "status": {"const": "verified"},
-        "source_sha256_verified": {"const": true},
-        "source_chunk_verified": {"const": true},
-        "source_sidecar_verified": {"const": true},
+        "status": {"const": "not_required_benchmark_first"},
+        "source_identity_bound": {"const": true},
+        "source_bytes_inspected": {"const": false},
+        "source_chunk_required": {"const": false},
+        "source_sidecar_required": {"const": false},
         "candidate_sha256_verified": {"const": true}
       },
       "additionalProperties": false

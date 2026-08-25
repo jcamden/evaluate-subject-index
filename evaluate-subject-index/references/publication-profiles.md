@@ -31,7 +31,7 @@ candidate/missing-access-audits/missing-access-audit.<chunk-id>.v1.json
 
 Each worker pull request still changes exactly one file. Branch naming, one-commit ancestry, immutable-base binding, GitHub-observed evidence, private recovery, coordinator preflight, and merge evidence are unchanged.
 
-The v1 receipt and binding fields named `public_report_path`, `public_projection`, and `public_report` are retained for backward compatibility. Under `public_evaluation_artifacts`, they bind the public canonical audit rather than an aggregate report. The path and bytes determine the profile unambiguously, and coordinator validation cross-checks that inferred profile against the frozen state.
+The established receipt and binding fields named `public_report_path`, `public_projection`, and `public_report` are retained across locator receipt v1 and benchmark-first missing-access receipt v2. Under `public_evaluation_artifacts`, they bind the public canonical audit rather than an aggregate report. The path and bytes determine the profile unambiguously, and coordinator validation cross-checks that inferred profile against the frozen state.
 
 ## Public canonical locator-audit contract
 
@@ -52,6 +52,8 @@ The published bytes are the exact validated `missing-access-audit-v1` worker art
 - subject judgments and their access, coverage, stance, path, page, recall, missing-route, missed-treatment, uncertainty, confidence, evidence-ID, error-code, and severity fields;
 - reader-task results and treatment judgments;
 - explicitly structured locator-audit dependency defects.
+
+The artifact remains source-grounded through the frozen benchmark and source SHA-256 lineage, but routine missing-access workers do not receive or inspect source PDF, chunk, or sidecar bytes. The ownership-plan hash binds the benchmark-first evidence mode, the unique subject/page/class treatment identity rule, and exception-only source adjudication.
 
 Unknown fields are rejected. Nested route, treatment-recall, uncertainty, completion, and dependency-defect records also have exact key allowlists.
 

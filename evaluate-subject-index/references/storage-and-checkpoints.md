@@ -139,7 +139,7 @@ Accepted complete audit ledgers become canonical required artifacts only after c
 After import:
 
 1. run `validate`;
-2. reconnect any excluded restricted source/candidate file by matching SHA-256, not filename alone;
+2. reconnect any excluded restricted source/candidate file required by the next operation by matching SHA-256, not filename alone; benchmark-first missing-access workers require neither source PDFs nor sidecars;
 3. run `status` and `next`; and
 4. do not continue a blocked stage until changed or missing dependencies are resolved.
 

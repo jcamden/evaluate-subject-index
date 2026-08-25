@@ -62,7 +62,8 @@ One worker owns one candidate, one audit type, and one exact chunk. Require:
 - an isolated candidate- and chunk-specific recovery root;
 - exact frozen source, candidate, benchmark, policy, page-map, and chunk-manifest identities;
 - the normalized candidate and item inventory identities;
-- the exact restricted source chunk and sidecar reconnected by source SHA-256;
+- for locator audit only, the exact restricted source chunk and sidecar reconnected by source SHA-256;
+- for missing-access audit, the frozen benchmark and complete canonical locator-audit set without source PDF, chunk, or sidecar bytes;
 - all stage-specific packets, locks, and canonical dependencies; and
 - a branch name derived from the audit type and lowercase chunk ID.
 
@@ -181,6 +182,8 @@ For a deliberate publication-profile migration of already-integrated aggregate-o
 
 The helper computes one deterministic ownership plan from the frozen benchmark and chunk manifest. Bind its canonical hash into every missing-access receipt.
 
+The treatment denominator is the set of unique `(subject_id, document_page, locator_class)` units for non-incidental benchmark evidence. Multiple evidence records may legitimately describe distinct aspects of the same treatment unit. Coalesce those records deterministically, retain every unique benchmark and source evidence ID on the unit, and require the judgment to carry every coalesced benchmark evidence ID. Reject duplicate evidence IDs, but do not reject or double-count a repeated subject/page/class identity. Bind the evidence mode, treatment-identity rule, and exception-only source-adjudication mode into the ownership-plan hash.
+
 For a scored subject:
 
 1. use `owner_chunk_id` when it names a valid frozen chunk;
@@ -208,7 +211,9 @@ Default the branch to:
 missing-access-audit/<lowercase-chunk-id>
 ```
 
-Block the worker until candidate normalization and locator packets are complete, every locator audit is canonically integrated, and the canonical evaluation validates. Require the frozen final benchmark, complete normalized candidate, inventory, complete canonical locator-audit set, source/candidate identities, policy, page map, chunk manifest, exact source chunk and sidecar, immutable base commit, isolated private storage, and deterministic ownership-plan hash.
+Block the worker until candidate normalization and locator packets are complete, every locator audit is canonically integrated, and the canonical evaluation validates. Require the frozen final benchmark, complete normalized candidate, inventory, complete canonical locator-audit set, source/candidate identities, policy, page map, chunk manifest, immutable base commit, isolated private storage, and deterministic ownership-plan hash. Do not require or inspect source PDF, chunk, or sidecar bytes in this derivative comparison stage.
+
+A portable checkpoint may therefore report expected `reconnect_required` warnings for excluded source PDFs and sidecars while still being valid for missing-access work. Treat those warnings as blockers only for an operation that actually requires the restricted bytes; they do not block a benchmark-first missing-access worker when all required derivative artifacts and hashes validate.
 
 For every required scored subject owned by the chunk, test:
 
@@ -224,6 +229,8 @@ For every required scored subject owned by the chunk, test:
 For every owned reader task, record one result with the tested routes, success state, confidence, and evidence IDs. Require exact subject-ID and task-ID accounting. Preserve treatment-class counts independently of concept coverage.
 
 Use the canonical locator set as a dependency. Do not silently revise locator legitimacy. If a coverage result exposes a suspected locator problem, record a formal dependency defect identifying the affected locator and coverage IDs, observed conflict, confidence, and required adjudication.
+
+Treat the frozen benchmark as the source-grounded denominator. When benchmark meaning or evidence is insufficient for a defensible result, record `uncertain` or `uninspectable` with the benchmark evidence IDs and exact evidence needed; route only that exception to a separate centralized source adjudication. Routine workers never reopen the source or rewrite benchmark meaning.
 
 Private worker layout:
 
@@ -358,7 +365,7 @@ Provide these operations:
 | `integrate-batch` | After merged evidence, materialize exact private bytes, record provenance, update manifest before state, and refuse any input that differs from preflight. |
 | `completion` | Compute accepted chunks and exact locator-assignment or subject/task coverage, report missing/conflicting IDs, and decide whether the existing stage may complete. |
 
-Validate content, schema, canonical hashes, file hashes, chronology, repository/branch/base/commit identity, source/candidate reconnection, and cross-artifact bindings. Treat current observation as an orchestration requirement, not a wall-clock TTL enforced against `observed_at`. Reuse established safe utility functions only when doing so cannot change existing candidate-preparation behavior. The helper performs no substantive judgment and does not modify candidate-preparation scripts or contracts.
+Validate content, schema, canonical hashes, file hashes, chronology, repository/branch/base/commit identity, stage-appropriate input verification, and cross-artifact bindings. Locator workers reconnect source/candidate inputs; missing-access workers bind source lineage through the frozen benchmark and verify the candidate plus canonical locator set without source bytes. Treat current observation as an orchestration requirement, not a wall-clock TTL enforced against `observed_at`. Reuse established safe utility functions only when doing so cannot change existing candidate-preparation behavior. The helper performs no substantive judgment and does not modify candidate-preparation scripts or contracts.
 
 ## Help, status, next, and resume
 
@@ -370,7 +377,7 @@ Validate content, schema, canonical hashes, file hashes, chronology, repository/
 - at stage 13 it names `audit-missing-access` and may separately offer missing-access workers/integration; and
 - it never offers missing-access work before canonical locator completion.
 
-On resume, materialize the canonical study and only the explicitly selected worker recovery roots. Reconnect restricted source/candidate inputs by SHA-256, validate canonical state, then validate each selected worker. Do not infer completion from merged public artifacts alone; canonical integration and manifest registration are required.
+On resume, materialize the canonical study and only the explicitly selected worker recovery roots. Reconnect restricted source inputs by SHA-256 only for source-grounded operations such as locator audit; missing-access resume uses the benchmark-first inputs and does not require source bytes. Validate canonical state, then validate each selected worker. Do not infer completion from merged public artifacts alone; canonical integration and manifest registration are required.
 
 ## Failure and rerun rules
 

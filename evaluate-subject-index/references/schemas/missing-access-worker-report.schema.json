@@ -13,7 +13,7 @@
     "limitations", "public_safety"
   ],
   "properties": {
-    "schema_version": {"const": "missing-access-worker-report-v1"},
+    "schema_version": {"const": "missing-access-worker-report-v2"},
     "report_sha256": {"$ref": "#/$defs/sha256"},
     "audit_kind": {"const": "missing_access"},
     "evaluation_id": {"$ref": "#/$defs/boundedIdentifier"},
@@ -90,12 +90,10 @@
     "private_artifact_sha256": {"$ref": "#/$defs/sha256"},
     "reconnection_status": {
       "type": "object",
-      "required": ["source", "candidate", "source_chunk", "source_sidecar", "locator_audit_set"],
+      "required": ["source", "candidate", "locator_audit_set"],
       "properties": {
-        "source": {"const": "verified_by_sha256"},
+        "source": {"const": "identity_bound_through_frozen_benchmark"},
         "candidate": {"const": "verified_by_sha256"},
-        "source_chunk": {"const": "verified_by_sha256"},
-        "source_sidecar": {"const": "verified_by_sha256"},
         "locator_audit_set": {"const": "verified_by_sha256"}
       },
       "additionalProperties": false
@@ -133,8 +131,8 @@
         "source_sha256", "candidate_sha256", "benchmark_version", "benchmark_sha256",
         "benchmark_file_sha256", "benchmark_lock_sha256", "policy_sha256", "policy_file_sha256",
         "page_map_sha256", "page_map_file_sha256", "chunk_manifest_sha256", "chunk_manifest_file_sha256",
-        "normalized_candidate_file_sha256", "item_inventory_file_sha256", "source_chunk_file_sha256",
-        "source_sidecar_file_sha256", "missing_access_ownership_sha256", "locator_audit_set_sha256"
+        "normalized_candidate_file_sha256", "item_inventory_file_sha256",
+        "missing_access_ownership_sha256", "locator_audit_set_sha256"
       ],
       "properties": {
         "source_sha256": {"$ref": "#/$defs/sha256"},
@@ -151,8 +149,6 @@
         "chunk_manifest_file_sha256": {"$ref": "#/$defs/sha256"},
         "normalized_candidate_file_sha256": {"$ref": "#/$defs/sha256"},
         "item_inventory_file_sha256": {"$ref": "#/$defs/sha256"},
-        "source_chunk_file_sha256": {"$ref": "#/$defs/sha256"},
-        "source_sidecar_file_sha256": {"$ref": "#/$defs/sha256"},
         "missing_access_ownership_sha256": {"$ref": "#/$defs/sha256"},
         "locator_audit_set_sha256": {"$ref": "#/$defs/sha256"}
       },

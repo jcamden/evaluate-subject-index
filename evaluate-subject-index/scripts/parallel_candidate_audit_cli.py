@@ -61,9 +61,9 @@ MANIFEST_VERSION = "subject-index-artifact-manifest-v1"
 LOCATOR_AUDIT_VERSION = "locator-audit-v1"
 MISSING_AUDIT_VERSION = "missing-access-audit-v1"
 LOCATOR_RECEIPT_VERSION = "parallel-locator-audit-worker-receipt-v1"
-MISSING_RECEIPT_VERSION = "parallel-missing-access-worker-receipt-v1"
+MISSING_RECEIPT_VERSION = "parallel-missing-access-worker-receipt-v2"
 LOCATOR_REPORT_VERSION = "locator-audit-worker-report-v1"
-MISSING_REPORT_VERSION = "missing-access-worker-report-v1"
+MISSING_REPORT_VERSION = "missing-access-worker-report-v2"
 OPEN_EVIDENCE_VERSION = "candidate-audit-open-pr-evidence-v1"
 MERGE_EVIDENCE_VERSION = "candidate-audit-merge-evidence-v1"
 RECOVERY_VERSION = "candidate-audit-worker-recovery-v1"
@@ -97,6 +97,9 @@ MISSING_ERROR_CODES = {"SCP", "COV", "SEL", "CON", "STA", "LOC_POS", "LOC_NEG", 
 PRIORITIES = {"essential", "major", "optional"}
 PRIORITY_RANK = {"essential": 0, "major": 1, "optional": 2, "exclude_by_default": 3}
 LOCATOR_CLASS_RANK = {"principal": 0, "synthesis_or_conclusion": 1, "supporting": 2, "incidental": 3}
+MISSING_ACCESS_EVIDENCE_MODE = "frozen_benchmark_and_canonical_locator_audits"
+MISSING_ACCESS_SOURCE_ADJUDICATION_MODE = "exception_only"
+MISSING_ACCESS_TREATMENT_IDENTITY_RULE = "unique_subject_document_page_locator_class"
 
 RECEIPT_REQUIRED = {
     "schema_version", "receipt_id", "receipt_sha256", "created_at", "status",
@@ -670,7 +673,14 @@ def build_missing_worksets(frozen: dict[str, Any]) -> dict[str, dict[str, Any]]:
     chunks = frozen["chunks"]
     packet_order = {chunk_id: record["packet_order"] for chunk_id, record in chunks.items()}
     worksets = {
-        chunk_id: {"subject_ids": [], "reader_task_ids": [], "treatments": []}
+        chunk_id: {
+            "evidence_mode": MISSING_ACCESS_EVIDENCE_MODE,
+            "source_adjudication_mode": MISSING_ACCESS_SOURCE_ADJUDICATION_MODE,
+            "treatment_identity_rule": MISSING_ACCESS_TREATMENT_IDENTITY_RULE,
+            "subject_ids": [],
+            "reader_task_ids": [],
+            "treatments": [],
+        }
         for chunk_id in chunks
     }
     subject_owner: dict[str, str] = {}
@@ -688,8 +698,8 @@ def build_missing_worksets(frozen: dict[str, Any]) -> dict[str, dict[str, Any]]:
         evidence = subject.get("evidence")
         require(isinstance(evidence, list) and bool(evidence), "missing_access_ownership", f"Scored subject {subject_id} has no evidence for chunk ownership.")
         candidates: list[tuple[int, int, int, str]] = []
-        treatments: list[dict[str, Any]] = []
-        treatment_ids: set[str] = set()
+        treatments_by_identity: dict[tuple[int, str], dict[str, Any]] = {}
+        subject_evidence_ids: set[str] = set()
         for item in evidence:
             require(isinstance(item, dict), "benchmark_shape", f"Subject {subject_id} contains non-object evidence.")
             page = item.get("document_page")
@@ -699,15 +709,29 @@ def build_missing_worksets(frozen: dict[str, Any]) -> dict[str, dict[str, Any]]:
             chunk_id = owners[page]
             candidates.append((LOCATOR_CLASS_RANK[locator_class], packet_order[chunk_id], page, chunk_id))
             if locator_class != "incidental":
+                evidence_id = require_nonempty_string(item.get("evidence_id"), f"benchmark.{subject_id}.evidence_id")
+                require(evidence_id not in subject_evidence_ids, "duplicate_benchmark_evidence_id", f"Subject {subject_id} repeats benchmark evidence ID {evidence_id}.")
+                subject_evidence_ids.add(evidence_id)
                 treatment_id = deterministic_treatment_id(subject_id, page, locator_class)
-                require(treatment_id not in treatment_ids, "duplicate_benchmark_treatment", f"Subject {subject_id} repeats a treatment at page {page} with class {locator_class}.")
-                treatment_ids.add(treatment_id)
-                treatments.append({
+                key = (page, locator_class)
+                treatment = treatments_by_identity.setdefault(key, {
                     "treatment_id": treatment_id,
                     "subject_id": subject_id,
                     "document_page": page,
                     "locator_class": locator_class,
+                    "evidence_ids": [],
+                    "source_evidence_ids": [],
                 })
+                require(treatment["treatment_id"] == treatment_id, "treatment_identity_collision", f"Treatment identity collision for {subject_id} page {page} class {locator_class}.")
+                treatment["evidence_ids"].append(evidence_id)
+                source_evidence_id = item.get("source_evidence_id")
+                if isinstance(source_evidence_id, str) and source_evidence_id.strip():
+                    treatment["source_evidence_ids"].append(source_evidence_id)
+        treatments = list(treatments_by_identity.values())
+        for treatment in treatments:
+            treatment["evidence_ids"].sort()
+            treatment["source_evidence_ids"] = sorted(set(treatment["source_evidence_ids"]))
+            treatment["evidence_count"] = len(treatment["evidence_ids"])
         explicit_owner = subject.get("owner_chunk_id")
         if explicit_owner is not None:
             require(explicit_owner in worksets, "missing_access_ownership", f"Subject {subject_id} owner_chunk_id is not a frozen chunk.")
@@ -1002,7 +1026,13 @@ def validate_missing_access_audit(artifact: dict[str, Any], frozen: dict[str, An
         status = judgment.get("status")
         require(status in TREATMENT_RECALL_STATUSES, "audit_judgment", f"Treatment {treatment_id} has invalid status.")
         if parallel:
-            validate_evidence_ids(judgment.get("evidence_ids"), f"treatment_judgments[{index}].evidence_ids")
+            evidence_ids = validate_evidence_ids(judgment.get("evidence_ids"), f"treatment_judgments[{index}].evidence_ids")
+            require(
+                set(expected["evidence_ids"]).issubset(evidence_ids),
+                "treatment_evidence_incomplete",
+                f"Treatment {treatment_id} must retain every coalesced benchmark evidence ID.",
+                sorted(set(expected["evidence_ids"]) - set(evidence_ids)),
+            )
         treatment_counts[status] += 1
         class_counts = treatment_by_subject.setdefault(expected["subject_id"], {}).setdefault(expected["locator_class"], {"found": [], "missed": [], "uninspectable": []})
         class_counts[status].append(expected["document_page"])
@@ -1289,8 +1319,8 @@ def public_safety_record() -> dict[str, str]:
     }
 
 
-def common_report_identities(frozen: dict[str, Any], reconnect: dict[str, Any]) -> dict[str, Any]:
-    return {
+def common_report_identities(frozen: dict[str, Any], reconnect: dict[str, Any] | None = None) -> dict[str, Any]:
+    identities = {
         "source_sha256": frozen["identities"]["source_sha256"],
         "candidate_sha256": frozen["candidate_sha256"],
         "benchmark_version": frozen["benchmark"]["version"],
@@ -1305,9 +1335,13 @@ def common_report_identities(frozen: dict[str, Any], reconnect: dict[str, Any]) 
         "chunk_manifest_file_sha256": frozen["chunk_manifest_file_sha256"],
         "normalized_candidate_file_sha256": frozen["candidate_file_sha256"],
         "item_inventory_file_sha256": frozen["inventory_file_sha256"],
-        "source_chunk_file_sha256": reconnect["source_chunk_file_sha256"],
-        "source_sidecar_file_sha256": reconnect["source_sidecar_file_sha256"],
     }
+    if reconnect is not None:
+        identities.update({
+            "source_chunk_file_sha256": reconnect["source_chunk_file_sha256"],
+            "source_sidecar_file_sha256": reconnect["source_sidecar_file_sha256"],
+        })
+    return identities
 
 
 def build_locator_report(
@@ -1348,11 +1382,11 @@ def build_locator_report(
 
 
 def build_missing_report(
-    frozen: dict[str, Any], chunk_id: str, base_commit: str, reconnect: dict[str, Any],
+    frozen: dict[str, Any], chunk_id: str, base_commit: str,
     workset: dict[str, Any], locator_set: dict[str, Any], result: dict[str, Any],
     artifact: dict[str, Any], audit_sha256: str,
 ) -> dict[str, Any]:
-    identities = common_report_identities(frozen, reconnect)
+    identities = common_report_identities(frozen)
     identities["missing_access_ownership_sha256"] = workset["workset_sha256"]
     identities["locator_audit_set_sha256"] = locator_set["sha256"]
     treatment_recall: dict[str, dict[str, int]] = {}
@@ -1389,7 +1423,7 @@ def build_missing_report(
         "dependency_defect_count": result["dependency_defect_count"],
         "completion": {"status": "complete", "subjects_complete": True, "reader_tasks_complete": True, "treatments_complete": True, "foreign_judgments": 0, "duplicate_judgments": 0},
         "private_artifact_sha256": audit_sha256,
-        "reconnection_status": {"source": "verified_by_sha256", "candidate": "verified_by_sha256", "source_chunk": "verified_by_sha256", "source_sidecar": "verified_by_sha256", "locator_audit_set": "verified_by_sha256"},
+        "reconnection_status": {"source": "identity_bound_through_frozen_benchmark", "candidate": "verified_by_sha256", "locator_audit_set": "verified_by_sha256"},
         "limitations": [
             {"code": "uninspectable_concept", "count": result["concept_coverage_counts"].get("uninspectable", 0)},
             {"code": "uninspectable_reader_task", "count": result["reader_task_result_counts"].get("uninspectable", 0)},
@@ -1421,9 +1455,10 @@ def validate_public_report(report: dict[str, Any], audit_kind: str | None = None
         "source_sha256", "candidate_sha256", "benchmark_version", "benchmark_sha256",
         "benchmark_file_sha256", "benchmark_lock_sha256", "policy_sha256", "policy_file_sha256",
         "page_map_sha256", "page_map_file_sha256", "chunk_manifest_sha256", "chunk_manifest_file_sha256",
-        "normalized_candidate_file_sha256", "item_inventory_file_sha256", "source_chunk_file_sha256",
-        "source_sidecar_file_sha256",
+        "normalized_candidate_file_sha256", "item_inventory_file_sha256",
     }
+    if inferred == "locator":
+        identity_fields.update({"source_chunk_file_sha256", "source_sidecar_file_sha256"})
     identity_fields.add("locator_packet_file_sha256" if inferred == "locator" else "missing_access_ownership_sha256")
     if inferred == "missing_access":
         identity_fields.add("locator_audit_set_sha256")
@@ -1470,7 +1505,7 @@ def validate_public_report(report: dict[str, Any], audit_kind: str | None = None
         require(sum(counts["expected"] for counts in report["treatment_recall"].values()) == treatment_count, "public_report_denominator", "Treatment-class denominators do not equal the exact treatment denominator.")
         require_nonnegative_integer(report["dependency_defect_count"], "dependency_defect_count")
         require(report["completion"] == {"status": "complete", "subjects_complete": True, "reader_tasks_complete": True, "treatments_complete": True, "foreign_judgments": 0, "duplicate_judgments": 0}, "public_report_completion", "Missing-access public completion gate is not exact.")
-        require(report["reconnection_status"] == {"source": "verified_by_sha256", "candidate": "verified_by_sha256", "source_chunk": "verified_by_sha256", "source_sidecar": "verified_by_sha256", "locator_audit_set": "verified_by_sha256"}, "public_report_reconnection", "Missing-access public reconnection gate is not exact.")
+        require(report["reconnection_status"] == {"source": "identity_bound_through_frozen_benchmark", "candidate": "verified_by_sha256", "locator_audit_set": "verified_by_sha256"}, "public_report_reconnection", "Missing-access benchmark-first input gate is not exact.")
     require(report["public_safety"] == public_safety_record(), "public_safety_record", "Public report safety record is not complete.")
     limitations = report["limitations"]
     require(isinstance(limitations, list), "public_report_shape", "Public report limitations must be an array.")
@@ -1642,8 +1677,17 @@ def validate_recovery_archive(
     return {"metadata": metadata, "members": members, "archive_sha256": sha256_file(archive)}
 
 
-def receipt_source_reconnection() -> dict[str, Any]:
-    return {"status": "verified", "source_sha256_verified": True, "source_chunk_verified": True, "source_sidecar_verified": True, "candidate_sha256_verified": True}
+def receipt_source_reconnection(audit_kind: str) -> dict[str, Any]:
+    if audit_kind == "locator":
+        return {"status": "verified", "source_sha256_verified": True, "source_chunk_verified": True, "source_sidecar_verified": True, "candidate_sha256_verified": True}
+    return {
+        "status": "not_required_benchmark_first",
+        "source_identity_bound": True,
+        "source_bytes_inspected": False,
+        "source_chunk_required": False,
+        "source_sidecar_required": False,
+        "candidate_sha256_verified": True,
+    }
 
 
 def validation_gates(audit_kind: str) -> dict[str, Any]:
@@ -1698,7 +1742,7 @@ def make_receipt(
             "public_report_path": public_path,
         },
         "identities": identities,
-        "source_reconnection": receipt_source_reconnection(),
+        "source_reconnection": receipt_source_reconnection(audit_kind),
         "private_artifact": private_artifact,
         "private_recovery": {
             "root_ref": safe_relative_path(recovery_root_ref),
@@ -1744,8 +1788,9 @@ def validate_receipt(receipt: dict[str, Any], audit_kind: str | None = None, pub
         "source_sha256", "candidate_sha256", "benchmark_version", "benchmark_sha256", "benchmark_file_sha256",
         "benchmark_lock_sha256", "policy_sha256", "policy_file_sha256", "page_map_sha256", "page_map_file_sha256",
         "chunk_manifest_sha256", "chunk_manifest_file_sha256", "normalized_candidate_file_sha256", "item_inventory_file_sha256",
-        "source_chunk_file_sha256", "source_sidecar_file_sha256",
     }
+    if inferred == "locator":
+        identity_fields.update({"source_chunk_file_sha256", "source_sidecar_file_sha256"})
     identity_fields.add("locator_packet_file_sha256" if inferred == "locator" else "missing_access_ownership_sha256")
     if inferred == "missing_access":
         identity_fields.add("locator_audit_set_sha256")
@@ -1755,7 +1800,7 @@ def validate_receipt(receipt: dict[str, Any], audit_kind: str | None = None, pub
             require(isinstance(value, int) and value > 0, "receipt_identity", "Receipt benchmark version must be positive.")
         else:
             require_sha256(value, f"receipt.identities.{field}")
-    require(receipt.get("source_reconnection") == receipt_source_reconnection(), "receipt_reconnection", "Worker receipt source/candidate reconnection gate is incomplete.")
+    require(receipt.get("source_reconnection") == receipt_source_reconnection(inferred), "receipt_reconnection", "Worker receipt source/candidate input gate is incomplete.")
     require(receipt.get("validation") == validation_gates(inferred), "receipt_validation", "Worker receipt validation gates differ from the strict profile.")
     return inferred
 
@@ -1818,9 +1863,9 @@ def command_build_worker(args: argparse.Namespace, audit_kind: str) -> None:
     repository_state = validate_repository_state(Path(args.repository_state), project, args.base_branch, worker_branch)
     frozen = load_frozen_inputs(args, audit_kind)
     require(chunk_id in frozen["chunks"], "unknown_chunk", f"Chunk {chunk_id} is absent from the frozen manifest.")
-    reconnect = validate_source_reconnection(args, frozen, chunk_id)
     audit, audit_payload, audit_sha256 = load_json_snapshot(Path(args.audit).resolve(), "Private candidate audit")
     if audit_kind == "locator":
+        reconnect = validate_source_reconnection(args, frozen, chunk_id)
         packet = validate_locator_packet(Path(args.locator_packet).resolve(), frozen, chunk_id)
         compare_packet_to_candidate(packet, frozen)
         result = validate_locator_audit(audit, frozen, packet, chunk_id, parallel=True)
@@ -1834,8 +1879,8 @@ def command_build_worker(args: argparse.Namespace, audit_kind: str) -> None:
         workset = worksets[chunk_id]
         require(audit.get("missing_access_ownership_sha256") == workset["workset_sha256"], "missing_access_ownership_mismatch", "Private missing-access audit is not bound to the deterministic workset.")
         result = validate_missing_access_audit(audit, frozen, workset, chunk_id, parallel=True, locator_audit_set_sha256=locator_set["sha256"])
-        identities = {**common_report_identities(frozen, reconnect), "missing_access_ownership_sha256": workset["workset_sha256"], "locator_audit_set_sha256": locator_set["sha256"]}
-        report = build_missing_report(frozen, chunk_id, repository_state["base_commit"], reconnect, workset, locator_set, result, audit, audit_sha256)
+        identities = {**common_report_identities(frozen), "missing_access_ownership_sha256": workset["workset_sha256"], "locator_audit_set_sha256": locator_set["sha256"]}
+        report = build_missing_report(frozen, chunk_id, repository_state["base_commit"], workset, locator_set, result, audit, audit_sha256)
         ownership = {"schema_version": "missing-access-ownership-plan-v1", **workset, "locator_audit_set_sha256": locator_set["sha256"]}
         audit_name = f"missing-access-audit.{chunk_id}.json"
     publication_profile = frozen.get("publication_profile", publication_profile_for(frozen["state"]))
@@ -2138,7 +2183,10 @@ def load_worker_binding(path: Path, selection: dict[str, Any], project: str, aud
     public_records = [item for item in metadata["artifacts"] if item.get("artifact") == public_record_type]
     require(len(public_records) == 1, "recovery_public_report_missing", "Recovery must contain exactly one public artifact snapshot.")
     require(recovery["members"][public_records[0]["path"]] == report_payload, "recovery_public_report_mismatch", "Recovered public artifact differs from the explicitly bound bytes.")
-    expected_common = common_report_identities(frozen, {"source_chunk_file_sha256": receipt["identities"]["source_chunk_file_sha256"], "source_sidecar_file_sha256": receipt["identities"]["source_sidecar_file_sha256"]})
+    reconnect_identities = None
+    if audit_kind == "locator":
+        reconnect_identities = {"source_chunk_file_sha256": receipt["identities"]["source_chunk_file_sha256"], "source_sidecar_file_sha256": receipt["identities"]["source_sidecar_file_sha256"]}
+    expected_common = common_report_identities(frozen, reconnect_identities)
     for field, expected in expected_common.items():
         require(receipt["identities"].get(field) == expected, "worker_frozen_identity_mismatch", f"Worker receipt differs from canonical identity {field}.")
     if audit_kind == "locator":
@@ -2160,7 +2208,6 @@ def load_worker_binding(path: Path, selection: dict[str, Any], project: str, aud
         owned_ids = result["subject_ids"] + result["reader_task_ids"] + result["treatment_ids"]
         expected_report = build_missing_report(
             frozen, chunk_id, receipt["repositories"]["immutable_worker_base_commit"],
-            {"source_chunk_file_sha256": receipt["identities"]["source_chunk_file_sha256"], "source_sidecar_file_sha256": receipt["identities"]["source_sidecar_file_sha256"]},
             workset, kind_inputs["locator_set"], result, audit, sha256_bytes(audit_payload),
         )
     if publication_profile == AGGREGATE_ONLY:
@@ -2536,7 +2583,8 @@ def add_reconnection_arguments(parser: argparse.ArgumentParser) -> None:
 
 def add_worker_arguments(parser: argparse.ArgumentParser, audit_kind: str) -> None:
     add_frozen_arguments(parser)
-    add_reconnection_arguments(parser)
+    if audit_kind == "locator":
+        add_reconnection_arguments(parser)
     parser.add_argument("--chunk-id", required=True, help="One exact CHUNK-* identifier.")
     parser.add_argument("--audit", required=True, help="Model-authored canonical v1 private audit JSON.")
     parser.add_argument("--project", required=True, help="Exact public candidate GitHub owner/repository.")

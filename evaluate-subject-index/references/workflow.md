@@ -35,7 +35,7 @@ Each completion artifact is registered in `artifact-manifest.json` using a relat
 
 Index-to-source review asks, “Does this proposed heading and locator belong?” It measures precision and selectivity. It cannot discover an absent subject because the missing item never appears in the index.
 
-Source-to-index review asks, “Can a reader retrieve every independently searchable, substantively treated source subject?” It measures meaningful coverage, locator recall, and missing access. The frozen source benchmark—not the candidate—defines that denominator.
+Benchmark-to-index review asks, “Can a reader retrieve every independently searchable, substantively treated source subject frozen in the benchmark?” It measures meaningful coverage, locator recall, and missing access. The candidate-blind, source-grounded frozen benchmark—not the candidate and not a fresh worker reading of the source—defines that denominator. Routine missing-access workers therefore use the benchmark plus the complete canonical locator-audit set; source re-entry is reserved for explicit centralized adjudication exceptions.
 
 The global pass asks, “Does the set of individually defensible records form a coherent navigation system?” It detects hierarchy and distribution problems that cannot be decided page by page.
 
@@ -129,7 +129,7 @@ The workflow uses state schema v4 only. An isolated preparation receipt does not
 
 For `locator_audit` and `missing_access_audit`, `next` retains the canonical sequential command. Parallel worker and coordinator operations are reported as auxiliary alternatives only when their exact dependency gates are satisfied. Missing-access worker availability requires the entire canonical locator-audit stage, not merely the matching chunk.
 
-When resuming in another chat or environment, materialize the active Library folder or import the latest checkpoint, validate it, reconnect excluded restricted inputs by SHA-256, then run `status` and `next`.
+When resuming in another chat or environment, materialize the active Library folder or import the latest checkpoint, validate it, reconnect only the restricted inputs required by the next operation, then run `status` and `next`. Missing-access workers do not reconnect source PDFs or sidecars; source-grounded discovery, benchmark review, locator audit, and explicit source-adjudication exceptions do.
 
 ## Reruns and invalidation
 
