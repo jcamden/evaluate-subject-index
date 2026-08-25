@@ -1674,7 +1674,40 @@ def validate_recovery_archive(
         require(receipt["private_recovery"]["sha256"] == sha256_file(archive), "recovery_archive_hash_mismatch", "Receipt recovery archive hash differs.")
         require(receipt["private_recovery"]["metadata_sha256"] == metadata["recovery_metadata_sha256"], "recovery_metadata_hash_mismatch", "Receipt recovery metadata hash differs.")
         require(receipt["private_recovery"]["checkpoint_ref"] == metadata["checkpoint_ref"], "recovery_checkpoint_mismatch", "Receipt recovery checkpoint differs.")
+        evidence_records = [item for item in metadata.get("artifacts", []) if item.get("artifact") == "open_pr_evidence"]
+        if evidence_records:
+            require(len(evidence_records) == 1, "recovery_publication_evidence", "Recovery must not repeat open-PR publication evidence.")
+            require(receipt.get("status") == "published_unmerged", "recovery_publication_evidence", "Preliminary recovery cannot contain open-PR publication evidence.")
+            require(evidence_records[0]["sha256"] == receipt["publication"]["evidence_sha256"], "recovery_publication_evidence", "Recovered open-PR evidence differs from the final receipt.")
     return {"metadata": metadata, "members": members, "archive_sha256": sha256_file(archive)}
+
+
+def rebuild_recovery_with_publication_evidence(
+    root: Path, archive: Path, recovery: dict[str, Any], evidence_payload: bytes,
+) -> dict[str, Any]:
+    """Add the immutable worker publication observation and rebuild the ZIP."""
+    evidence_name = "open-pr-evidence.json"
+    members = dict(recovery["members"])
+    metadata = deepcopy(recovery["metadata"])
+    require(evidence_name not in members, "recovery_publication_evidence", "Recovery already contains publication evidence.")
+    require(not any(item.get("artifact") == "open_pr_evidence" for item in metadata["artifacts"]), "recovery_publication_evidence", "Recovery metadata already records publication evidence.")
+    metadata["artifacts"].append({
+        "artifact": "open_pr_evidence",
+        "path": evidence_name,
+        "sha256": sha256_bytes(evidence_payload),
+        "byte_length": len(evidence_payload),
+        "visibility": "private",
+    })
+    metadata["artifacts"].sort(key=lambda item: item["path"])
+    metadata["recovery_metadata_sha256"] = canonical_hash(metadata, "recovery_metadata_sha256")
+    members[evidence_name] = evidence_payload
+    members["recovery-metadata.json"] = json_bytes(metadata)
+    for name in (evidence_name, "recovery-metadata.json"):
+        target = root.joinpath(*PurePosixPath(name).parts)
+        require_safe_output_path(target, root, "Worker recovery publication evidence")
+        replace_bytes_atomic(target, members[name])
+    write_zip_atomic(archive, members)
+    return validate_recovery_archive(root, archive)
 
 
 def receipt_source_reconnection(audit_kind: str) -> dict[str, Any]:
@@ -1902,6 +1935,31 @@ def require_receipt_matches_open_evidence(
         },
         "receipt_publication_mismatch",
         "Final worker receipt does not bind the exact open-PR evidence.",
+    )
+
+
+def require_receipt_matches_current_proposal(
+    receipt: dict[str, Any], evidence: dict[str, Any],
+) -> None:
+    """Bind fresh coordinator evidence to the immutable proposal identity."""
+    require(receipt.get("status") == "published_unmerged", "receipt_not_publication_bound", "Worker receipt is not final and publication-bound.")
+    publication = receipt["publication"]
+    changed_file = evidence["changed_files"][0]
+    stable_fields = {
+        "pull_request": evidence["pull_request"],
+        "pull_request_url": evidence["pull_request_url"],
+        "base_branch": evidence["base_branch"],
+        "head_branch": evidence["head_branch"],
+        "head_commit": evidence["head_commit"],
+        "commit_count": evidence["commit_count"],
+        "changed_path": changed_file["path"],
+        "file_sha256": changed_file["file_sha256"],
+        "blob_sha": str(changed_file["blob_sha"]).lower(),
+    }
+    require(
+        all(publication[field] == expected for field, expected in stable_fields.items()),
+        "receipt_publication_mismatch",
+        "Fresh coordinator evidence does not describe the immutable proposal bound by the receipt.",
     )
 
 
@@ -2133,7 +2191,7 @@ def command_bind_publication(args: argparse.Namespace) -> None:
     public_document, public_payload, public_file_sha = load_json_snapshot(report_path, "Public worker artifact")
     validate_public_artifact(public_document, audit_kind, chunk_id, profile)
     require(public_file_sha == receipt["public_projection"]["sha256"], "public_projection_hash_mismatch", "Public artifact differs from receipt.")
-    evidence, _, evidence_file_sha = load_json_snapshot(evidence_path, "Current-attempt open-PR evidence")
+    evidence, evidence_payload, evidence_file_sha = load_json_snapshot(evidence_path, "Current-attempt open-PR evidence")
     evidence_result = validate_publication_evidence(evidence, receipt, public_payload, merged=False)
     recovery_root = Path(args.recovery_root).resolve()
     recovery_zip = Path(args.recovery_zip).resolve() if args.recovery_zip else recovery_root / receipt["private_recovery"]["archive_path"]
@@ -2141,11 +2199,14 @@ def command_bind_publication(args: argparse.Namespace) -> None:
     if receipt["status"] == "ready_for_pull_request":
         # Rebuild the deterministic archive before finalizing the receipt. The
         # receipt remains outside the ZIP to avoid a self-referential hash cycle.
-        write_zip_atomic(recovery_zip, recovery["members"])
-        rebuilt_recovery = validate_recovery_archive(recovery_root, recovery_zip)
+        rebuilt_recovery = rebuild_recovery_with_publication_evidence(
+            recovery_root, recovery_zip, recovery, evidence_payload,
+        )
         finalized = deepcopy(receipt)
         finalized["private_recovery"]["sha256"] = rebuilt_recovery["archive_sha256"]
         finalized["private_recovery"]["byte_length"] = recovery_zip.stat().st_size
+        finalized["private_recovery"]["metadata_sha256"] = rebuilt_recovery["metadata"]["recovery_metadata_sha256"]
+        finalized["receipt_sha256"] = canonical_hash(finalized, "receipt_sha256")
         receipt = finalize_publication_receipt(finalized, evidence, evidence_file_sha)
         write_json_atomic(receipt_path, receipt)
         receipt_file_sha = sha256_file(receipt_path)
@@ -2277,7 +2338,7 @@ def load_worker_binding(path: Path, selection: dict[str, Any], project: str, aud
         require(report_file_sha == receipt["private_artifact"]["sha256"], "binding_public_private_mismatch", "Bound public canonical audit is not byte-identical to the validated worker audit.")
     open_evidence, open_payload, open_file_sha, open_path = load_file_binding(path, binding["open_pr_evidence"], "binding.open_pr_evidence")
     open_result = validate_publication_evidence(open_evidence, receipt, report_payload, merged=False)
-    require_receipt_matches_open_evidence(receipt, open_evidence, open_file_sha)
+    require_receipt_matches_current_proposal(receipt, open_evidence)
     if selection["type"] == "pull_request":
         require(selection["pull_request"] == open_evidence["pull_request"] and selection["pull_request_url"] == open_evidence["pull_request_url"], "binding_selection", "Selected pull request is not the exact publication evidence PR.")
     recovery_binding = binding["recovery"]

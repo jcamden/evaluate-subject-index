@@ -39,7 +39,7 @@
         "type": "object",
         "required": ["artifact", "path", "sha256", "byte_length", "visibility"],
         "properties": {
-          "artifact": {"enum": ["private_audit", "worker_state", "worker_manifest", "public_report", "public_canonical_audit", "ownership_plan"]},
+          "artifact": {"enum": ["private_audit", "worker_state", "worker_manifest", "public_report", "public_canonical_audit", "ownership_plan", "open_pr_evidence"]},
           "path": {"$ref": "#/$defs/relativePath"},
           "sha256": {"$ref": "#/$defs/sha256"},
           "byte_length": {"type": "integer", "minimum": 0},

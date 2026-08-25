@@ -1424,6 +1424,7 @@ class RecoveryAndReceiptTests(ErrorAssertionsMixin, unittest.TestCase):
                 public_payload,
             )
             receipt_path = root / "missing-access-worker-receipt.json"
+            preliminary_recovery_sha = parallel.sha256_file(archive)
             report_path = directory_path / "missing-access-public.json"
             evidence_path = directory_path / "open-pr-evidence.json"
             binding_path = directory_path / "worker-binding.json"
@@ -1461,8 +1462,17 @@ class RecoveryAndReceiptTests(ErrorAssertionsMixin, unittest.TestCase):
                 parallel.sha256_file(archive),
                 finalized["private_recovery"]["sha256"],
             )
+            self.assertNotEqual(preliminary_recovery_sha, parallel.sha256_file(archive))
             parallel.validate_receipt(finalized, "missing_access")
-            parallel.validate_recovery_archive(root, archive, finalized)
+            final_recovery = parallel.validate_recovery_archive(root, archive, finalized)
+            evidence_records = [
+                item for item in final_recovery["metadata"]["artifacts"]
+                if item["artifact"] == "open_pr_evidence"
+            ]
+            self.assertEqual(1, len(evidence_records))
+            self.assertEqual(
+                parallel.sha256_file(evidence_path), evidence_records[0]["sha256"]
+            )
             binding = json.loads(binding_path.read_text(encoding="utf-8"))
             self.assertEqual(parallel.sha256_file(receipt_path), binding["receipt"]["sha256"])
 
@@ -1511,6 +1521,27 @@ class RecoveryAndReceiptTests(ErrorAssertionsMixin, unittest.TestCase):
                 "locator",
                 frozen,
                 {"packets": {"CHUNK-001": locator_packet()}},
+            )
+
+    def test_fresh_coordinator_observation_matches_immutable_proposal(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            _, _, receipt, _, _, public_payload = self.build_locator_worker_private(
+                Path(directory)
+            )
+            worker_evidence = self.publication_evidence(receipt, public_payload)
+            finalized = parallel.finalize_publication_receipt(
+                receipt, worker_evidence, "a" * 64
+            )
+            fresh = copy.deepcopy(worker_evidence)
+            fresh["observed_base_head_commit"] = "4" * 40
+            fresh["observed_at"] = "2030-01-01T00:00:00Z"
+            parallel.require_receipt_matches_current_proposal(finalized, fresh)
+            fresh["head_commit"] = "5" * 40
+            self.assert_error(
+                "receipt_publication_mismatch",
+                parallel.require_receipt_matches_current_proposal,
+                finalized,
+                fresh,
             )
 
     def test_public_evaluation_receipt_binds_exact_audit_bytes(self) -> None:
