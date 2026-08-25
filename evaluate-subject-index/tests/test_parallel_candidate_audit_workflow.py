@@ -761,9 +761,9 @@ class MissingAccessWorkerContractTests(ErrorAssertionsMixin, unittest.TestCase):
             chunk_manifest="chunks.json",
             policy="policy.json",
             benchmark="benchmark.json",
-            benchmark_lock="lock.json",
-            normalized_candidate="candidate.json",
-            item_inventory="inventory.json",
+            benchmark_lock=str(SKILL_ROOT / "lock.json"),
+            normalized_candidate=str(SKILL_ROOT / "candidate.json"),
+            item_inventory=str(SKILL_ROOT / "inventory.json"),
         )
         with mock.patch.object(parallel, "load_canonical_run", return_value=run), mock.patch.object(
             parallel, "validate_json_identity_file", side_effect=values
@@ -781,9 +781,9 @@ class MissingAccessWorkerContractTests(ErrorAssertionsMixin, unittest.TestCase):
             chunk_manifest="chunks.json",
             policy="policy.json",
             benchmark="benchmark.json",
-            benchmark_lock="lock.json",
-            normalized_candidate="candidate.json",
-            item_inventory="inventory.json",
+            benchmark_lock=str(SKILL_ROOT / "lock.json"),
+            normalized_candidate=str(SKILL_ROOT / "candidate.json"),
+            item_inventory=str(SKILL_ROOT / "inventory.json"),
         )
         with mock.patch.object(parallel, "load_canonical_run", return_value=run), mock.patch.object(
             parallel, "validate_json_identity_file", side_effect=values
