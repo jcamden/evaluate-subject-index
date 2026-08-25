@@ -31,6 +31,7 @@ Supported commands:
 - `integrate-candidate-preparation --project [repository] --benchmark-project [repository] --benchmark-ref [commit] [pull-request-or-branch]`
 - `normalize-index`
 - `prepare-locator-chunks`
+- `prepare-locator-worker-prompts --project [repository]`
 - `audit-locators [chunk-id]`
 - `worker-locator-audit [chunk-id] --project [repository]`
 - `integrate-locator-audits --project [repository] [pull-request-or-branch ...]`
@@ -133,7 +134,7 @@ Preserve every delivered hierarchy level and every mixed or malformed record dur
 
 After locator packets are complete, locator-audit workers may run concurrently by chunk. Only `integrate-locator-audits` may accept their private artifacts and advance the existing `locator_audit` stage. Missing-access workers remain blocked until every locator audit is canonically integrated and the evaluation validates; only then may they run concurrently by chunk, with `integrate-missing-access-audits` advancing the existing `missing_access_audit` stage. These lanes add no numbered state stages, and the sequential commands remain valid alternatives.
 
-Each worker preserves its complete audit, receipt, state, manifest, and recovery bundle privately before publishing one aggregate public-safe report on a unique branch. A coordinator accepts only explicitly named pull requests or branches, each bound one-to-one to an explicitly named private receipt and recovery root. It obtains fresh GitHub evidence directly from connector/API output, validates the entire selected batch before merging any member, registers exact private bytes, updates the manifest before state, and completes a stage only at full frozen-manifest coverage.
+Each worker preserves its complete audit, receipt, state, manifest, and recovery bundle privately before publishing one aggregate public-safe report on a unique branch. After opening the pull request, the worker obtains fresh GitHub evidence, runs `bind-publication`, reruns `validate-worker`, and replaces the preliminary Library receipt and recovery ZIP with the final publication-bound canonical files in that chunk's recovery folder. A coordinator accepts only explicitly named pull requests or branches, each bound one-to-one to an explicitly named private receipt and recovery root. It obtains fresh GitHub evidence directly from connector/API output, validates the entire selected batch before merging any member, registers exact private bytes, updates the manifest before state, and completes a stage only at full frozen-manifest coverage.
 
 Read [parallel-candidate-audits.md](references/parallel-candidate-audits.md) before either worker or integration command.
 

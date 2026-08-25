@@ -80,6 +80,8 @@ Workers may write only their isolated private state. They never update canonical
 
 Persist complete private work before attempting GitHub publication. Create one commit and one open, unmerged pull request. Refuse to overwrite an existing worker branch and never merge the worker's own pull request.
 
+The preliminary receipt created before publication is not the coordinator handoff. After the pull request opens, obtain fresh GitHub evidence, run `bind-publication`, rerun `validate-worker`, and persist the resulting final publication-bound receipt plus its receipt-bound recovery ZIP to the existing chunk-specific Library recovery root. Replace the preliminary receipt in place, preserve the canonical filenames, verify the exact PR URL and head commit plus the public-report, private-audit, and recovery-ZIP hashes, and do not change the pull request afterward.
+
 ## Locator-audit worker
 
 Invoke:
@@ -307,6 +309,8 @@ For each selected proposal, provide one structured private binding containing:
 Treat bindings as coordinator-private runtime input. Validate one-to-one cardinality: every selected proposal has one binding, every binding names one selected proposal, and no receipt or recovery root is reused ambiguously. Resolve only receipt-relative POSIX paths and exact hashes. Reject missing or extra bindings, ambiguous roots, traversal, absolute paths stored in portable artifacts, and content inferred from candidate or chunk IDs. Never sweep Library folders, `workers/`, or open pull requests.
 
 Worker recovery ZIPs are private, deterministic inventories. Exclude restricted PDFs and the final receipt to avoid a self-referential hash cycle. Include the complete private JSON audit, worker state, worker manifest, and recovery metadata; bind the final receipt to the finished ZIP hash outside the archive. Validate the ZIP before publication and again during coordinator preflight.
+
+When Library is used, the worker must replace the preliminary receipt and ZIP copies with these final publication-bound bytes before reporting success. Filenames remain `locator-audit-worker-receipt.json` plus `locator-audit-worker-recovery.zip`, or `missing-access-worker-receipt.json` plus `missing-access-worker-recovery.zip`; the enclosing audit-type and chunk folder supplies scope. A coordinator must reject a receipt whose publication status is pending or whose PR URL/head commit and public/private/recovery hashes do not match the selected proposal and files.
 
 ## GitHub evidence
 

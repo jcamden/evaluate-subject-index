@@ -181,6 +181,22 @@ Create one `candidate-locator-chunk.*.json` packet per chunk. Include a candidat
 
 Do not include unrelated headings, containers, or cross-references in locator-audit packets. They remain available to the later global structure audit. Reject unresolved locators from routing and place them in a separate exception ledger.
 
+## `prepare-locator-worker-prompts --project [candidate-evaluation-repository]`
+
+Required: completed validated locator-packet preparation; exact candidate-evaluation and benchmark identities; immutable candidate-repository base branch and commit observed directly from GitHub; a validated cumulative portable checkpoint and its Library folder; an evaluation-specific Library worker root; and, for every selected chunk, the packet path/hash/assignment count plus exact Library paths, materialization destinations, and SHA-256 hashes for the restricted source PDF and page sidecar.
+
+Create `locator-worker-prompt-pack-v1.json` from validated artifacts and direct GitHub observations, never from conversational memory. Before rendering, confirm that every selected default branch `locator-audit/<lowercase-chunk-id>` is absent; record the immutable base commit once and still require each launched worker to recheck for collision. Run:
+
+```bash
+python scripts/worker_prompt_cli.py render-locator-pack \
+  --input locator-worker-prompt-pack-v1.json \
+  --output worker-locator-audit-prompts.md
+```
+
+Generate exactly one self-contained prompt per selected chunk. Every prompt must identify all frozen hashes and denominators; reconnect and hash-verify the exact restricted PDF and sidecar; use the chunk-scoped recovery root and branch; publish only the one aggregate report; and include this post-publication sequence: obtain fresh GitHub evidence, run `bind-publication`, rerun `validate-worker`, then save the final publication-bound canonical receipt and receipt-bound recovery ZIP to `<evaluation-library-root>/workers/locator-audit/<chunk-id>/`, replacing the preliminary receipt without renaming either file. Require verification of the exact PR URL, head commit, public-report hash, private-audit hash, and recovery-ZIP hash, and forbid any later PR modification or merge by the worker.
+
+Save the prompt pack beside the canonical integration checkpoint. The completion test is: its input specification is hash-grounded; every selected chunk appears exactly once; all Library recovery roots are evaluation- and chunk-specific; every canonical receipt/ZIP filename remains unchanged; and every prompt contains the final publication-bound replacement instruction. This command prepares launch text only and does not run workers, create branches, or open pull requests.
+
 ## `audit-locators [chunk-id]`
 
 Required: source chunk PDF, candidate locator chunk packet, policy, expanded page map, and chunk manifest.
@@ -199,7 +215,7 @@ Import the validated candidate checkpoint in isolation and verify every source, 
 
 Default the branch to `locator-audit/<lowercase-chunk-id>` and refuse an existing branch. Preserve the private audit, receipt, worker state, worker manifest, and recovery ZIP beneath `workers/locator-audit/<chunk-id>/` before publication. Publish exactly `validation/locator-audit-worker.<chunk-id>.json`, in one commit and one open, unmerged pull request. Never publish the complete audit or receipt, update canonical state or manifests, merge the pull request, or modify the benchmark repository.
 
-Use `scripts/parallel_candidate_audit_cli.py build-locator-worker`, `bind-publication`, and `validate-worker`. Read [parallel-candidate-audits.md](parallel-candidate-audits.md). The completion test is: exact assignment accounting and all private hashes validate; recovery is durable; the aggregate report passes its strict allowlist and safety scan; and the one-file pull request remains open and unmerged. A publication denial preserves private recovery and returns `blocked`.
+Use `scripts/parallel_candidate_audit_cli.py build-locator-worker`, `bind-publication`, and `validate-worker`. After opening the pull request, obtain fresh GitHub evidence, run `bind-publication`, rerun `validate-worker`, and replace the preliminary Library `locator-audit-worker-receipt.json` and recovery ZIP with the final publication-bound canonical files in the same chunk-specific folder. Verify the final receipt's exact PR URL, head commit, public/private hashes, and ZIP hash; do not rename the files or modify the pull request afterward. Read [parallel-candidate-audits.md](parallel-candidate-audits.md). The completion test is: exact assignment accounting and all private hashes validate; the final publication-bound receipt and receipt-bound ZIP are durable in Library; the aggregate report passes its strict allowlist and safety scan; and the one-file pull request remains open and unmerged. A publication denial preserves private recovery and returns `blocked`.
 
 ## `integrate-locator-audits --project [candidate-evaluation-repository] [pull-request-or-branch ...]`
 
@@ -225,7 +241,7 @@ For every scored benchmark subject and reader task deterministically owned by th
 
 Default the branch to `missing-access-audit/<lowercase-chunk-id>` and refuse an existing branch. Preserve the complete private audit, receipt, state, manifest, and recovery ZIP beneath `workers/missing-access-audit/<chunk-id>/`. Publish exactly `validation/missing-access-audit-worker.<chunk-id>.json` in one commit and one open, unmerged pull request. Do not change the benchmark or candidate, perform global-structure or density work, score, report, update canonical state, or merge the pull request.
 
-Use `scripts/parallel_candidate_audit_cli.py build-missing-access-worker`, `bind-publication`, and `validate-worker`. Read [parallel-candidate-audits.md](parallel-candidate-audits.md). The completion test is: exact subject/task and treatment accounting plus all private hashes validate; recovery is durable; the aggregate report passes its allowlist and safety scan; and the one-file pull request remains open and unmerged.
+Use `scripts/parallel_candidate_audit_cli.py build-missing-access-worker`, `bind-publication`, and `validate-worker`. After opening the pull request, obtain fresh GitHub evidence, run `bind-publication`, rerun `validate-worker`, and replace the preliminary Library `missing-access-worker-receipt.json` and recovery ZIP with the final publication-bound canonical files in the same chunk-specific folder. Verify the final receipt's exact PR URL, head commit, public/private hashes, and ZIP hash; do not rename the files or modify the pull request afterward. Read [parallel-candidate-audits.md](parallel-candidate-audits.md). The completion test is: exact subject/task and treatment accounting plus all private hashes validate; the final publication-bound receipt and receipt-bound ZIP are durable in Library; the aggregate report passes its allowlist and safety scan; and the one-file pull request remains open and unmerged.
 
 ## `integrate-missing-access-audits --project [candidate-evaluation-repository] [pull-request-or-branch ...]`
 
