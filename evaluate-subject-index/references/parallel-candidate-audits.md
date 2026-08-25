@@ -119,10 +119,13 @@ workers/locator-audit/<chunk-id>/
 └── locator-audit-worker-recovery.zip
 ```
 
-Publish exactly:
+Publish exactly one profile-selected artifact:
 
 ```text
-validation/locator-audit-worker.<chunk-id>.json
+aggregate_only:
+  validation/locator-audit-worker.<chunk-id>.json
+public_evaluation_artifacts:
+  candidate/locator-audits/locator-audit.<chunk-id>.v1.json
 ```
 
 Do not perform missing-access judgments, global structure judgments, density calculations, scoring, item assessments, or web reporting. Do not modify normalized candidate content or the benchmark repository.
@@ -143,8 +146,8 @@ Before merging anything:
 
 1. resolve the complete frozen locator-packet set from canonical state and verify exact one-per-chunk coverage before any GitHub mutation;
 2. obtain fresh open-PR evidence directly from the GitHub connector/API for every selected proposal;
-3. verify it is open, targets the expected base, originates from `locator-audit/<chunk-id>`, and changes exactly the allowed aggregate report;
-4. reject control files, checkpoints, PDFs, private audit data, receipts, recovery bundles, and unrelated paths;
+3. verify it is open, targets the expected base, originates from `locator-audit/<chunk-id>`, and changes exactly the artifact allowed by the frozen publication profile;
+4. reject control files, checkpoints, PDFs, receipts, recovery bundles, and unrelated paths; in public-audit mode also require the strict canonical-audit publication gate;
 5. require one unique chunk per selected worker;
 6. validate each receipt, recovery inventory, private artifact hash, and public/private hash binding;
 7. require identical frozen source, candidate, benchmark, policy, page-map, chunk-manifest, normalized-candidate, inventory, and packet identities;
@@ -231,10 +234,13 @@ workers/missing-access-audit/<chunk-id>/
 └── missing-access-worker-recovery.zip
 ```
 
-Publish exactly:
+Publish exactly one profile-selected artifact:
 
 ```text
-validation/missing-access-audit-worker.<chunk-id>.json
+aggregate_only:
+  validation/missing-access-audit-worker.<chunk-id>.json
+public_evaluation_artifacts:
+  candidate/missing-access-audits/missing-access-audit.<chunk-id>.v1.json
 ```
 
 Do not change the benchmark, normalized candidate, or canonical locator set. Do not perform global structure, density, scoring, item-assessment, or web-report work.
@@ -251,7 +257,7 @@ Use the same explicit, transactional coordinator pattern. Before merging:
 
 1. require complete canonical locator-audit inputs and a valid canonical evaluation;
 2. obtain fresh open-PR evidence directly from the GitHub connector/API;
-3. enforce the exact one-report public allowlist;
+3. enforce the exact one-artifact public allowlist selected by the frozen publication profile;
 4. resolve the exact private receipt and recovery root bound to every selected proposal;
 5. verify frozen identities, ownership-plan hash, canonical locator-set identity, recovery inventory, and private/public hashes;
 6. require unique chunk ownership;
@@ -273,7 +279,7 @@ Keep private:
 - source/candidate packets and PDFs; and
 - connector evidence and coordinator binding records.
 
-Each worker branch publishes exactly one aggregate report. A public report may contain only:
+Each worker branch publishes exactly one artifact. Under `aggregate_only`, a public report may contain only:
 
 - evaluation ID and candidate ID without candidate content;
 - chunk ID and source-unit label;
@@ -287,7 +293,7 @@ Each worker branch publishes exactly one aggregate report. A public report may c
 - bounded aggregate limitations; and
 - a public-safety result.
 
-A public report must not contain:
+A public aggregate report must not contain:
 
 - candidate headings, subheadings, complete paths, displayed locators/ranges, or cross-reference wording;
 - source-subject labels whose combination reconstructs audit content;
@@ -296,6 +302,8 @@ A public report must not contain:
 - source/candidate PDFs or packets;
 - Library identifiers or absolute local paths; or
 - credentials, secrets, or tokens.
+
+Under `public_evaluation_artifacts`, the one public file is instead the exact validated canonical `locator-audit-v1` or `missing-access-audit-v1` artifact at its deterministic `candidate/...` path. It must pass the stricter contract in [publication-profiles.md](publication-profiles.md): exact allowed keys at every judgment-bearing level, bounded strings, no raw/verbatim/quotation fields, no source or candidate PDF material, no coordinates or local/Library paths, and no secrets. The public file hash must equal the receipt's audit hash exactly.
 
 Generate public projections deterministically from a strict allowlist. Validate their schema, recursively reject forbidden keys, scan bounded free-text values, and inspect the exact outgoing diff. A passing schema alone does not establish publication safety.
 
@@ -340,8 +348,8 @@ Provide these operations:
 
 | Operation | Responsibility |
 | --- | --- |
-| `build-locator-worker` | Validate the locator packet/private audit, compute exact counts and hashes, build recovery metadata and the strict public projection, and create a pending private receipt. |
-| `build-missing-access-worker` | Derive and hash deterministic subject/task ownership, validate the complete private audit and denominators, build recovery metadata/public projection, and create a pending receipt. |
+| `build-locator-worker` | Validate the locator packet/audit, compute exact counts and hashes, build recovery metadata and the profile-selected strict public artifact, and create a pending private receipt. |
+| `build-missing-access-worker` | Derive and hash deterministic subject/task ownership, validate the complete audit and denominators, build recovery metadata/profile-selected public artifact, and create a pending receipt. |
 | `bind-publication` | Bind one open exact-allowlist pull-request observation, public blob/file hashes, branch/base commits, and proposal identity into the private receipt. |
 | `validate-worker` | Recompute schemas, hashes, identities, denominators, public safety, receipt bindings, and recovery completeness without mutating canonical state. |
 | `preflight-batch` | Validate an explicit proposal/binding batch transactionally, enforce fresh API evidence and uniqueness, detect duplicates/conflicts, and produce a no-mutation integration plan. |
@@ -360,7 +368,7 @@ Validate content, schema, canonical hashes, file hashes, chronology, API-evidenc
 - at stage 13 it names `audit-missing-access` and may separately offer missing-access workers/integration; and
 - it never offers missing-access work before canonical locator completion.
 
-On resume, materialize the canonical study and only the explicitly selected worker recovery roots. Reconnect restricted source/candidate inputs by SHA-256, validate canonical state, then validate each selected worker. Do not infer completion from merged public reports alone; canonical private integration and manifest registration are required.
+On resume, materialize the canonical study and only the explicitly selected worker recovery roots. Reconnect restricted source/candidate inputs by SHA-256, validate canonical state, then validate each selected worker. Do not infer completion from merged public artifacts alone; canonical integration and manifest registration are required.
 
 ## Failure and rerun rules
 
@@ -371,4 +379,4 @@ On resume, materialize the canonical study and only the explicitly selected work
 - An identical integrated chunk is idempotent; a different artifact, receipt, packet, ownership plan, or dependency for that chunk is a conflict.
 - Changing locator packets invalidates corresponding locator receipts, reports, recovery, integrations, and all missing-access work that depends on them.
 - Changing the canonical locator set, benchmark, subject/task ownership inputs, normalized candidate, inventory, policy, page map, chunk manifest, source, or candidate identity invalidates affected pending workers.
-- Never repair a failed worker by editing its public aggregate report independently of the private artifact and receipt. Regenerate the worker result under a new collision-free branch after resolving the defect.
+- Never repair a failed worker by editing its public artifact independently of the validated audit and receipt. Regenerate the worker result under a new collision-free branch after resolving the defect.

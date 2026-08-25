@@ -27,7 +27,7 @@
         "candidate_base_branch": {"$ref": "#/$defs/branch"},
         "immutable_worker_base_commit": {"$ref": "#/$defs/commit"},
         "worker_branch": {"type": "string", "pattern": "^locator-audit/chunk-[a-z0-9._-]+$"},
-        "public_report_path": {"type": "string", "pattern": "^validation/locator-audit-worker\\.CHUNK-[A-Za-z0-9._-]+\\.json$"}
+        "public_report_path": {"type": "string", "pattern": "^(?:validation/locator-audit-worker\\.CHUNK-[A-Za-z0-9._-]+\\.json|candidate/locator-audits/locator-audit\\.CHUNK-[A-Za-z0-9._-]+\\.v1\\.json)$"}
       },
       "additionalProperties": false
     },
@@ -153,7 +153,7 @@
       "type": "object",
       "required": ["path", "sha256", "outgoing_safety_scan"],
       "properties": {
-        "path": {"type": "string", "pattern": "^validation/locator-audit-worker\\.CHUNK-[A-Za-z0-9._-]+\\.json$"},
+        "path": {"type": "string", "pattern": "^(?:validation/locator-audit-worker\\.CHUNK-[A-Za-z0-9._-]+\\.json|candidate/locator-audits/locator-audit\\.CHUNK-[A-Za-z0-9._-]+\\.v1\\.json)$"},
         "sha256": {"$ref": "#/$defs/sha256"},
         "outgoing_safety_scan": {"const": "passed"}
       },
@@ -183,7 +183,7 @@
             "head_branch": {"type": "string", "pattern": "^locator-audit/chunk-[a-z0-9._-]+$"},
             "head_commit": {"$ref": "#/$defs/commit"},
             "commit_count": {"const": 1},
-            "changed_path": {"type": "string", "pattern": "^validation/locator-audit-worker\\.CHUNK-[A-Za-z0-9._-]+\\.json$"},
+            "changed_path": {"type": "string", "pattern": "^(?:validation/locator-audit-worker\\.CHUNK-[A-Za-z0-9._-]+\\.json|candidate/locator-audits/locator-audit\\.CHUNK-[A-Za-z0-9._-]+\\.v1\\.json)$"},
             "file_sha256": {"$ref": "#/$defs/sha256"},
             "blob_sha": {"$ref": "#/$defs/blob"},
             "evidence_sha256": {"$ref": "#/$defs/sha256"},

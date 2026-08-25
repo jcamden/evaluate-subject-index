@@ -74,6 +74,10 @@
         },
         "output_format": {"const": "json"},
         "storage_mode": {"enum": ["local", "library", "hybrid"]},
+        "publication_profile": {
+          "enum": ["aggregate_only", "public_evaluation_artifacts"],
+          "default": "aggregate_only"
+        },
         "policy_profile": {"const": "subject-index-standard-policy-v1"},
         "rubric_version": {"const": "subject-index-rubric-v4"}
       },

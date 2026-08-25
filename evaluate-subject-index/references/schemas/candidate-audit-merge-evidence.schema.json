@@ -63,13 +63,13 @@
     "locatorFile": {
       "allOf": [
         {"$ref": "#/$defs/baseFile"},
-        {"properties": {"path": {"type": "string", "pattern": "^validation/locator-audit-worker\\.CHUNK-[A-Za-z0-9._-]+\\.json$"}}}
+        {"properties": {"path": {"type": "string", "pattern": "^(?:validation/locator-audit-worker\\.CHUNK-[A-Za-z0-9._-]+\\.json|candidate/locator-audits/locator-audit\\.CHUNK-[A-Za-z0-9._-]+\\.v1\\.json)$"}}}
       ]
     },
     "missingFile": {
       "allOf": [
         {"$ref": "#/$defs/baseFile"},
-        {"properties": {"path": {"type": "string", "pattern": "^validation/missing-access-audit-worker\\.CHUNK-[A-Za-z0-9._-]+\\.json$"}}}
+        {"properties": {"path": {"type": "string", "pattern": "^(?:validation/missing-access-audit-worker\\.CHUNK-[A-Za-z0-9._-]+\\.json|candidate/missing-access-audits/missing-access-audit\\.CHUNK-[A-Za-z0-9._-]+\\.v1\\.json)$"}}}
       ]
     },
     "changedFiles": {
@@ -80,7 +80,7 @@
         "type": "object",
         "required": ["path", "blob_sha", "file_sha256"],
         "properties": {
-          "path": {"type": "string", "pattern": "^validation/(?:locator-audit-worker|missing-access-audit-worker)\\.CHUNK-[A-Za-z0-9._-]+\\.json$"},
+          "path": {"type": "string", "pattern": "^(?:validation/(?:locator-audit-worker|missing-access-audit-worker)\\.CHUNK-[A-Za-z0-9._-]+\\.json|candidate/(?:locator-audits/locator-audit|missing-access-audits/missing-access-audit)\\.CHUNK-[A-Za-z0-9._-]+\\.v1\\.json)$"},
           "blob_sha": {"$ref": "#/$defs/blob"},
           "file_sha256": {"$ref": "#/$defs/sha256"}
         },

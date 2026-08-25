@@ -71,6 +71,9 @@ BINDING_VERSION = "candidate-audit-integration-binding-v1"
 REPOSITORY_STATE_VERSION = "candidate-audit-repository-state-v1"
 LOCATOR_INTEGRATION_VERSION = "locator-audit-batch-integration-v1"
 MISSING_INTEGRATION_VERSION = "missing-access-batch-integration-v1"
+AGGREGATE_ONLY = "aggregate_only"
+PUBLIC_EVALUATION_ARTIFACTS = "public_evaluation_artifacts"
+PUBLICATION_PROFILES = {AGGREGATE_ONLY, PUBLIC_EVALUATION_ARTIFACTS}
 
 AUDIT_KINDS = {"locator", "missing_access"}
 LOCATOR_STATUSES = {"supported", "partially_supported", "unsupported", "uninspectable"}
@@ -123,6 +126,11 @@ PUBLIC_FORBIDDEN_KEYS = {
     "subject_label", "question", "evidence", "evidence_ids", "evidence_summary", "raw", "raw_text",
     "text", "coordinates", "bbox", "pages", "document_page", "document_pages", "library_id",
     "library_file_id", "absolute_path", "local_path", "receipt_path", "recovery_path",
+}
+PUBLIC_AUDIT_FORBIDDEN_KEYS = {
+    "raw", "raw_text", "verbatim", "quote", "quotation", "excerpt", "coordinates", "bbox",
+    "library_id", "library_file_id", "absolute_path", "local_path", "receipt_path", "recovery_path",
+    "source_pdf", "source_chunk", "candidate_pdf", "credential", "credentials", "secret", "secrets",
 }
 
 
@@ -205,9 +213,27 @@ def branch_for(audit_kind: str, chunk_id: str) -> str:
     return f"{prefix}/{chunk_id.lower()}"
 
 
-def public_path_for(audit_kind: str, chunk_id: str) -> str:
+def publication_profile_for(state: dict[str, Any]) -> str:
+    configuration = state.get("configuration", {})
+    profile = configuration.get("publication_profile", AGGREGATE_ONLY) if isinstance(configuration, dict) else AGGREGATE_ONLY
+    require(profile in PUBLICATION_PROFILES, "publication_profile", "Publication profile must be aggregate_only or public_evaluation_artifacts.")
+    return profile
+
+
+def public_path_for(audit_kind: str, chunk_id: str, publication_profile: str = AGGREGATE_ONLY) -> str:
+    require(publication_profile in PUBLICATION_PROFILES, "publication_profile", "Unknown publication profile.")
+    if publication_profile == PUBLIC_EVALUATION_ARTIFACTS:
+        directory = "locator-audits" if audit_kind == "locator" else "missing-access-audits"
+        stem = "locator-audit" if audit_kind == "locator" else "missing-access-audit"
+        return f"candidate/{directory}/{stem}.{chunk_id}.v1.json"
     stem = "locator-audit-worker" if audit_kind == "locator" else "missing-access-audit-worker"
     return f"validation/{stem}.{chunk_id}.json"
+
+
+def publication_profile_from_path(audit_kind: str, chunk_id: str, path: Any) -> str:
+    matches = [profile for profile in sorted(PUBLICATION_PROFILES) if path == public_path_for(audit_kind, chunk_id, profile)]
+    require(len(matches) == 1, "receipt_public_path", "Worker receipt public path is not allowlisted by a publication profile.")
+    return matches[0]
 
 
 def validate_chunk_id(value: Any) -> str:
@@ -322,6 +348,7 @@ def validate_json_identity_file(path: Path, label: str, schema_version: str, own
 def load_frozen_inputs(args: argparse.Namespace, audit_kind: str) -> dict[str, Any]:
     run = load_canonical_run(Path(args.state))
     state = run["state"]
+    publication_profile = publication_profile_for(state)
     page_map, page_map_bytes, page_map_file_sha = validate_json_identity_file(Path(args.page_map), "Page map", "page-map-v1", "page_map_sha256")
     chunks, chunk_bytes, chunk_file_sha = validate_json_identity_file(Path(args.chunk_manifest), "Chunk manifest", "chunk-manifest-v1", "chunk_manifest_sha256")
     policy, policy_bytes, policy_file_sha = validate_json_identity_file(Path(args.policy), "Evaluation policy", "subject-index-evaluation-policy-v2", "policy_sha256")
@@ -407,6 +434,7 @@ def load_frozen_inputs(args: argparse.Namespace, audit_kind: str) -> dict[str, A
     }
     return {
         **run,
+        "publication_profile": publication_profile,
         "page_map": page_map,
         "page_map_bytes": page_map_bytes,
         "page_map_file_sha256": page_map_file_sha,
@@ -1129,6 +1157,116 @@ def public_scan(value: Any, path: str = "$") -> None:
             require(pattern.search(value) is None, "public_secret", f"Public report appears to contain secret material at {path}.")
 
 
+def allowed_keys(value: Any, allowed: set[str], required: set[str], label: str) -> dict[str, Any]:
+    require(isinstance(value, dict), "public_audit_shape", f"{label} must be an object.")
+    actual = set(value)
+    require(required.issubset(actual) and actual.issubset(allowed), "public_audit_shape", f"{label} has missing or unexpected properties.", {"required": sorted(required), "allowed": sorted(allowed), "actual": sorted(actual)})
+    return value
+
+
+def public_audit_scan(value: Any, path: str = "$") -> None:
+    """Reject non-contract fields, secrets, paths, and unbounded text before public audit publication."""
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            require(key.casefold() not in PUBLIC_AUDIT_FORBIDDEN_KEYS, "public_audit_forbidden_key", f"Public canonical audit contains forbidden key {path}.{key}.")
+            public_audit_scan(nested, f"{path}.{key}")
+    elif isinstance(value, list):
+        for index, nested in enumerate(value):
+            public_audit_scan(nested, f"{path}[{index}]")
+    elif isinstance(value, str):
+        require(len(value) <= 2000, "public_audit_text_too_long", f"Public canonical audit string exceeds 2,000 characters at {path}.")
+        lowered = value.casefold()
+        require(not re.search(r"(?:^|[\s\"'])(?:/root/|/home/|/users/|[a-z]:\\\\)", value, re.IGNORECASE), "public_absolute_path", f"Public canonical audit contains an absolute local path at {path}.")
+        require("library://" not in lowered and "library identifier" not in lowered, "public_library_identifier", f"Public canonical audit contains a Library identifier at {path}.")
+        for pattern in SECRET_PATTERNS:
+            require(pattern.search(value) is None, "public_secret", f"Public canonical audit appears to contain secret material at {path}.")
+
+
+def validate_public_locator_audit_shape(artifact: dict[str, Any], chunk_id: str | None = None) -> dict[str, Any]:
+    top_required = {"schema_version", "evaluation_id", "candidate_sha256", "chunk_id", "provenance", "expected_locator_ids", "judgments", "completion"}
+    allowed_keys(artifact, top_required | {"candidate_id"}, top_required, "Public locator audit")
+    require(artifact["schema_version"] == LOCATOR_AUDIT_VERSION, "public_audit_schema", f"Expected {LOCATOR_AUDIT_VERSION}.")
+    actual_chunk = validate_chunk_id(artifact["chunk_id"])
+    require(chunk_id is None or actual_chunk == chunk_id, "public_audit_chunk", "Public locator audit names a different chunk.")
+    provenance_fields = {"source_sha256", "benchmark_sha256", "benchmark_lock_sha256", "policy_sha256", "page_map_sha256", "chunk_manifest_sha256", "normalized_candidate_file_sha256", "item_inventory_file_sha256", "locator_packet_file_sha256"}
+    provenance = allowed_keys(artifact["provenance"], provenance_fields, provenance_fields, "Public locator audit provenance")
+    for field, value in provenance.items():
+        require_sha256(value, f"public_locator_audit.provenance.{field}")
+    judgments = artifact["judgments"]
+    require(isinstance(judgments, list), "public_audit_shape", "Public locator audit judgments must be an array.")
+    judgment_fields = {"locator_id", "path_id", "complete_heading_path", "document_page", "source_page_label", "source_scope_status", "treatment_class", "judgment", "evidence_summary", "evidence_ids", "confidence", "error_codes", "severity"}
+    for index, judgment in enumerate(judgments):
+        allowed_keys(judgment, judgment_fields, judgment_fields, f"Public locator judgment {index}")
+    completion_fields = {"expected", "judged", "unique", "complete"}
+    allowed_keys(artifact["completion"], completion_fields, completion_fields, "Public locator audit completion")
+    public_audit_scan(artifact)
+    return {"audit_kind": "locator", "chunk_id": actual_chunk, "schema_version": LOCATOR_AUDIT_VERSION}
+
+
+def validate_public_missing_audit_shape(artifact: dict[str, Any], chunk_id: str | None = None) -> dict[str, Any]:
+    top_required = {"schema_version", "evaluation_id", "benchmark_sha256", "candidate_sha256", "chunk_id", "missing_access_ownership_sha256", "provenance", "expected_subject_ids", "expected_reader_task_ids", "expected_treatment_ids", "subject_judgments", "reader_task_results", "treatment_judgments", "completion", "reader_task_completion", "treatment_completion"}
+    allowed_keys(artifact, top_required | {"dependency_defects"}, top_required, "Public missing-access audit")
+    require(artifact["schema_version"] == MISSING_AUDIT_VERSION, "public_audit_schema", f"Expected {MISSING_AUDIT_VERSION}.")
+    actual_chunk = validate_chunk_id(artifact["chunk_id"])
+    require(chunk_id is None or actual_chunk == chunk_id, "public_audit_chunk", "Public missing-access audit names a different chunk.")
+    provenance_fields = {"source_sha256", "benchmark_file_sha256", "benchmark_lock_sha256", "policy_sha256", "page_map_sha256", "chunk_manifest_sha256", "normalized_candidate_file_sha256", "item_inventory_file_sha256", "missing_access_ownership_sha256", "locator_audit_set_sha256"}
+    provenance = allowed_keys(artifact["provenance"], provenance_fields, provenance_fields, "Public missing-access audit provenance")
+    for field, value in provenance.items():
+        require_sha256(value, f"public_missing_access_audit.provenance.{field}")
+    completion_fields = {"expected", "judged", "unique", "complete"}
+    for field in ("completion", "reader_task_completion", "treatment_completion"):
+        allowed_keys(artifact[field], completion_fields, completion_fields, f"Public missing-access audit {field}")
+    recall_fields = {"expected", "found", "missed", "rate"}
+    treatment_class_fields = {"expected_document_pages", "found_document_pages", "missed_document_pages", "uninspectable_document_pages"}
+    route_fields = {"route_type", "reason_code", "evidence_ids"}
+    missed_fields = {"document_page", "locator_class", "reason_code", "evidence_ids"}
+    uncertainty_allowed = {"status", "reason", "evidence_ids"}
+    subject_required = {"subject_id", "priority", "coverage", "direct_access", "cross_reference_access", "realistic_first_lookup_success", "stance_preserved", "severity", "confidence", "evidence_ids", "matched_path_ids", "expected_document_pages", "found_document_pages", "missed_document_pages", "locator_recall", "treatment_recall", "missing_routes", "missed_treatments", "uncertainty", "error_codes"}
+    for index, judgment in enumerate(artifact["subject_judgments"]):
+        allowed_keys(judgment, subject_required | {"dependency_defects"}, subject_required, f"Public subject judgment {index}")
+        allowed_keys(judgment["locator_recall"], recall_fields, {"expected", "found", "missed"}, f"Public subject judgment {index} locator_recall")
+        treatment = allowed_keys(judgment["treatment_recall"], set(LOCATOR_CLASS_RANK) - {"incidental"}, set(LOCATOR_CLASS_RANK) - {"incidental"}, f"Public subject judgment {index} treatment_recall")
+        for locator_class, record in treatment.items():
+            allowed_keys(record, treatment_class_fields, treatment_class_fields, f"Public subject judgment {index} treatment_recall.{locator_class}")
+        for route_index, route in enumerate(judgment["missing_routes"]):
+            allowed_keys(route, route_fields, route_fields, f"Public subject judgment {index} missing route {route_index}")
+        for missed_index, record in enumerate(judgment["missed_treatments"]):
+            allowed_keys(record, missed_fields, missed_fields, f"Public subject judgment {index} missed treatment {missed_index}")
+        uncertainty = allowed_keys(judgment["uncertainty"], uncertainty_allowed, {"status"}, f"Public subject judgment {index} uncertainty")
+        require(uncertainty.get("status") == "none" or {"reason", "evidence_ids"}.issubset(uncertainty), "public_audit_shape", f"Public subject judgment {index} uncertainty lacks its explanation binding.")
+    task_fields = {"task_id", "subject_ids", "result", "access_mode", "matched_path_ids", "severity", "confidence", "evidence_ids"}
+    for index, result in enumerate(artifact["reader_task_results"]):
+        allowed_keys(result, task_fields, task_fields, f"Public reader-task result {index}")
+    treatment_fields = {"treatment_id", "subject_id", "document_page", "locator_class", "status", "evidence_ids"}
+    for index, judgment in enumerate(artifact["treatment_judgments"]):
+        allowed_keys(judgment, treatment_fields, treatment_fields, f"Public treatment judgment {index}")
+    defect_fields = {"defect_id", "dependency_type", "disposition", "locator_id", "coverage_subject_ids", "observed_conflict", "confidence", "required_adjudication", "evidence_ids"}
+    defects = list(artifact.get("dependency_defects", []))
+    for judgment in artifact["subject_judgments"]:
+        defects.extend(judgment.get("dependency_defects", []))
+    for index, defect in enumerate(defects):
+        allowed_keys(defect, defect_fields, defect_fields, f"Public dependency defect {index}")
+    public_audit_scan(artifact)
+    return {"audit_kind": "missing_access", "chunk_id": actual_chunk, "schema_version": MISSING_AUDIT_VERSION}
+
+
+def validate_public_canonical_audit(artifact: dict[str, Any], audit_kind: str, chunk_id: str | None = None) -> dict[str, Any]:
+    return validate_public_locator_audit_shape(artifact, chunk_id) if audit_kind == "locator" else validate_public_missing_audit_shape(artifact, chunk_id)
+
+
+def validate_public_artifact(document: dict[str, Any], audit_kind: str, chunk_id: str, publication_profile: str) -> dict[str, Any]:
+    if publication_profile == PUBLIC_EVALUATION_ARTIFACTS:
+        return validate_public_canonical_audit(document, audit_kind, chunk_id)
+    return validate_public_report(document, audit_kind, chunk_id)
+
+
+def write_public_artifact(path: Path, document: dict[str, Any], source_payload: bytes, publication_profile: str) -> None:
+    if publication_profile == PUBLIC_EVALUATION_ARTIFACTS:
+        replace_bytes_atomic(path, source_payload)
+    else:
+        write_json_atomic(path, document)
+
+
 def validate_count_map(value: Any, keys: set[str], field: str, allow_subset: bool = False) -> dict[str, int]:
     require(isinstance(value, dict), "public_report_shape", f"{field} must be an object.")
     if allow_subset:
@@ -1372,6 +1510,8 @@ def build_recovery(
     require_no_symlink_components(recovery_root.parent, "Worker recovery parent")
     require_no_symlink_components(recovery_zip.parent, "Worker recovery archive parent")
     recovery_root.mkdir(parents=True, exist_ok=True)
+    publication_profile = frozen.get("publication_profile", publication_profile_for(frozen["state"]))
+    public_path = public_path_for(audit_kind, chunk_id, publication_profile)
     checkpoint_ref = stable_identifier("CAR", {"evaluation_id": frozen["state"]["evaluation_id"], "candidate_id": frozen["candidate_id"], "chunk_id": chunk_id, "audit_kind": audit_kind, "identities": identities})
     worker_state = {
         "schema_version": "candidate-audit-worker-state-v1",
@@ -1389,7 +1529,7 @@ def build_recovery(
         audit_name: audit_payload,
         "worker-state.json": json_bytes(worker_state),
         ownership_name: json_bytes(ownership),
-        public_path_for(audit_kind, chunk_id): public_payload,
+        public_path: public_payload,
     }
     worker_manifest = {
         "schema_version": "candidate-audit-worker-manifest-v1",
@@ -1408,7 +1548,10 @@ def build_recovery(
         "worker-state.json": ("worker_state", "private"),
         "worker-manifest.json": ("worker_manifest", "private"),
         ownership_name: ("ownership_plan", "private"),
-        public_path_for(audit_kind, chunk_id): ("public_report", "public"),
+        public_path: (
+            "public_canonical_audit" if publication_profile == PUBLIC_EVALUATION_ARTIFACTS else "public_report",
+            "public",
+        ),
     }
     metadata = {
         "schema_version": RECOVERY_VERSION,
@@ -1517,6 +1660,8 @@ def make_receipt(
 ) -> dict[str, Any]:
     prefix = "LAW" if audit_kind == "locator" else "MAW"
     chunk = frozen["chunks"][chunk_id]
+    publication_profile = frozen.get("publication_profile", publication_profile_for(frozen["state"]))
+    public_path = public_path_for(audit_kind, chunk_id, publication_profile)
     private_artifact: dict[str, Any] = {
         "path": audit_name,
         "sha256": sha256_bytes(audit_payload),
@@ -1549,7 +1694,7 @@ def make_receipt(
             "candidate_base_branch": base_branch,
             "immutable_worker_base_commit": base_commit,
             "worker_branch": worker_branch,
-            "public_report_path": public_path_for(audit_kind, chunk_id),
+            "public_report_path": public_path,
         },
         "identities": identities,
         "source_reconnection": receipt_source_reconnection(),
@@ -1562,17 +1707,18 @@ def make_receipt(
             "metadata_sha256": recovery["metadata_sha256"],
             "checkpoint_ref": recovery["checkpoint_ref"],
         },
-        "public_projection": {"path": public_path_for(audit_kind, chunk_id), "sha256": sha256_bytes(public_payload), "outgoing_safety_scan": "passed"},
+        "public_projection": {"path": public_path, "sha256": sha256_bytes(public_payload), "outgoing_safety_scan": "passed"},
         "validation": validation_gates(audit_kind),
         "publication": {"status": "not_yet_published", "pull_request": None, "head_commit": None},
         "limitations": ["GitHub publication and pull-request creation are orchestrator operations."],
     }
     receipt["receipt_sha256"] = canonical_hash(receipt, "receipt_sha256")
-    validate_receipt(receipt, audit_kind)
+    publication_profile = frozen.get("publication_profile", publication_profile_for(frozen["state"]))
+    validate_receipt(receipt, audit_kind, publication_profile)
     return receipt
 
 
-def validate_receipt(receipt: dict[str, Any], audit_kind: str | None = None) -> str:
+def validate_receipt(receipt: dict[str, Any], audit_kind: str | None = None, publication_profile: str | None = None) -> str:
     exact_keys(receipt, RECEIPT_REQUIRED, "Worker receipt")
     inferred = "locator" if receipt.get("audit_kind") == "locator_audit" else "missing_access" if receipt.get("audit_kind") == "missing_access" else None
     require(inferred is not None and (audit_kind is None or inferred == audit_kind), "receipt_kind", "Worker receipt audit kind is invalid.")
@@ -1581,11 +1727,12 @@ def validate_receipt(receipt: dict[str, Any], audit_kind: str | None = None) -> 
     require_timestamp(receipt["created_at"], "receipt.created_at")
     chunk_id = validate_chunk_id(receipt.get("chunk", {}).get("chunk_id"))
     expected_branch = branch_for(inferred, chunk_id)
-    expected_public = public_path_for(inferred, chunk_id)
     repositories = receipt.get("repositories", {})
     require_github_project(repositories.get("candidate_project"), "receipt.repositories.candidate_project")
     require(repositories.get("worker_branch") == expected_branch, "receipt_branch", "Worker receipt branch is not the deterministic chunk branch.")
-    require(repositories.get("public_report_path") == expected_public, "receipt_public_path", "Worker receipt public path is not allowlisted.")
+    inferred_profile = publication_profile_from_path(inferred, chunk_id, repositories.get("public_report_path"))
+    require(publication_profile is None or inferred_profile == publication_profile, "publication_profile_mismatch", "Worker receipt publication path differs from the frozen evaluation profile.")
+    expected_public = public_path_for(inferred, chunk_id, inferred_profile)
     require_commit(repositories.get("immutable_worker_base_commit"), "receipt.repositories.immutable_worker_base_commit")
     require_sha256(receipt.get("private_artifact", {}).get("sha256"), "receipt.private_artifact.sha256")
     require_sha256(receipt.get("private_recovery", {}).get("sha256"), "receipt.private_recovery.sha256")
@@ -1640,8 +1787,17 @@ def command_build_worker(args: argparse.Namespace, audit_kind: str) -> None:
         report = build_missing_report(frozen, chunk_id, repository_state["base_commit"], reconnect, workset, locator_set, result, audit, audit_sha256)
         ownership = {"schema_version": "missing-access-ownership-plan-v1", **workset, "locator_audit_set_sha256": locator_set["sha256"]}
         audit_name = f"missing-access-audit.{chunk_id}.json"
+    publication_profile = frozen.get("publication_profile", publication_profile_for(frozen["state"]))
+    if publication_profile == PUBLIC_EVALUATION_ARTIFACTS:
+        validate_public_canonical_audit(audit, audit_kind, chunk_id)
+        public_document = audit
+        public_payload = audit_payload
+    else:
+        public_document = report
+        public_payload = json_bytes(report)
+    expected_public_path = public_path_for(audit_kind, chunk_id, publication_profile)
     public_output = Path(args.public_output).resolve()
-    require(public_output.as_posix().endswith("/" + public_path_for(audit_kind, chunk_id)) or public_output.as_posix() == public_path_for(audit_kind, chunk_id), "public_output_path", f"Public output must end in {public_path_for(audit_kind, chunk_id)}.")
+    require(public_output.as_posix().endswith("/" + expected_public_path) or public_output.as_posix() == expected_public_path, "public_output_path", f"Public output must end in {expected_public_path}.")
     recovery_root = Path(args.recovery_root).resolve()
     recovery_zip = Path(args.recovery_zip).resolve() if args.recovery_zip else recovery_root / (("locator-audit-worker" if audit_kind == "locator" else "missing-access-worker") + "-recovery.zip")
     receipt_output = Path(args.receipt_output).resolve() if args.receipt_output else recovery_root / (("locator-audit-worker-receipt.json" if audit_kind == "locator" else "missing-access-worker-receipt.json"))
@@ -1651,17 +1807,16 @@ def command_build_worker(args: argparse.Namespace, audit_kind: str) -> None:
     for path, label in ((public_output, "Public report"), (receipt_output, "Worker receipt")):
         require(not path.exists(), "output_exists", f"Refusing to overwrite {label}: {path}")
         require_no_symlink_components(path.parent, f"{label} parent")
-    public_payload = json_bytes(report)
     recovery = build_recovery(recovery_root, recovery_zip, audit_kind, frozen, chunk_id, identities, audit_name, audit_payload, public_payload, ownership)
     receipt = make_receipt(
         audit_kind, frozen, chunk_id, project, args.base_branch, repository_state["base_commit"], worker_branch,
         identities, audit_name, audit_payload, result, recovery,
         f"workers/{'locator-audit' if audit_kind == 'locator' else 'missing-access-audit'}/{chunk_id}", public_payload,
     )
-    write_json_atomic(public_output, report)
+    write_public_artifact(public_output, public_document, public_payload, publication_profile)
     write_json_atomic(receipt_output, receipt)
     validate_recovery_archive(recovery_root, recovery_zip, receipt)
-    emit({"ok": True, "operation": f"build-{audit_kind}-worker", "chunk_id": chunk_id, "branch": worker_branch, "base_commit": repository_state["base_commit"], "public_report": str(public_output), "receipt": str(receipt_output), "recovery_archive": str(recovery_zip), "publish_allowlist": [public_path_for(audit_kind, chunk_id)], "canonical_state_updated": False})
+    emit({"ok": True, "operation": f"build-{audit_kind}-worker", "chunk_id": chunk_id, "branch": worker_branch, "base_commit": repository_state["base_commit"], "publication_profile": publication_profile, "public_artifact": str(public_output), "public_report": str(public_output), "receipt": str(receipt_output), "recovery_archive": str(recovery_zip), "publish_allowlist": [expected_public_path], "canonical_state_updated": False})
 
 
 def evidence_sha256(value: dict[str, Any]) -> str:
@@ -1728,12 +1883,21 @@ def validate_publication_evidence(
 
 
 def command_validate_public(args: argparse.Namespace) -> None:
-    report, payload, file_sha = load_json_snapshot(Path(args.report).resolve(), "Public worker report")
-    expected = args.audit_kind if args.audit_kind else None
-    result = validate_public_report(report, expected, args.chunk_id)
+    document, payload, file_sha = load_json_snapshot(Path(args.report).resolve(), "Public worker artifact")
+    expected = args.audit_kind
+    if expected is None:
+        expected = "locator" if document.get("schema_version") in {LOCATOR_AUDIT_VERSION, LOCATOR_REPORT_VERSION} else "missing_access"
+    chunk_id = args.chunk_id or document.get("chunk_id")
+    chunk_id = validate_chunk_id(chunk_id)
+    profile = args.publication_profile
+    if profile is None and args.expected_path:
+        profile = publication_profile_from_path(expected, chunk_id, safe_relative_path(args.expected_path))
+    if profile is None:
+        profile = PUBLIC_EVALUATION_ARTIFACTS if document.get("schema_version") in {LOCATOR_AUDIT_VERSION, MISSING_AUDIT_VERSION} else AGGREGATE_ONLY
+    result = validate_public_artifact(document, expected, chunk_id, profile)
     if args.expected_path:
-        require(safe_relative_path(args.expected_path) == public_path_for(result["audit_kind"], result["chunk_id"]), "public_output_path", "Expected public path is not the exact allowlisted path.")
-    emit({"ok": True, "operation": "validate-public", **result, "file_sha256": file_sha, "byte_length": len(payload)})
+        require(safe_relative_path(args.expected_path) == public_path_for(expected, chunk_id, profile), "public_output_path", "Expected public path is not the exact allowlisted path.")
+    emit({"ok": True, "operation": "validate-public", "publication_profile": profile, **result, "file_sha256": file_sha, "byte_length": len(payload)})
 
 
 def command_validate_worker(args: argparse.Namespace) -> None:
@@ -1741,10 +1905,15 @@ def command_validate_worker(args: argparse.Namespace) -> None:
     public_path = Path(args.public_report).resolve()
     receipt, _, _ = load_json_snapshot(receipt_path, "Private worker receipt")
     audit_kind = validate_receipt(receipt, args.audit_kind)
-    report, public_payload, public_sha = load_json_snapshot(public_path, "Public worker report")
-    result = validate_public_report(report, audit_kind, receipt["chunk"]["chunk_id"])
-    require(public_sha == receipt["public_projection"]["sha256"], "public_projection_hash_mismatch", "Public report file hash differs from receipt.")
-    require(report["private_artifact_sha256"] == receipt["private_artifact"]["sha256"], "private_public_binding_mismatch", "Public report is not bound to the receipt's private artifact.")
+    chunk_id = receipt["chunk"]["chunk_id"]
+    profile = publication_profile_from_path(audit_kind, chunk_id, receipt["public_projection"]["path"])
+    public_document, public_payload, public_sha = load_json_snapshot(public_path, "Public worker artifact")
+    result = validate_public_artifact(public_document, audit_kind, chunk_id, profile)
+    require(public_sha == receipt["public_projection"]["sha256"], "public_projection_hash_mismatch", "Public artifact file hash differs from receipt.")
+    if profile == AGGREGATE_ONLY:
+        require(public_document["private_artifact_sha256"] == receipt["private_artifact"]["sha256"], "private_public_binding_mismatch", "Public report is not bound to the receipt's private artifact.")
+    else:
+        require(public_sha == receipt["private_artifact"]["sha256"], "private_public_binding_mismatch", "Published canonical audit is not the exact validated audit bound by the receipt.")
     root = Path(args.recovery_root).resolve()
     archive = Path(args.recovery_zip).resolve() if args.recovery_zip else root / receipt["private_recovery"]["archive_path"]
     recovery = validate_recovery_archive(root, archive, receipt)
@@ -1752,7 +1921,7 @@ def command_validate_worker(args: argparse.Namespace) -> None:
     require(metadata["audit_kind"] == receipt["audit_kind"] and metadata["chunk_id"] == receipt["chunk"]["chunk_id"], "recovery_receipt_identity", "Recovery metadata differs from receipt.")
     private_records = [item for item in metadata["artifacts"] if item.get("artifact") == "private_audit"]
     require(len(private_records) == 1 and private_records[0]["sha256"] == receipt["private_artifact"]["sha256"], "recovery_private_artifact_mismatch", "Recovery archive is not bound to the exact private audit.")
-    emit({"ok": True, "operation": "validate-worker", "audit_kind": audit_kind, "chunk_id": result["chunk_id"], "receipt_sha256": receipt["receipt_sha256"], "public_file_sha256": public_sha, "recovery_sha256": recovery["archive_sha256"]})
+    emit({"ok": True, "operation": "validate-worker", "audit_kind": audit_kind, "chunk_id": result["chunk_id"], "publication_profile": profile, "receipt_sha256": receipt["receipt_sha256"], "public_file_sha256": public_sha, "recovery_sha256": recovery["archive_sha256"]})
 
 
 def command_bind_publication(args: argparse.Namespace) -> None:
@@ -1763,9 +1932,11 @@ def command_bind_publication(args: argparse.Namespace) -> None:
     require(not output.exists(), "output_exists", f"Refusing to overwrite {output}.")
     receipt, _, receipt_file_sha = load_json_snapshot(receipt_path, "Private worker receipt")
     audit_kind = validate_receipt(receipt)
-    report, public_payload, public_file_sha = load_json_snapshot(report_path, "Public worker report")
-    validate_public_report(report, audit_kind, receipt["chunk"]["chunk_id"])
-    require(public_file_sha == receipt["public_projection"]["sha256"], "public_projection_hash_mismatch", "Public report differs from receipt.")
+    chunk_id = receipt["chunk"]["chunk_id"]
+    profile = publication_profile_from_path(audit_kind, chunk_id, receipt["public_projection"]["path"])
+    public_document, public_payload, public_file_sha = load_json_snapshot(report_path, "Public worker artifact")
+    validate_public_artifact(public_document, audit_kind, chunk_id, profile)
+    require(public_file_sha == receipt["public_projection"]["sha256"], "public_projection_hash_mismatch", "Public artifact differs from receipt.")
     evidence, _, evidence_file_sha = load_json_snapshot(evidence_path, "Fresh open-PR evidence")
     evidence_result = validate_publication_evidence(evidence, receipt, public_payload, merged=False)
     recovery_root = Path(args.recovery_root).resolve()
@@ -1790,7 +1961,7 @@ def command_bind_publication(args: argparse.Namespace) -> None:
         "open_pr_evidence": {"path": str(evidence_path), "sha256": evidence_file_sha},
     }
     write_json_atomic(output, binding)
-    emit({"ok": True, "operation": "bind-publication", "binding": str(output), "audit_kind": audit_kind, "chunk_id": receipt["chunk"]["chunk_id"], "pull_request": evidence["pull_request"], "receipt_sha256": receipt["receipt_sha256"], "open_evidence_sha256": evidence_result["evidence_sha256"], "recovery_root_explicit": True})
+    emit({"ok": True, "operation": "bind-publication", "binding": str(output), "audit_kind": audit_kind, "chunk_id": chunk_id, "publication_profile": profile, "pull_request": evidence["pull_request"], "receipt_sha256": receipt["receipt_sha256"], "open_evidence_sha256": evidence_result["evidence_sha256"], "recovery_root_explicit": True})
 
 
 def resolve_bound_path(binding_path: Path, value: Any, field: str) -> Path:
@@ -1877,13 +2048,18 @@ def load_worker_binding(path: Path, selection: dict[str, Any], project: str, aud
     require(binding["candidate_project"] == project, "binding_project", "Worker binding names a different project.")
     require(binding["selection"] == selection, "binding_selection", "Explicit selection does not match the worker binding selection.")
     receipt, receipt_payload, receipt_file_sha, receipt_path = load_file_binding(path, binding["receipt"], "binding.receipt")
-    validate_receipt(receipt, audit_kind)
+    publication_profile = frozen.get("publication_profile", publication_profile_for(frozen["state"]))
+    validate_receipt(receipt, audit_kind, publication_profile)
     chunk_id = receipt["chunk"]["chunk_id"]
     if selection["type"] == "branch":
         require(selection["branch"] == receipt["repositories"]["worker_branch"], "binding_selection", "Selected branch is not the exact receipt worker branch.")
     report, report_payload, report_file_sha, report_path = load_file_binding(path, binding["public_report"], "binding.public_report")
-    validate_public_report(report, audit_kind, chunk_id)
-    require(report_file_sha == receipt["public_projection"]["sha256"] and report["private_artifact_sha256"] == receipt["private_artifact"]["sha256"], "binding_public_private_mismatch", "Bound public report does not match receipt/private artifact.")
+    validate_public_artifact(report, audit_kind, chunk_id, publication_profile)
+    require(report_file_sha == receipt["public_projection"]["sha256"], "binding_public_private_mismatch", "Bound public artifact does not match receipt.")
+    if publication_profile == AGGREGATE_ONLY:
+        require(report["private_artifact_sha256"] == receipt["private_artifact"]["sha256"], "binding_public_private_mismatch", "Bound aggregate report does not identify the private audit.")
+    else:
+        require(report_file_sha == receipt["private_artifact"]["sha256"], "binding_public_private_mismatch", "Bound public canonical audit is not byte-identical to the validated worker audit.")
     open_evidence, open_payload, open_file_sha, open_path = load_file_binding(path, binding["open_pr_evidence"], "binding.open_pr_evidence")
     open_result = validate_publication_evidence(open_evidence, receipt, report_payload, merged=False)
     if selection["type"] == "pull_request":
@@ -1907,9 +2083,10 @@ def load_worker_binding(path: Path, selection: dict[str, Any], project: str, aud
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise PreparationError("private_audit_invalid", "Recovered private audit is not valid UTF-8 JSON.") from exc
     require(isinstance(audit, dict), "private_audit_invalid", "Recovered private audit must be an object.")
-    public_records = [item for item in metadata["artifacts"] if item.get("artifact") == "public_report"]
-    require(len(public_records) == 1, "recovery_public_report_missing", "Recovery must contain exactly one public report snapshot.")
-    require(recovery["members"][public_records[0]["path"]] == report_payload, "recovery_public_report_mismatch", "Recovered public report differs from the explicitly bound report bytes.")
+    public_record_type = "public_canonical_audit" if publication_profile == PUBLIC_EVALUATION_ARTIFACTS else "public_report"
+    public_records = [item for item in metadata["artifacts"] if item.get("artifact") == public_record_type]
+    require(len(public_records) == 1, "recovery_public_report_missing", "Recovery must contain exactly one public artifact snapshot.")
+    require(recovery["members"][public_records[0]["path"]] == report_payload, "recovery_public_report_mismatch", "Recovered public artifact differs from the explicitly bound bytes.")
     expected_common = common_report_identities(frozen, {"source_chunk_file_sha256": receipt["identities"]["source_chunk_file_sha256"], "source_sidecar_file_sha256": receipt["identities"]["source_sidecar_file_sha256"]})
     for field, expected in expected_common.items():
         require(receipt["identities"].get(field) == expected, "worker_frozen_identity_mismatch", f"Worker receipt differs from canonical identity {field}.")
@@ -1935,7 +2112,10 @@ def load_worker_binding(path: Path, selection: dict[str, Any], project: str, aud
             {"source_chunk_file_sha256": receipt["identities"]["source_chunk_file_sha256"], "source_sidecar_file_sha256": receipt["identities"]["source_sidecar_file_sha256"]},
             workset, kind_inputs["locator_set"], result, audit, sha256_bytes(audit_payload),
         )
-    require(json_bytes(expected_report) == report_payload, "public_projection_recompute_mismatch", "Bound public report is not the deterministic projection of the recovered private audit and frozen inputs.")
+    if publication_profile == AGGREGATE_ONLY:
+        require(json_bytes(expected_report) == report_payload, "public_projection_recompute_mismatch", "Bound public report is not the deterministic projection of the recovered private audit and frozen inputs.")
+    else:
+        require(audit_payload == report_payload, "public_projection_recompute_mismatch", "Bound public canonical audit is not byte-identical to the recovered validated audit.")
     canonical = canonical_worker_paths(frozen, audit_kind, chunk_id)
     existing = {name: output.is_file() for name, output in canonical.items()}
     if any(existing.values()):
@@ -2010,6 +2190,7 @@ def artifact_record(path: Path, root: Path, stage: str, artifact_type: str, visi
 
 def active_canonical_chunks(frozen: dict[str, Any], audit_kind: str) -> list[str]:
     active: list[str] = []
+    publication_profile = frozen.get("publication_profile", publication_profile_for(frozen["state"]))
     for chunk_id in frozen["chunks"]:
         paths = canonical_worker_paths(frozen, audit_kind, chunk_id)
         present = {name: path.is_file() for name, path in paths.items()}
@@ -2019,12 +2200,16 @@ def active_canonical_chunks(frozen: dict[str, Any], audit_kind: str) -> list[str
         for path in paths.values():
             manifest_record_for_path(frozen, path)
         receipt = load_json(paths["receipt"], "Canonical worker receipt")
-        require(validate_receipt(receipt, audit_kind) == audit_kind, "canonical_receipt_kind", f"Canonical receipt kind differs for {chunk_id}.")
+        require(validate_receipt(receipt, audit_kind, publication_profile) == audit_kind, "canonical_receipt_kind", f"Canonical receipt kind differs for {chunk_id}.")
         require(receipt["chunk"]["chunk_id"] == chunk_id, "canonical_receipt_chunk", f"Canonical receipt names a different chunk at {chunk_id}.")
         audit_sha = sha256_file(paths["audit"])
         report, report_payload, report_file_sha = load_json_snapshot(paths["public_report"], "Canonical public worker report")
-        validate_public_report(report, audit_kind, chunk_id)
-        require(receipt["private_artifact"]["sha256"] == audit_sha == report["private_artifact_sha256"], "canonical_private_binding", f"Canonical private audit binding differs for {chunk_id}.")
+        validate_public_artifact(report, audit_kind, chunk_id, publication_profile)
+        require(receipt["private_artifact"]["sha256"] == audit_sha, "canonical_private_binding", f"Canonical audit binding differs for {chunk_id}.")
+        if publication_profile == AGGREGATE_ONLY:
+            require(audit_sha == report["private_artifact_sha256"], "canonical_private_binding", f"Canonical private audit binding differs for {chunk_id}.")
+        else:
+            require(audit_sha == report_file_sha, "canonical_private_binding", f"Canonical public audit snapshot differs for {chunk_id}.")
         require(receipt["public_projection"]["sha256"] == report_file_sha, "canonical_public_binding", f"Canonical public report binding differs for {chunk_id}.")
         open_evidence = load_json(paths["open_evidence"], "Canonical open-PR evidence")
         merge_evidence = load_json(paths["merge_evidence"], "Canonical merge evidence")
@@ -2168,7 +2353,7 @@ def integrate_batch(args: argparse.Namespace) -> dict[str, Any]:
             existing_paths = {item.get("path") for item in manifest.get("artifacts", []) if isinstance(item, dict)}
             for worker in batch["workers"]:
                 for name, visibility, artifact_type in (
-                    ("audit", "private", f"parallel_{batch['audit_kind']}_audit"),
+                    ("audit", "public" if frozen.get("publication_profile", publication_profile_for(frozen["state"])) == PUBLIC_EVALUATION_ARTIFACTS else "private", f"parallel_{batch['audit_kind']}_audit"),
                     ("receipt", "private", f"parallel_{batch['audit_kind']}_receipt"),
                     ("open_evidence", "private", "github_open_pr_evidence"),
                     ("merge_evidence", "private", "github_merge_evidence"),
@@ -2326,10 +2511,11 @@ def build_parser() -> argparse.ArgumentParser:
     add_worker_arguments(missing, "missing_access")
     missing.set_defaults(handler=lambda args: command_build_worker(args, "missing_access"))
 
-    public = subparsers.add_parser("validate-public", help="Validate allowlisted aggregate public projection and safety scan.")
+    public = subparsers.add_parser("validate-public", help="Validate the allowlisted public artifact selected by a publication profile.")
     public.add_argument("--report", required=True)
     public.add_argument("--audit-kind", choices=sorted(AUDIT_KINDS))
     public.add_argument("--chunk-id")
+    public.add_argument("--publication-profile", choices=sorted(PUBLICATION_PROFILES))
     public.add_argument("--expected-path", help="Expected repository-relative allowlisted path.")
     public.set_defaults(handler=command_validate_public)
 

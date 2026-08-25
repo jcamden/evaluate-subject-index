@@ -1,0 +1,64 @@
+# Publication profiles
+
+The frozen evaluation state selects one public-artifact policy at `configuration.publication_profile`.
+
+| Value | Worker pull request contains | Canonical audit visibility |
+|---|---|---|
+| `aggregate_only` | One aggregate count report | Private |
+| `public_evaluation_artifacts` | One exact validated canonical audit | Public |
+
+The default is `aggregate_only`. A v4 state that predates this field is interpreted as `aggregate_only`; do not infer public authorization from a public repository alone. Set the profile at initialization with `state_cli.py init --publication-profile ...`. Changing it after candidate-audit workers have started requires a deliberate migration and revalidation of every affected receipt, recovery bundle, public artifact, and manifest record.
+
+## Deterministic worker paths
+
+For `aggregate_only`:
+
+```text
+validation/locator-audit-worker.<chunk-id>.json
+validation/missing-access-audit-worker.<chunk-id>.json
+```
+
+For `public_evaluation_artifacts`:
+
+```text
+candidate/locator-audits/locator-audit.<chunk-id>.v1.json
+candidate/missing-access-audits/missing-access-audit.<chunk-id>.v1.json
+```
+
+Each worker pull request still changes exactly one file. Branch naming, one-commit ancestry, immutable-base binding, GitHub-observed evidence, private recovery, coordinator preflight, and merge evidence are unchanged.
+
+The v1 receipt and binding fields named `public_report_path`, `public_projection`, and `public_report` are retained for backward compatibility. Under `public_evaluation_artifacts`, they bind the public canonical audit rather than an aggregate report. The path and bytes determine the profile unambiguously, and coordinator validation cross-checks that inferred profile against the frozen state.
+
+## Public canonical locator-audit contract
+
+The published bytes are the exact validated `locator-audit-v1` worker artifact. No separate projection or redacted copy is created. Publication adds a strict allowlist on top of the substantive audit validator:
+
+- top level: `schema_version`, `evaluation_id`, optional `candidate_id`, `candidate_sha256`, `chunk_id`, `provenance`, `expected_locator_ids`, `judgments`, and `completion`;
+- each judgment: `locator_id`, `path_id`, `complete_heading_path`, `document_page`, `source_page_label`, `source_scope_status`, `treatment_class`, `judgment`, `evidence_summary`, `evidence_ids`, `confidence`, `error_codes`, and `severity`;
+- completion: exactly `expected`, `judged`, `unique`, and `complete`;
+- provenance: exactly the source, benchmark, benchmark-lock, policy, page-map, chunk-manifest, normalized-candidate, item-inventory, and locator-packet hashes required by the parallel worker.
+
+This is the per-locator linkage used later by item grading: `locator_id` is the stable join key, `path_id` links it to the complete heading path, and `judgment`, `severity`, `error_codes`, `confidence`, and `evidence_summary` supply the locator-level diagnostic factors.
+
+## Public canonical missing-access contract
+
+The published bytes are the exact validated `missing-access-audit-v1` worker artifact. The strict publication allowlist accepts only:
+
+- frozen identities, exact expected subject/task/treatment IDs, and exact completion records;
+- subject judgments and their access, coverage, stance, path, page, recall, missing-route, missed-treatment, uncertainty, confidence, evidence-ID, error-code, and severity fields;
+- reader-task results and treatment judgments;
+- explicitly structured locator-audit dependency defects.
+
+Unknown fields are rejected. Nested route, treatment-recall, uncertainty, completion, and dependency-defect records also have exact key allowlists.
+
+## Safety boundary
+
+Both public modes continue to exclude source PDFs, PDF chunks, extracted source text, raw quotations, coordinates, absolute paths, Library identifiers, credentials, receipts, recovery archives, worker state, and canonical control files. Public canonical audits additionally reject unknown fields, forbidden raw/verbatim/quote fields, secret-like strings, local paths, and strings longer than 2,000 characters. Evidence summaries must remain concise paraphrases rather than source quotations.
+
+The worker preserves a private recovery copy even when the canonical audit is public. In public mode, the receipt must bind the public artifact hash to the private audit hash exactly; the coordinator recomputes substantive validation from frozen inputs and requires byte identity before integration.
+
+## Downstream public artifacts
+
+Under `public_evaluation_artifacts`, register the canonical locator and missing-access audits as `public`. The item inventory, structure audit, item assessments, final evaluation result, and web-report JSON may also be published after their own schema and safety validation. Keep normalized candidate layout evidence, source evidence stores, receipts, GitHub observation files, recovery data, and restricted documents private or restricted.
+
+The profile does not change scoring. `item_grade_cli.py` still joins canonical audits to stable locator, path, node, cross-reference, and benchmark-subject IDs, then derives the per-item grades and display factors used for semantic color coding and accessible popovers.

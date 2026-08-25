@@ -34,6 +34,8 @@ Resolve each cross-reference target to `target_path_id` when its normalized disp
 
 At `score-index`, create `item-assessments.json` before `evaluation-result.json`. The item artifact contains locator, path, node, cross-reference, and source-subject assessments, plus a color legend and summary counts.
 
+Register `item-assessments.json` as public when the frozen profile is `public_evaluation_artifacts`; otherwise keep the study's existing visibility policy. Publication never changes its grading inputs or arithmetic. The public artifact must retain only its existing public-safe popover paraphrases and evidence IDs, not restricted evidence text. Read [publication-profiles.md](publication-profiles.md).
+
 ## What each grade means
 
 | Item | Grade scope | Does not mean |

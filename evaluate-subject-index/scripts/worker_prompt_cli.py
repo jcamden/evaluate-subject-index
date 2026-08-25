@@ -13,6 +13,7 @@ from typing import Any
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
 CHUNK_ID = re.compile(r"^CHUNK-[0-9]{3,}$")
+PUBLICATION_PROFILES = {"aggregate_only", "public_evaluation_artifacts"}
 
 
 class PromptSpecError(ValueError):
@@ -63,6 +64,7 @@ def validate_spec(spec: dict[str, Any]) -> None:
         sha_field(spec, name)
     library_path(text_field(spec, "checkpoint_library_root"), "checkpoint_library_root")
     library_path(text_field(spec, "worker_library_root"), "worker_library_root")
+    require(spec.get("publication_profile", "aggregate_only") in PUBLICATION_PROFILES, "publication_profile is invalid")
     chunks = spec.get("chunks")
     require(isinstance(chunks, list) and bool(chunks), "chunks must be a nonempty array")
     seen: set[str] = set()
@@ -88,6 +90,13 @@ def render_chunk(spec: dict[str, Any], chunk: dict[str, Any]) -> str:
     chunk_id = chunk["chunk_id"]
     lower_chunk = chunk_id.lower()
     recovery_root = f"{spec['worker_library_root'].rstrip('/')}/locator-audit/{chunk_id}/"
+    publication_profile = spec.get("publication_profile", "aggregate_only")
+    if publication_profile == "public_evaluation_artifacts":
+        publication_instruction = f"""Preserve the complete audit, receipt, worker state, worker manifest, and recovery ZIP under the recovery root before publication. Publish the exact validated canonical audit bytes at `candidate/locator-audits/locator-audit.{chunk_id}.v1.json` in one commit and one open, unmerged pull request. The public artifact must pass the strict canonical-audit allowlist, bounded-text, path, and secret scan. Do not publish source PDFs, PDF chunks, raw source text, receipts, recovery data, or control files; do not update canonical state or manifests, modify the benchmark repository, or merge the pull request."""
+        binding_nouns = "public canonical audit and its identical recovery copy"
+    else:
+        publication_instruction = f"""Preserve the complete private audit, receipt, worker state, worker manifest, and recovery ZIP under the recovery root before publication. Publish exactly `validation/locator-audit-worker.{chunk_id}.json` in one commit and one open, unmerged pull request. Do not publish the complete audit, update canonical state or manifests, modify the benchmark repository, or merge the pull request."""
+        binding_nouns = "public aggregate report and private audit"
     return f"""## {chunk_id} — {chunk['source_unit']}
 
 ```text
@@ -109,6 +118,7 @@ Resume the canonical evaluation in an isolated worker:
 - Page-map canonical SHA-256: {spec['page_map_canonical_sha256']}
 - Chunk-manifest canonical SHA-256: {spec['chunk_manifest_canonical_sha256']}
 - Candidate-benchmark-lock file/canonical SHA-256: {spec['benchmark_lock_file_sha256']} / {spec['benchmark_lock_canonical_sha256']}
+- Publication profile: {publication_profile}
 
 Import and fully validate this cumulative portable checkpoint from `{spec['checkpoint_library_root']}`:
 
@@ -137,9 +147,9 @@ If either restricted source artifact is unavailable or has a different hash, sto
 
 Audit every one of the {chunk['expected_locator_assignments']} packet assignments exactly once. Preserve the complete heading path, judge only this chunk's owned assignments, and use only `supported`, `partially_supported`, `unsupported`, or `uninspectable`. Record concise public-safe evidence paraphrases, evidence IDs, error codes, severity, and confidence. Do not perform missing-access, global-structure, density, item-assessment, scoring, or reporting work.
 
-Use `parallel_candidate_audit_cli.py build-locator-worker`, `bind-publication`, and `validate-worker`. Preserve the complete private audit, receipt, worker state, worker manifest, and recovery ZIP under the recovery root before publication. Publish exactly `validation/locator-audit-worker.{chunk_id}.json` in one commit and one open, unmerged pull request. Do not publish private audit data, update canonical state or manifests, modify the benchmark repository, or merge the pull request.
+Use `parallel_candidate_audit_cli.py build-locator-worker`, `bind-publication`, and `validate-worker`. {publication_instruction}
 
-After the pull request has been created, obtain a fresh GitHub observation of its exact URL, number, open state, head branch and commit, base branch and commit, one-commit history, changed-path allowlist, and public-report blob/file hash. Run `bind-publication` with that observation, then rerun `validate-worker`. Save the resulting final publication-bound `locator-audit-worker-receipt.json` and its receipt-bound `locator-audit-worker-recovery.zip` to the existing Library recovery root `{recovery_root}`, replacing the earlier pre-publication receipt while preserving the canonical filenames. Verify that the saved final receipt names the exact pull-request URL and head commit and binds the public report, private audit, and recovery ZIP. Do not modify or merge the pull request afterward.
+After the pull request has been created, obtain a fresh GitHub observation of its exact URL, number, open state, head branch and commit, base branch and commit, one-commit history, changed-path allowlist, and public-artifact blob/file hash. Run `bind-publication` with that observation, then rerun `validate-worker`. Save the resulting final publication-bound `locator-audit-worker-receipt.json` and its receipt-bound `locator-audit-worker-recovery.zip` to the existing Library recovery root `{recovery_root}`, replacing the earlier pre-publication receipt while preserving the canonical filenames. Verify that the saved final receipt names the exact pull-request URL and head commit and binds the {binding_nouns} plus the recovery ZIP. Do not modify or merge the pull request afterward.
 ```
 """
 

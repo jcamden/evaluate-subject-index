@@ -103,6 +103,30 @@ class WorkerPromptCliTests(unittest.TestCase):
             self.assertIn("duplicate chunk_id", completed.stdout)
             self.assertFalse(output_path.exists())
 
+    def test_public_evaluation_profile_names_canonical_audit_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            spec = prompt_spec()
+            spec["publication_profile"] = "public_evaluation_artifacts"
+            input_path = root / "spec.json"
+            output_path = root / "prompts.md"
+            input_path.write_text(json.dumps(spec), encoding="utf-8")
+            completed = subprocess.run(
+                [sys.executable, str(SCRIPT), "render-locator-pack", "--input", str(input_path), "--output", str(output_path)],
+                cwd=SKILL_ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(0, completed.returncode, completed.stderr or completed.stdout)
+            rendered = output_path.read_text(encoding="utf-8")
+            self.assertIn("Publication profile: public_evaluation_artifacts", rendered)
+            self.assertIn(
+                "candidate/locator-audits/locator-audit.CHUNK-001.v1.json",
+                rendered,
+            )
+            self.assertIn("exact validated canonical audit bytes", rendered)
+
 
 if __name__ == "__main__":
     unittest.main()

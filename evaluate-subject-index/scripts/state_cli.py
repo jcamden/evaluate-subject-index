@@ -97,6 +97,7 @@ MANIFEST_SCHEMA_VERSION = "subject-index-artifact-manifest-v1"
 MANIFEST_FILENAME = "artifact-manifest.json"
 VALID_VISIBILITY = {"public", "private", "restricted"}
 VALID_RETENTION = {"required", "cache"}
+PUBLICATION_PROFILES = {"aggregate_only", "public_evaluation_artifacts"}
 
 
 @contextmanager
@@ -229,6 +230,11 @@ def validate_state(
         errors.append("Unsupported schema_version.")
     if state.get("configuration", {}).get("storage_mode") not in {"local", "library", "hybrid"}:
         errors.append("configuration.storage_mode must be local, library, or hybrid.")
+    publication_profile = state.get("configuration", {}).get("publication_profile", "aggregate_only")
+    if publication_profile not in PUBLICATION_PROFILES:
+        errors.append(
+            "configuration.publication_profile must be aggregate_only or public_evaluation_artifacts."
+        )
     readership = state.get("configuration", {}).get("readership_provenance")
     if readership is None:
         warnings.append("Legacy state has no readership provenance; record it when defining policy.")
@@ -397,6 +403,7 @@ def candidate_audit_parallel_actions(state: dict[str, Any]) -> list[dict[str, An
     locator_status = "completed" if locator_complete else ("available" if locator_ready else "blocked")
     missing_ready = locator_complete
     missing_status = "completed" if missing_complete else ("available" if missing_ready else "blocked")
+    publication_profile = state.get("configuration", {}).get("publication_profile", "aggregate_only")
     return [
         {
             "command": "worker-locator-audit",
@@ -407,6 +414,7 @@ def candidate_audit_parallel_actions(state: dict[str, Any]) -> list[dict[str, An
             "available": locator_status == "available",
             "unmet_dependencies": [] if locator_ready else ["locator_chunk_preparation"],
             "canonical_next_unchanged": True,
+            "publication_profile": publication_profile,
             "selection_rule": "Coordinator integration requires explicit pull requests and exact receipt/recovery bindings for the selected wave, plus the complete frozen locator-packet set for both preflight and integration.",
         },
         {
@@ -418,6 +426,7 @@ def candidate_audit_parallel_actions(state: dict[str, Any]) -> list[dict[str, An
             "available": missing_status == "available",
             "unmet_dependencies": [] if missing_ready else ["locator_audit"],
             "canonical_next_unchanged": True,
+            "publication_profile": publication_profile,
             "selection_rule": "Coordinator integration requires explicit pull requests and exact receipt/recovery bindings.",
         },
     ]
@@ -434,6 +443,7 @@ def state_summary(state: dict[str, Any], state_path: Path | None = None) -> dict
         "ok": not errors,
         "evaluation_id": state.get("evaluation_id"),
         "storage_mode": state.get("configuration", {}).get("storage_mode"),
+        "publication_profile": state.get("configuration", {}).get("publication_profile", "aggregate_only"),
         "state": current,
         "completed_stages": [name for name in stage_order if stages.get(name, {}).get("status") == "completed"],
         "blocked_stages": [name for name in stage_order if stages.get(name, {}).get("status") == "blocked"],
@@ -490,6 +500,7 @@ def command_init(args: argparse.Namespace) -> None:
             },
             "output_format": "json",
             "storage_mode": args.storage_mode,
+            "publication_profile": args.publication_profile,
             "chunking": {"primary": "chapter", "maximum_pages": 60, "context_overlap_pages": 2},
             "policy_profile": "subject-index-standard-policy-v1",
             "rubric_version": "subject-index-rubric-v4",
@@ -692,6 +703,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     init_parser.add_argument("--audit-mode", choices=["full", "pilot"], default="full")
     init_parser.add_argument("--storage-mode", choices=["local", "library", "hybrid"], default="local")
+    init_parser.add_argument(
+        "--publication-profile",
+        choices=sorted(PUBLICATION_PROFILES),
+        default="aggregate_only",
+        help="Public artifact policy; omitted legacy states are treated as aggregate_only.",
+    )
     init_parser.add_argument("--force", action="store_true")
     init_parser.set_defaults(func=command_init)
 

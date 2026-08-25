@@ -39,11 +39,11 @@ The schemas in `schemas/` are machine-readable contracts. Each schema controls e
 | Candidate locator chunk | `candidate-locator-chunk.schema.json` | Only paths and assignments owned by one audit chunk |
 | Locator batch | `locator-audit.schema.json` | One judgment for every expanded candidate locator |
 | Parallel locator worker receipt | `parallel-locator-audit-worker-receipt.schema.json` | Private identities, denominators, public binding, recovery inventory, and handoff for one chunk |
-| Public locator worker report | `locator-audit-worker-report.schema.json` | Strict aggregate public projection with no reconstructable candidate audit content |
+| Public locator worker report | `locator-audit-worker-report.schema.json` | Strict aggregate projection used by `aggregate_only` |
 | Locator integration batch | `locator-audit-batch-integration.schema.json` | Explicit proposals, accepted private artifacts, provenance, conflicts, and stage-completion accounting |
 | Missing-access batch | `missing-access-audit.schema.json` | Source-to-index concept coverage and locator recall |
 | Parallel missing-access worker receipt | `parallel-missing-access-worker-receipt.schema.json` | Private frozen dependencies, subject/task denominators, public binding, recovery inventory, and handoff |
-| Public missing-access worker report | `missing-access-worker-report.schema.json` | Strict aggregate public projection with no reconstructable subject or candidate audit content |
+| Public missing-access worker report | `missing-access-worker-report.schema.json` | Strict aggregate projection used by `aggregate_only` |
 | Missing-access integration batch | `missing-access-batch-integration.schema.json` | Explicit proposals, locator dependencies, accepted private artifacts, provenance, and completion accounting |
 | Candidate-audit open-PR evidence | `candidate-audit-open-pr-evidence.schema.json` | Fresh GitHub-API observation of one open exact-allowlist worker pull request |
 | Candidate-audit merge evidence | `candidate-audit-merge-evidence.schema.json` | Fresh GitHub-API observation that the selected pull request merged unchanged |
@@ -87,7 +87,7 @@ Use relative POSIX paths rooted at the evaluation directory in state and manifes
 
 Candidate normalization uses candidate-index-v2 and subject-index-item-inventory-v2 only. V2 preserves any delivered third or deeper hierarchy level and `cross_references[]`; it does not imply that those structures satisfy the standard policy. Preparation artifacts remain benchmark-independent, while `candidate-benchmark-lock.json` binds the accepted normalization to the final compatible benchmark before auditing.
 
-Parallel candidate audits reuse `locator-audit-v1` and `missing-access-audit-v1` as their complete private judgment formats. Worker receipts, public reports, GitHub evidence, recovery metadata, and batch-integration records wrap and bind those canonical artifacts; they do not define alternative scoring or judgment policies. Additive accounting fields permitted by the canonical schemas may be required by `parallel_candidate_audit_cli.py` for worker validation without changing sequential-command semantics.
+Parallel candidate audits reuse `locator-audit-v1` and `missing-access-audit-v1` as their complete judgment formats. Worker receipts, public artifacts, GitHub evidence, recovery metadata, and batch-integration records wrap and bind those canonical artifacts; they do not define alternative scoring or judgment policies. `aggregate_only` keeps the complete audits private and publishes their strict aggregate reports. `public_evaluation_artifacts` publishes the exact validated audits under an additional exact-key, bounded-text, path, and secret allowlist. Read [publication-profiles.md](publication-profiles.md).
 
 Public worker-report schemas are strict allowlists. Permit only aggregate identities, immutable hashes, owned ranges, denominator and status counts, severity/error-code counts, completion, reconnection status, limitations, the private artifact hash, and a public-safety result. Reject candidate headings or subheadings, complete paths, displayed locators or ranges, cross-reference wording, reconstructable source-subject labels, page-specific comparisons, raw extraction, coordinates, exact or extended source text, detailed evidence tied to candidate records, PDFs, Library identifiers, absolute paths, credentials, and secrets.
 

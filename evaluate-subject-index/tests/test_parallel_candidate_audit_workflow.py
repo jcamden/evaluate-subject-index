@@ -463,6 +463,52 @@ class LocatorWorkerContractTests(ErrorAssertionsMixin, unittest.TestCase):
         self.assertEqual(4, summary["completion"]["expected"])
         self.assertEqual(["PATH-001"], summary["path_ids"])
 
+    def test_public_canonical_locator_contract_is_exact_and_item_linked(self) -> None:
+        result = parallel.validate_public_canonical_audit(
+            self.audit, "locator", "CHUNK-001"
+        )
+        self.assertEqual("locator", result["audit_kind"])
+        self.assertEqual("LOC-001", self.audit["judgments"][0]["locator_id"])
+        self.assertEqual("PATH-001", self.audit["judgments"][0]["path_id"])
+        unexpected = copy.deepcopy(self.audit)
+        unexpected["judgments"][0]["raw_text"] = "not publishable"
+        self.assert_error(
+            "public_audit_shape",
+            parallel.validate_public_canonical_audit,
+            unexpected,
+            "locator",
+            "CHUNK-001",
+        )
+
+    def test_publication_profile_paths_are_deterministic(self) -> None:
+        self.assertEqual(
+            "validation/locator-audit-worker.CHUNK-001.json",
+            parallel.public_path_for("locator", "CHUNK-001", "aggregate_only"),
+        )
+        canonical = "candidate/locator-audits/locator-audit.CHUNK-001.v1.json"
+        self.assertEqual(
+            canonical,
+            parallel.public_path_for(
+                "locator", "CHUNK-001", "public_evaluation_artifacts"
+            ),
+        )
+        self.assertEqual(
+            "public_evaluation_artifacts",
+            parallel.publication_profile_from_path("locator", "CHUNK-001", canonical),
+        )
+
+    def test_public_canonical_writer_preserves_source_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "audit.json"
+            compact = json.dumps(self.audit, separators=(",", ":")).encode("utf-8")
+            parallel.write_public_artifact(
+                output,
+                self.audit,
+                compact,
+                "public_evaluation_artifacts",
+            )
+            self.assertEqual(compact, output.read_bytes())
+
     def test_foreign_assignment_is_rejected(self) -> None:
         audit = copy.deepcopy(self.audit)
         audit["judgments"][0]["locator_id"] = "LOC-005"
@@ -568,6 +614,23 @@ class MissingAccessWorkerContractTests(ErrorAssertionsMixin, unittest.TestCase):
         self.assertEqual(1, summary["concept_coverage_counts"]["complete"])
         self.assertGreater(summary["treatment_recall"]["missed"], 0)
         self.assertEqual(1, summary["dependency_defect_count"])
+
+    def test_public_canonical_missing_access_contract_is_strict(self) -> None:
+        audit = missing_audit(self.frozen, "CHUNK-001")
+        audit["provenance"]["locator_audit_set_sha256"] = "b" * 64
+        result = parallel.validate_public_canonical_audit(
+            audit, "missing_access", "CHUNK-001"
+        )
+        self.assertEqual("missing_access", result["audit_kind"])
+        unexpected = copy.deepcopy(audit)
+        unexpected["subject_judgments"][0]["source_quote"] = "not allowed"
+        self.assert_error(
+            "public_audit_shape",
+            parallel.validate_public_canonical_audit,
+            unexpected,
+            "missing_access",
+            "CHUNK-001",
+        )
 
     def test_duplicate_missing_and_foreign_subjects_are_rejected(self) -> None:
         workset = parallel.build_missing_worksets(self.frozen)["CHUNK-001"]
@@ -761,9 +824,9 @@ class MissingAccessWorkerContractTests(ErrorAssertionsMixin, unittest.TestCase):
             chunk_manifest="chunks.json",
             policy="policy.json",
             benchmark="benchmark.json",
-            benchmark_lock=str(SKILL_ROOT / "lock.json"),
-            normalized_candidate=str(SKILL_ROOT / "candidate.json"),
-            item_inventory=str(SKILL_ROOT / "inventory.json"),
+            benchmark_lock="lock.json",
+            normalized_candidate="candidate.json",
+            item_inventory="inventory.json",
         )
         with mock.patch.object(parallel, "load_canonical_run", return_value=run), mock.patch.object(
             parallel, "validate_json_identity_file", side_effect=values
@@ -781,9 +844,9 @@ class MissingAccessWorkerContractTests(ErrorAssertionsMixin, unittest.TestCase):
             chunk_manifest="chunks.json",
             policy="policy.json",
             benchmark="benchmark.json",
-            benchmark_lock=str(SKILL_ROOT / "lock.json"),
-            normalized_candidate=str(SKILL_ROOT / "candidate.json"),
-            item_inventory=str(SKILL_ROOT / "inventory.json"),
+            benchmark_lock="lock.json",
+            normalized_candidate="candidate.json",
+            item_inventory="inventory.json",
         )
         with mock.patch.object(parallel, "load_canonical_run", return_value=run), mock.patch.object(
             parallel, "validate_json_identity_file", side_effect=values
@@ -1222,6 +1285,86 @@ class RecoveryAndReceiptTests(ErrorAssertionsMixin, unittest.TestCase):
                 receipt["public_projection"]["sha256"],
             )
             self.assertEqual(recovery["archive_sha256"], receipt["private_recovery"]["sha256"])
+
+    def test_public_evaluation_receipt_binds_exact_audit_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            frozen = frozen_fixture()
+            frozen["state"]["configuration"] = {
+                "publication_profile": "public_evaluation_artifacts"
+            }
+            frozen["publication_profile"] = "public_evaluation_artifacts"
+            packet = locator_packet()
+            audit = locator_audit()
+            result = parallel.validate_locator_audit(
+                audit, frozen, packet, "CHUNK-001"
+            )
+            parallel.validate_public_canonical_audit(audit, "locator", "CHUNK-001")
+            audit_payload = parallel.json_bytes(audit)
+            reconnect = {
+                "source_chunk_file_sha256": "a" * 64,
+                "source_sidecar_file_sha256": "b" * 64,
+            }
+            report = parallel.build_locator_report(
+                frozen,
+                "CHUNK-001",
+                "1" * 40,
+                reconnect,
+                packet,
+                result,
+                parallel.sha256_bytes(audit_payload),
+            )
+            root = Path(directory) / "worker"
+            archive = Path(directory) / "worker.zip"
+            recovery = parallel.build_recovery(
+                root,
+                archive,
+                "locator",
+                frozen,
+                "CHUNK-001",
+                report["identities"],
+                "locator-audit.CHUNK-001.json",
+                audit_payload,
+                audit_payload,
+                {
+                    "schema_version": "locator-assignment-plan-v1",
+                    "chunk_id": "CHUNK-001",
+                    "locator_packet_file_sha256": packet["sha256"],
+                    "assignment_ids": sorted(packet["assignments"]),
+                    "assignment_count": len(packet["assignments"]),
+                },
+            )
+            receipt = parallel.make_receipt(
+                "locator",
+                frozen,
+                "CHUNK-001",
+                "example/synthetic-candidate",
+                "main",
+                "1" * 40,
+                "locator-audit/chunk-001",
+                report["identities"],
+                "locator-audit.CHUNK-001.json",
+                audit_payload,
+                result,
+                recovery,
+                "workers/locator-audit/CHUNK-001",
+                audit_payload,
+            )
+            self.assertEqual(
+                "candidate/locator-audits/locator-audit.CHUNK-001.v1.json",
+                receipt["public_projection"]["path"],
+            )
+            self.assertEqual(
+                receipt["private_artifact"]["sha256"],
+                receipt["public_projection"]["sha256"],
+            )
+            metadata = parallel.validate_recovery_archive(root, archive, receipt)["metadata"]
+            self.assertEqual(
+                1,
+                sum(
+                    item["artifact"] == "public_canonical_audit"
+                    for item in metadata["artifacts"]
+                ),
+            )
             validated = parallel.validate_recovery_archive(root, archive, receipt)
             self.assertEqual(recovery["archive_sha256"], validated["archive_sha256"])
 
@@ -2188,6 +2331,20 @@ class IntegrationTransactionTests(ErrorAssertionsMixin, unittest.TestCase):
             self.assertFalse(workers[0]["canonical"]["audit"].exists())
             self.assertFalse(Path(args.checkpoint_output).exists())
 class UtilityContractTests(ErrorAssertionsMixin, unittest.TestCase):
+    def test_legacy_state_defaults_to_aggregate_only(self) -> None:
+        self.assertEqual("aggregate_only", parallel.publication_profile_for({}))
+        self.assertEqual(
+            "public_evaluation_artifacts",
+            parallel.publication_profile_for(
+                {"configuration": {"publication_profile": "public_evaluation_artifacts"}}
+            ),
+        )
+        self.assert_error(
+            "publication_profile",
+            parallel.publication_profile_for,
+            {"configuration": {"publication_profile": "unknown"}},
+        )
+
     def test_branch_and_public_paths_are_kind_and_chunk_specific(self) -> None:
         self.assertEqual("locator-audit/chunk-001", parallel.branch_for("locator", "CHUNK-001"))
         self.assertEqual(
