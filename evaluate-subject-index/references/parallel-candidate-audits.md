@@ -175,6 +175,8 @@ GitHub does not provide a transaction that atomically merges several pull reques
 
 Recognize an identical already-integrated chunk idempotently. Reject a different artifact, receipt, packet, or proposal for the same chunk as a conflict requiring explicit adjudication; never overwrite it silently.
 
+For a deliberate publication-profile migration of already-integrated aggregate-only chunks, preserve their immutable worker receipts and GitHub PR evidence. Require a manifest-registered `candidate-audit-publication-migration-v1` record for each migrated chunk, validate the legacy aggregate bindings under `aggregate_only`, validate the normalized canonical audit under `public_evaluation_artifacts`, and require the migration record to bind both histories. This exception is one-way and applies only to historical active chunks; every new worker must use the frozen current profile directly.
+
 ## Missing-access ownership
 
 The helper computes one deterministic ownership plan from the frozen benchmark and chunk manifest. Bind its canonical hash into every missing-access receipt.

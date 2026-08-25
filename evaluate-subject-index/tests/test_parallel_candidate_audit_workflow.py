@@ -2331,6 +2331,47 @@ class IntegrationTransactionTests(ErrorAssertionsMixin, unittest.TestCase):
             self.assertFalse(workers[0]["canonical"]["audit"].exists())
             self.assertFalse(Path(args.checkpoint_output).exists())
 class UtilityContractTests(ErrorAssertionsMixin, unittest.TestCase):
+    def test_publication_migration_binds_legacy_and_canonical_histories(self) -> None:
+        frozen = frozen_fixture()
+        frozen["state"]["candidate"] = {"candidate_id": "synthetic-candidate"}
+        receipt = {
+            "receipt_sha256": "4" * 64,
+            "private_artifact": {"sha256": "5" * 64},
+            "public_projection": {"sha256": "6" * 64},
+        }
+        migration = {
+            "schema_version": parallel.PUBLICATION_MIGRATION_VERSION,
+            "migration_sha256": "",
+            "evaluation_id": "EVAL-SYNTHETIC",
+            "candidate_id": "synthetic-candidate",
+            "audit_kind": "locator_audit",
+            "chunk_id": "CHUNK-001",
+            "migrated_at": "2026-08-25T12:00:00Z",
+            "transition": {"from": "aggregate_only", "to": "public_evaluation_artifacts"},
+            "legacy_receipt": {
+                "receipt_sha256": "4" * 64,
+                "private_artifact_sha256": "5" * 64,
+                "public_report_sha256": "6" * 64,
+            },
+            "canonical_public_artifact": {
+                "repository_path": "candidate/locator-audits/locator-audit.CHUNK-001.v1.json",
+                "sha256": "7" * 64,
+                "byte_length": 123,
+                "commit": "8" * 40,
+                "blob_sha": "9" * 40,
+            },
+            "normalization": {
+                "method": "strict_public_allowlist_v1",
+                "judgment_count": 4,
+                "semantic_fields_preserved": True,
+                "legacy_artifact_retained_in_recovery": True,
+            },
+        }
+        migration["migration_sha256"] = parallel.canonical_hash(migration, "migration_sha256")
+        parallel.validate_publication_migration(
+            migration, "locator", "CHUNK-001", frozen, receipt, "7" * 64, 123
+        )
+
     def test_legacy_state_defaults_to_aggregate_only(self) -> None:
         self.assertEqual("aggregate_only", parallel.publication_profile_for({}))
         self.assertEqual(

@@ -73,6 +73,7 @@ LOCATOR_INTEGRATION_VERSION = "locator-audit-batch-integration-v1"
 MISSING_INTEGRATION_VERSION = "missing-access-batch-integration-v1"
 AGGREGATE_ONLY = "aggregate_only"
 PUBLIC_EVALUATION_ARTIFACTS = "public_evaluation_artifacts"
+PUBLICATION_MIGRATION_VERSION = "candidate-audit-publication-migration-v1"
 PUBLICATION_PROFILES = {AGGREGATE_ONLY, PUBLIC_EVALUATION_ARTIFACTS}
 
 AUDIT_KINDS = {"locator", "missing_access"}
@@ -1759,6 +1760,56 @@ def validate_receipt(receipt: dict[str, Any], audit_kind: str | None = None, pub
     return inferred
 
 
+def canonical_publication_migration_path(frozen: dict[str, Any], audit_kind: str, chunk_id: str) -> Path:
+    parent = canonical_candidate_parent(frozen)
+    directory = parent / ("locator-audits" if audit_kind == "locator" else "missing-access-audits") / "provenance"
+    stem = "locator-audit" if audit_kind == "locator" else "missing-access-audit"
+    return directory / f"{stem}-publication-migration.{chunk_id}.json"
+
+
+def validate_publication_migration(
+    migration: dict[str, Any],
+    audit_kind: str,
+    chunk_id: str,
+    frozen: dict[str, Any],
+    receipt: dict[str, Any],
+    canonical_audit_sha256: str,
+    canonical_audit_byte_length: int,
+) -> None:
+    exact_keys(
+        migration,
+        {
+            "schema_version", "migration_sha256", "evaluation_id", "candidate_id", "audit_kind", "chunk_id",
+            "migrated_at", "transition", "legacy_receipt", "canonical_public_artifact", "normalization",
+        },
+        "Publication migration",
+    )
+    require(migration["schema_version"] == PUBLICATION_MIGRATION_VERSION, "publication_migration_schema", f"Expected {PUBLICATION_MIGRATION_VERSION}.")
+    validate_self_hash(migration, "migration_sha256", "Publication migration")
+    require_timestamp(migration["migrated_at"], "publication_migration.migrated_at")
+    require(migration["evaluation_id"] == frozen["state"].get("evaluation_id"), "publication_migration_identity", "Publication migration evaluation identity differs.")
+    require(migration["candidate_id"] == frozen["state"].get("candidate", {}).get("candidate_id"), "publication_migration_identity", "Publication migration candidate identity differs.")
+    require(migration["audit_kind"] == serialized_audit_kind(audit_kind) and migration["chunk_id"] == chunk_id, "publication_migration_identity", "Publication migration kind or chunk differs.")
+    require(migration["transition"] == {"from": AGGREGATE_ONLY, "to": PUBLIC_EVALUATION_ARTIFACTS}, "publication_migration_transition", "Publication migration must be aggregate_only to public_evaluation_artifacts.")
+
+    legacy = exact_keys(migration["legacy_receipt"], {"receipt_sha256", "private_artifact_sha256", "public_report_sha256"}, "Publication migration legacy receipt")
+    require(legacy["receipt_sha256"] == receipt["receipt_sha256"], "publication_migration_receipt", "Publication migration binds a different legacy receipt.")
+    require(legacy["private_artifact_sha256"] == receipt["private_artifact"]["sha256"], "publication_migration_receipt", "Publication migration binds a different legacy private audit.")
+    require(legacy["public_report_sha256"] == receipt["public_projection"]["sha256"], "publication_migration_receipt", "Publication migration binds a different legacy aggregate report.")
+
+    public = exact_keys(migration["canonical_public_artifact"], {"repository_path", "sha256", "byte_length", "commit", "blob_sha"}, "Publication migration canonical public artifact")
+    require(public["repository_path"] == public_path_for(audit_kind, chunk_id, PUBLIC_EVALUATION_ARTIFACTS), "publication_migration_path", "Publication migration names the wrong canonical public path.")
+    require_sha256(public["sha256"], "publication_migration.canonical_public_artifact.sha256")
+    require_commit(public["commit"], "publication_migration.canonical_public_artifact.commit")
+    require_commit(public["blob_sha"], "publication_migration.canonical_public_artifact.blob_sha")
+    require(public["sha256"] == canonical_audit_sha256 and public["byte_length"] == canonical_audit_byte_length, "publication_migration_public_binding", "Publication migration does not bind the canonical audit bytes.")
+
+    normalization = exact_keys(migration["normalization"], {"method", "judgment_count", "semantic_fields_preserved", "legacy_artifact_retained_in_recovery"}, "Publication migration normalization")
+    require(normalization["method"] == "strict_public_allowlist_v1", "publication_migration_normalization", "Publication migration normalization method differs.")
+    require(isinstance(normalization["judgment_count"], int) and normalization["judgment_count"] >= 0, "publication_migration_normalization", "Publication migration judgment count is invalid.")
+    require(normalization["semantic_fields_preserved"] is True and normalization["legacy_artifact_retained_in_recovery"] is True, "publication_migration_normalization", "Publication migration must preserve semantic fields and legacy recovery bytes.")
+
+
 def command_build_worker(args: argparse.Namespace, audit_kind: str) -> None:
     project = require_github_project(args.project, "project")
     chunk_id = validate_chunk_id(args.chunk_id)
@@ -2200,14 +2251,27 @@ def active_canonical_chunks(frozen: dict[str, Any], audit_kind: str) -> list[str
         for path in paths.values():
             manifest_record_for_path(frozen, path)
         receipt = load_json(paths["receipt"], "Canonical worker receipt")
-        require(validate_receipt(receipt, audit_kind, publication_profile) == audit_kind, "canonical_receipt_kind", f"Canonical receipt kind differs for {chunk_id}.")
+        receipt_profile = publication_profile_from_path(audit_kind, chunk_id, receipt.get("repositories", {}).get("public_report_path"))
+        require(validate_receipt(receipt, audit_kind, receipt_profile) == audit_kind, "canonical_receipt_kind", f"Canonical receipt kind differs for {chunk_id}.")
         require(receipt["chunk"]["chunk_id"] == chunk_id, "canonical_receipt_chunk", f"Canonical receipt names a different chunk at {chunk_id}.")
-        audit_sha = sha256_file(paths["audit"])
+        audit, audit_payload, audit_sha = load_json_snapshot(paths["audit"], "Canonical candidate audit")
         report, report_payload, report_file_sha = load_json_snapshot(paths["public_report"], "Canonical public worker report")
-        validate_public_artifact(report, audit_kind, chunk_id, publication_profile)
-        require(receipt["private_artifact"]["sha256"] == audit_sha, "canonical_private_binding", f"Canonical audit binding differs for {chunk_id}.")
-        if publication_profile == AGGREGATE_ONLY:
-            require(audit_sha == report["private_artifact_sha256"], "canonical_private_binding", f"Canonical private audit binding differs for {chunk_id}.")
+        validate_public_artifact(report, audit_kind, chunk_id, receipt_profile)
+        if receipt_profile == publication_profile:
+            require(receipt["private_artifact"]["sha256"] == audit_sha, "canonical_private_binding", f"Canonical audit binding differs for {chunk_id}.")
+        else:
+            require(receipt_profile == AGGREGATE_ONLY and publication_profile == PUBLIC_EVALUATION_ARTIFACTS, "publication_profile_mismatch", f"Canonical receipt publication path differs from the frozen evaluation profile for {chunk_id}.")
+            migration_path = canonical_publication_migration_path(frozen, audit_kind, chunk_id)
+            require(migration_path.is_file(), "publication_migration_missing", f"Canonical chunk {chunk_id} lacks its publication migration record.")
+            manifest_record_for_path(frozen, migration_path)
+            validate_public_artifact(audit, audit_kind, chunk_id, PUBLIC_EVALUATION_ARTIFACTS)
+            migration = load_json(migration_path, "Publication migration")
+            validate_publication_migration(migration, audit_kind, chunk_id, frozen, receipt, audit_sha, len(audit_payload))
+            require(migration["normalization"]["judgment_count"] == len(audit.get("judgments", audit.get("subject_judgments", []))), "publication_migration_normalization", f"Publication migration judgment count differs for {chunk_id}.")
+        if receipt_profile == AGGREGATE_ONLY:
+            require(receipt["private_artifact"]["sha256"] == report["private_artifact_sha256"], "canonical_private_binding", f"Canonical legacy private audit binding differs for {chunk_id}.")
+            if receipt_profile == publication_profile:
+                require(audit_sha == report["private_artifact_sha256"], "canonical_private_binding", f"Canonical private audit binding differs for {chunk_id}.")
         else:
             require(audit_sha == report_file_sha, "canonical_private_binding", f"Canonical public audit snapshot differs for {chunk_id}.")
         require(receipt["public_projection"]["sha256"] == report_file_sha, "canonical_public_binding", f"Canonical public report binding differs for {chunk_id}.")

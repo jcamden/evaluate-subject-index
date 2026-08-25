@@ -9,6 +9,8 @@ The frozen evaluation state selects one public-artifact policy at `configuration
 
 The default is `aggregate_only`. A v4 state that predates this field is interpreted as `aggregate_only`; do not infer public authorization from a public repository alone. Set the profile at initialization with `state_cli.py init --publication-profile ...`. Changing it after candidate-audit workers have started requires a deliberate migration and revalidation of every affected receipt, recovery bundle, public artifact, and manifest record.
 
+When already-integrated workers have immutable `aggregate_only` pull-request evidence, do not rewrite those receipts or pretend the later canonical-audit publication occurred on the original worker branch. Preserve the legacy receipt, aggregate report, open/merge evidence, and recovery archive. Normalize the canonical audit through the strict public allowlist, publish it at the deterministic `candidate/...` path, and register one `candidate-audit-publication-migration-v1` record per affected chunk. The migration record must bind the legacy receipt/private/report hashes to the new canonical public bytes and publication commit, state that semantic judgment fields were preserved, and confirm that the legacy private bytes remain in recovery. Coordinators accept this mixed historical provenance only for the one-way `aggregate_only` to `public_evaluation_artifacts` transition.
+
 ## Deterministic worker paths
 
 For `aggregate_only`:
