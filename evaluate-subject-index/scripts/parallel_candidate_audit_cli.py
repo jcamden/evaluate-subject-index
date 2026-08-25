@@ -1802,7 +1802,107 @@ def validate_receipt(receipt: dict[str, Any], audit_kind: str | None = None, pub
             require_sha256(value, f"receipt.identities.{field}")
     require(receipt.get("source_reconnection") == receipt_source_reconnection(inferred), "receipt_reconnection", "Worker receipt source/candidate input gate is incomplete.")
     require(receipt.get("validation") == validation_gates(inferred), "receipt_validation", "Worker receipt validation gates differ from the strict profile.")
+    publication = receipt.get("publication")
+    if receipt["status"] == "ready_for_pull_request":
+        require(
+            publication == {"status": "not_yet_published", "pull_request": None, "head_commit": None},
+            "receipt_publication",
+            "Ready worker receipt must not claim GitHub publication.",
+        )
+    elif receipt["status"] == "published_unmerged":
+        publication = exact_keys(
+            publication,
+            {
+                "status", "pull_request", "pull_request_url", "base_branch",
+                "observed_base_head_commit", "head_branch", "head_commit",
+                "commit_count", "changed_path", "file_sha256", "blob_sha",
+                "evidence_sha256", "observed_at",
+            },
+            "Worker receipt publication",
+        )
+        require(publication["status"] == "open_unmerged", "receipt_publication", "Published receipt must bind an open, unmerged pull request.")
+        pull_request = publication["pull_request"]
+        require(isinstance(pull_request, int) and not isinstance(pull_request, bool) and pull_request > 0, "receipt_publication", "Published receipt pull-request number is invalid.")
+        expected_url = f"https://github.com/{repositories['candidate_project']}/pull/{pull_request}"
+        require(publication["pull_request_url"] == expected_url, "receipt_publication", "Published receipt pull-request URL is inconsistent.")
+        require(publication["base_branch"] == repositories["candidate_base_branch"], "receipt_publication", "Published receipt base branch differs from repository identity.")
+        require_commit(publication["observed_base_head_commit"], "receipt.publication.observed_base_head_commit")
+        require(publication["head_branch"] == repositories["worker_branch"], "receipt_publication", "Published receipt head branch differs from repository identity.")
+        require_commit(publication["head_commit"], "receipt.publication.head_commit")
+        require(publication["head_commit"] != repositories["immutable_worker_base_commit"], "receipt_publication", "Published worker head must differ from its immutable base.")
+        require(publication["commit_count"] == 1, "receipt_publication", "Published worker receipt must bind exactly one commit.")
+        require(publication["changed_path"] == expected_public, "receipt_publication", "Published receipt changed path differs from the exact allowlist.")
+        require(publication["file_sha256"] == receipt["public_projection"]["sha256"], "receipt_publication", "Published receipt file hash differs from the public projection.")
+        require(isinstance(publication["blob_sha"], str) and bool(re.fullmatch(r"[a-f0-9]{40}|[a-f0-9]{64}", publication["blob_sha"])), "receipt_publication", "Published receipt Git blob identity is invalid.")
+        require_sha256(publication["evidence_sha256"], "receipt.publication.evidence_sha256")
+        require_timestamp(publication["observed_at"], "receipt.publication.observed_at")
+    else:
+        require(
+            isinstance(publication, dict) and publication.get("status") == "publication_blocked",
+            "receipt_publication",
+            "Blocked worker receipt publication state is invalid.",
+        )
     return inferred
+
+
+def finalize_publication_receipt(
+    receipt: dict[str, Any], evidence: dict[str, Any], evidence_file_sha: str,
+) -> dict[str, Any]:
+    """Return the final publication-bound worker receipt for one validated open PR."""
+    audit_kind = validate_receipt(receipt)
+    require(receipt["status"] == "ready_for_pull_request", "receipt_already_finalized", "Only a preliminary worker receipt may be finalized.")
+    changed_file = evidence["changed_files"][0]
+    finalized = deepcopy(receipt)
+    finalized["status"] = "published_unmerged"
+    finalized["publication"] = {
+        "status": "open_unmerged",
+        "pull_request": evidence["pull_request"],
+        "pull_request_url": evidence["pull_request_url"],
+        "base_branch": evidence["base_branch"],
+        "observed_base_head_commit": evidence["observed_base_head_commit"],
+        "head_branch": evidence["head_branch"],
+        "head_commit": evidence["head_commit"],
+        "commit_count": evidence["commit_count"],
+        "changed_path": changed_file["path"],
+        "file_sha256": changed_file["file_sha256"],
+        "blob_sha": str(changed_file["blob_sha"]).lower(),
+        "evidence_sha256": require_sha256(evidence_file_sha, "publication_evidence.file_sha256"),
+        "observed_at": evidence["observed_at"],
+    }
+    finalized["limitations"] = [
+        "Pull request is open and unmerged; canonical integration remains coordinator-only."
+    ]
+    finalized["receipt_sha256"] = canonical_hash(finalized, "receipt_sha256")
+    validate_receipt(finalized, audit_kind)
+    return finalized
+
+
+def require_receipt_matches_open_evidence(
+    receipt: dict[str, Any], evidence: dict[str, Any], evidence_file_sha: str,
+) -> None:
+    """Require a final receipt to bind the exact observed open-PR evidence bytes."""
+    require(receipt.get("status") == "published_unmerged", "receipt_not_publication_bound", "Worker receipt is not final and publication-bound.")
+    publication = receipt["publication"]
+    changed_file = evidence["changed_files"][0]
+    require(
+        publication == {
+            "status": "open_unmerged",
+            "pull_request": evidence["pull_request"],
+            "pull_request_url": evidence["pull_request_url"],
+            "base_branch": evidence["base_branch"],
+            "observed_base_head_commit": evidence["observed_base_head_commit"],
+            "head_branch": evidence["head_branch"],
+            "head_commit": evidence["head_commit"],
+            "commit_count": evidence["commit_count"],
+            "changed_path": changed_file["path"],
+            "file_sha256": changed_file["file_sha256"],
+            "blob_sha": str(changed_file["blob_sha"]).lower(),
+            "evidence_sha256": require_sha256(evidence_file_sha, "publication_evidence.file_sha256"),
+            "observed_at": evidence["observed_at"],
+        },
+        "receipt_publication_mismatch",
+        "Final worker receipt does not bind the exact open-PR evidence.",
+    )
 
 
 def canonical_publication_migration_path(frozen: dict[str, Any], audit_kind: str, chunk_id: str) -> Path:
@@ -2001,6 +2101,7 @@ def command_validate_worker(args: argparse.Namespace) -> None:
     public_path = Path(args.public_report).resolve()
     receipt, _, _ = load_json_snapshot(receipt_path, "Private worker receipt")
     audit_kind = validate_receipt(receipt, args.audit_kind)
+    require(receipt["status"] == "published_unmerged", "receipt_not_publication_bound", "Final worker validation requires a published_unmerged receipt.")
     chunk_id = receipt["chunk"]["chunk_id"]
     profile = publication_profile_from_path(audit_kind, chunk_id, receipt["public_projection"]["path"])
     public_document, public_payload, public_sha = load_json_snapshot(public_path, "Public worker artifact")
@@ -2025,7 +2126,6 @@ def command_bind_publication(args: argparse.Namespace) -> None:
     report_path = Path(args.public_report).resolve()
     evidence_path = Path(args.publication_evidence).resolve()
     output = Path(args.output).resolve()
-    require(not output.exists(), "output_exists", f"Refusing to overwrite {output}.")
     receipt, _, receipt_file_sha = load_json_snapshot(receipt_path, "Private worker receipt")
     audit_kind = validate_receipt(receipt)
     chunk_id = receipt["chunk"]["chunk_id"]
@@ -2038,6 +2138,20 @@ def command_bind_publication(args: argparse.Namespace) -> None:
     recovery_root = Path(args.recovery_root).resolve()
     recovery_zip = Path(args.recovery_zip).resolve() if args.recovery_zip else recovery_root / receipt["private_recovery"]["archive_path"]
     recovery = validate_recovery_archive(recovery_root, recovery_zip, receipt)
+    if receipt["status"] == "ready_for_pull_request":
+        # Rebuild the deterministic archive before finalizing the receipt. The
+        # receipt remains outside the ZIP to avoid a self-referential hash cycle.
+        write_zip_atomic(recovery_zip, recovery["members"])
+        rebuilt_recovery = validate_recovery_archive(recovery_root, recovery_zip)
+        finalized = deepcopy(receipt)
+        finalized["private_recovery"]["sha256"] = rebuilt_recovery["archive_sha256"]
+        finalized["private_recovery"]["byte_length"] = recovery_zip.stat().st_size
+        receipt = finalize_publication_receipt(finalized, evidence, evidence_file_sha)
+        write_json_atomic(receipt_path, receipt)
+        receipt_file_sha = sha256_file(receipt_path)
+        recovery = validate_recovery_archive(recovery_root, recovery_zip, receipt)
+    else:
+        require_receipt_matches_open_evidence(receipt, evidence, evidence_file_sha)
     if args.selection:
         selection = parse_selection(args.selection, receipt["repositories"]["candidate_project"], audit_kind)
         if selection["type"] == "branch":
@@ -2056,8 +2170,12 @@ def command_bind_publication(args: argparse.Namespace) -> None:
         "public_report": {"path": str(report_path), "sha256": public_file_sha},
         "open_pr_evidence": {"path": str(evidence_path), "sha256": evidence_file_sha},
     }
-    write_json_atomic(output, binding)
-    emit({"ok": True, "operation": "bind-publication", "binding": str(output), "audit_kind": audit_kind, "chunk_id": chunk_id, "publication_profile": profile, "pull_request": evidence["pull_request"], "receipt_sha256": receipt["receipt_sha256"], "open_evidence_sha256": evidence_result["evidence_sha256"], "recovery_root_explicit": True})
+    binding_payload = json_bytes(binding)
+    if output.exists():
+        require(output.read_bytes() == binding_payload, "output_exists", f"Refusing to overwrite different binding bytes at {output}.")
+    else:
+        replace_bytes_atomic(output, binding_payload)
+    emit({"ok": True, "operation": "bind-publication", "binding": str(output), "audit_kind": audit_kind, "chunk_id": chunk_id, "publication_profile": profile, "pull_request": evidence["pull_request"], "receipt_status": receipt["status"], "receipt_file_sha256": receipt_file_sha, "receipt_sha256": receipt["receipt_sha256"], "open_evidence_sha256": evidence_result["evidence_sha256"], "recovery_sha256": recovery["archive_sha256"], "recovery_root_explicit": True})
 
 
 def resolve_bound_path(binding_path: Path, value: Any, field: str) -> Path:
@@ -2146,6 +2264,7 @@ def load_worker_binding(path: Path, selection: dict[str, Any], project: str, aud
     receipt, receipt_payload, receipt_file_sha, receipt_path = load_file_binding(path, binding["receipt"], "binding.receipt")
     publication_profile = frozen.get("publication_profile", publication_profile_for(frozen["state"]))
     validate_receipt(receipt, audit_kind, publication_profile)
+    require(receipt["status"] == "published_unmerged", "receipt_not_publication_bound", "Coordinator integration requires a final publication-bound worker receipt.")
     chunk_id = receipt["chunk"]["chunk_id"]
     if selection["type"] == "branch":
         require(selection["branch"] == receipt["repositories"]["worker_branch"], "binding_selection", "Selected branch is not the exact receipt worker branch.")
@@ -2158,6 +2277,7 @@ def load_worker_binding(path: Path, selection: dict[str, Any], project: str, aud
         require(report_file_sha == receipt["private_artifact"]["sha256"], "binding_public_private_mismatch", "Bound public canonical audit is not byte-identical to the validated worker audit.")
     open_evidence, open_payload, open_file_sha, open_path = load_file_binding(path, binding["open_pr_evidence"], "binding.open_pr_evidence")
     open_result = validate_publication_evidence(open_evidence, receipt, report_payload, merged=False)
+    require_receipt_matches_open_evidence(receipt, open_evidence, open_file_sha)
     if selection["type"] == "pull_request":
         require(selection["pull_request"] == open_evidence["pull_request"] and selection["pull_request_url"] == open_evidence["pull_request_url"], "binding_selection", "Selected pull request is not the exact publication evidence PR.")
     recovery_binding = binding["recovery"]
@@ -2639,14 +2759,14 @@ def build_parser() -> argparse.ArgumentParser:
     worker.add_argument("--audit-kind", choices=sorted(AUDIT_KINDS))
     worker.set_defaults(handler=command_validate_worker)
 
-    bind = subparsers.add_parser("bind-publication", help="Bind one explicit PR/branch selection to one receipt, recovery root, report, and current-attempt open-PR observation.")
+    bind = subparsers.add_parser("bind-publication", help="Finalize one published_unmerged receipt and recovery ZIP, then bind them to one explicit open-PR observation.")
     bind.add_argument("--receipt", required=True)
     bind.add_argument("--recovery-root", required=True)
     bind.add_argument("--recovery-zip")
     bind.add_argument("--public-report", required=True)
     bind.add_argument("--publication-evidence", required=True)
     bind.add_argument("--selection", help="Explicit PR URL or worker branch (default: PR URL in evidence).")
-    bind.add_argument("--output", required=True, help="Private candidate-audit-integration-binding-v1 output.")
+    bind.add_argument("--output", required=True, help="Private candidate-audit-integration-binding-v1 output bound to the finalized receipt and recovery ZIP.")
     bind.set_defaults(handler=command_bind_publication)
 
     preflight = subparsers.add_parser("preflight-batch", help="Transactionally validate an explicit selected batch without mutation or sweeping.")

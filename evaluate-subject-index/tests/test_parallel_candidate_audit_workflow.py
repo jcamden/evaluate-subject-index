@@ -1299,6 +1299,12 @@ class RecoveryAndReceiptTests(ErrorAssertionsMixin, unittest.TestCase):
         report_path.write_bytes(public_payload)
         evidence = self.publication_evidence(receipt, public_payload)
         evidence_path.write_bytes(parallel.json_bytes(evidence))
+        receipt = parallel.finalize_publication_receipt(
+            receipt,
+            evidence,
+            parallel.sha256_file(evidence_path),
+        )
+        receipt_path.write_bytes(parallel.json_bytes(receipt))
         binding = {
             "schema_version": "candidate-audit-integration-binding-v1",
             "audit_kind": "locator_audit",
@@ -1348,6 +1354,164 @@ class RecoveryAndReceiptTests(ErrorAssertionsMixin, unittest.TestCase):
                 receipt["public_projection"]["sha256"],
             )
             self.assertEqual(recovery["archive_sha256"], receipt["private_recovery"]["sha256"])
+
+    def test_bind_publication_finalizes_receipt_and_recovery_for_missing_access(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            directory_path = Path(directory)
+            frozen = frozen_fixture()
+            frozen["state"]["configuration"] = {
+                "publication_profile": "public_evaluation_artifacts"
+            }
+            frozen["publication_profile"] = "public_evaluation_artifacts"
+            workset = parallel.build_missing_worksets(frozen)["CHUNK-001"]
+            audit = missing_audit(frozen, "CHUNK-001")
+            audit["provenance"]["locator_audit_set_sha256"] = "d" * 64
+            result = parallel.validate_missing_access_audit(
+                audit,
+                frozen,
+                workset,
+                "CHUNK-001",
+                locator_audit_set_sha256="d" * 64,
+            )
+            audit_payload = parallel.json_bytes(audit)
+            locator_set = {"sha256": "d" * 64}
+            report = parallel.build_missing_report(
+                frozen,
+                "CHUNK-001",
+                "1" * 40,
+                workset,
+                locator_set,
+                result,
+                audit,
+                parallel.sha256_bytes(audit_payload),
+            )
+            public_payload = audit_payload
+            root = directory_path / "workers" / "missing-access-audit" / "CHUNK-001"
+            archive = root / "missing-access-worker-recovery.zip"
+            recovery = parallel.build_recovery(
+                root,
+                archive,
+                "missing_access",
+                frozen,
+                "CHUNK-001",
+                report["identities"],
+                "missing-access-audit.CHUNK-001.json",
+                audit_payload,
+                public_payload,
+                {
+                    "schema_version": "missing-access-ownership-plan-v1",
+                    "chunk_id": "CHUNK-001",
+                    "workset_sha256": workset["workset_sha256"],
+                    "subject_ids": workset["subject_ids"],
+                    "reader_task_ids": workset["reader_task_ids"],
+                    "treatment_ids": workset["treatment_ids"],
+                },
+            )
+            receipt = parallel.make_receipt(
+                "missing_access",
+                frozen,
+                "CHUNK-001",
+                "example/synthetic-candidate",
+                "main",
+                "1" * 40,
+                "missing-access-audit/chunk-001",
+                report["identities"],
+                "missing-access-audit.CHUNK-001.json",
+                audit_payload,
+                result,
+                recovery,
+                "workers/missing-access-audit/CHUNK-001",
+                public_payload,
+            )
+            receipt_path = root / "missing-access-worker-receipt.json"
+            report_path = directory_path / "missing-access-public.json"
+            evidence_path = directory_path / "open-pr-evidence.json"
+            binding_path = directory_path / "worker-binding.json"
+            receipt_path.write_bytes(parallel.json_bytes(receipt))
+            report_path.write_bytes(public_payload)
+            evidence = self.publication_evidence(receipt, public_payload)
+            evidence.update({
+                "audit_kind": "missing_access",
+                "head_branch": "missing-access-audit/chunk-001",
+            })
+            evidence["changed_files"][0]["path"] = "candidate/missing-access-audits/missing-access-audit.CHUNK-001.v1.json"
+            evidence_path.write_bytes(parallel.json_bytes(evidence))
+            args = argparse.Namespace(
+                receipt=str(receipt_path),
+                recovery_root=str(root),
+                recovery_zip=str(archive),
+                public_report=str(report_path),
+                publication_evidence=str(evidence_path),
+                selection=None,
+                output=str(binding_path),
+            )
+            with contextlib.redirect_stdout(sys.stderr), self.assertRaises(SystemExit) as emitted:
+                parallel.command_bind_publication(args)
+            self.assertEqual(0, emitted.exception.code)
+            finalized = json.loads(receipt_path.read_text(encoding="utf-8"))
+            self.assertEqual("published_unmerged", finalized["status"])
+            self.assertEqual("open_unmerged", finalized["publication"]["status"])
+            self.assertEqual(17, finalized["publication"]["pull_request"])
+            self.assertEqual("2" * 40, finalized["publication"]["head_commit"])
+            self.assertEqual(
+                parallel.sha256_bytes(public_payload),
+                finalized["publication"]["file_sha256"],
+            )
+            self.assertEqual(
+                parallel.sha256_file(archive),
+                finalized["private_recovery"]["sha256"],
+            )
+            parallel.validate_receipt(finalized, "missing_access")
+            parallel.validate_recovery_archive(root, archive, finalized)
+            binding = json.loads(binding_path.read_text(encoding="utf-8"))
+            self.assertEqual(parallel.sha256_file(receipt_path), binding["receipt"]["sha256"])
+
+    def test_coordinator_rejects_preliminary_receipt_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            directory_path = Path(directory)
+            root, archive, receipt, _, _, public_payload = self.build_locator_worker_private(
+                directory_path
+            )
+            receipt_path = directory_path / "locator-receipt.json"
+            report_path = directory_path / "locator-public.json"
+            evidence_path = directory_path / "open-pr-evidence.json"
+            binding_path = directory_path / "worker-binding.json"
+            receipt_path.write_bytes(parallel.json_bytes(receipt))
+            report_path.write_bytes(public_payload)
+            evidence = self.publication_evidence(receipt, public_payload)
+            evidence_path.write_bytes(parallel.json_bytes(evidence))
+            binding = {
+                "schema_version": "candidate-audit-integration-binding-v1",
+                "audit_kind": "locator_audit",
+                "candidate_project": "example/synthetic-candidate",
+                "selection": {
+                    "type": "pull_request",
+                    "pull_request": 17,
+                    "pull_request_url": "https://github.com/example/synthetic-candidate/pull/17",
+                },
+                "receipt": {"path": str(receipt_path), "sha256": parallel.sha256_file(receipt_path)},
+                "recovery": {"root": str(root), "archive_path": str(archive), "archive_sha256": parallel.sha256_file(archive)},
+                "public_report": {"path": str(report_path), "sha256": parallel.sha256_file(report_path)},
+                "open_pr_evidence": {"path": str(evidence_path), "sha256": parallel.sha256_file(evidence_path)},
+            }
+            binding_path.write_bytes(parallel.json_bytes(binding))
+            frozen = frozen_fixture()
+            frozen["root"] = directory_path / "canonical"
+            selection = parallel.parse_selection(
+                "https://github.com/example/synthetic-candidate/pull/17",
+                "example/synthetic-candidate",
+                "locator",
+            )
+            self.assert_error(
+                "receipt_not_publication_bound",
+                parallel.load_worker_binding,
+                binding_path,
+                selection,
+                "example/synthetic-candidate",
+                "locator",
+                frozen,
+                {"packets": {"CHUNK-001": locator_packet()}},
+            )
 
     def test_public_evaluation_receipt_binds_exact_audit_bytes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -81,7 +81,7 @@ Workers may write only their isolated private state. They never update canonical
 
 Persist complete private work before attempting GitHub publication. Create one commit and one open, unmerged pull request. Refuse to overwrite an existing worker branch and never merge the worker's own pull request.
 
-The preliminary receipt created before publication is not the coordinator handoff. After the pull request opens, obtain a direct GitHub observation, run `bind-publication`, rerun `validate-worker`, and persist the resulting final publication-bound receipt plus its receipt-bound recovery ZIP to the existing chunk-specific Library recovery root. Replace the preliminary receipt in place, preserve the canonical filenames, verify the exact PR URL and head commit plus the public-report, private-audit, and recovery-ZIP hashes, and do not change the pull request afterward.
+The preliminary receipt created before publication is not the coordinator handoff. After the pull request opens, obtain a direct GitHub observation and run `bind-publication`. That operation must deterministically rebuild the recovery ZIP, replace the preliminary receipt in place with a `published_unmerged` receipt, and write the integration binding against those final receipt and ZIP hashes. Then rerun `validate-worker` and persist the resulting final publication-bound receipt plus its receipt-bound recovery ZIP to the existing chunk-specific Library recovery root. Preserve the canonical filenames, verify the exact PR URL and head commit plus the public-report, private-audit, receipt, and recovery-ZIP hashes, and do not change the pull request afterward. A binding that still references `ready_for_pull_request` or `not_yet_published` is invalid and coordinator preflight must reject it.
 
 ## Locator-audit worker
 
@@ -359,7 +359,7 @@ Provide these operations:
 | --- | --- |
 | `build-locator-worker` | Validate the locator packet/audit, compute exact counts and hashes, build recovery metadata and the profile-selected strict public artifact, and create a pending private receipt. |
 | `build-missing-access-worker` | Derive and hash deterministic subject/task ownership, validate the complete audit and denominators, build recovery metadata/profile-selected public artifact, and create a pending receipt. |
-| `bind-publication` | Bind one open exact-allowlist pull-request observation, public blob/file hashes, branch/base commits, and proposal identity into the private receipt. |
+| `bind-publication` | Bind one open exact-allowlist pull-request observation, public blob/file hashes, branch/base commits, and proposal identity into a final `published_unmerged` private receipt; deterministically rebuild its recovery ZIP and write the integration binding against the final hashes. |
 | `validate-worker` | Recompute schemas, hashes, identities, denominators, public safety, receipt bindings, and recovery completeness without mutating canonical state. |
 | `preflight-batch` | Validate an explicit proposal/binding batch transactionally, enforce current-attempt API evidence and uniqueness, detect duplicates/conflicts, and produce a no-mutation integration plan. |
 | `integrate-batch` | After merged evidence, materialize exact private bytes, record provenance, update manifest before state, and refuse any input that differs from preflight. |
