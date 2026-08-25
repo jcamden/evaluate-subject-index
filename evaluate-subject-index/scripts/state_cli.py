@@ -407,7 +407,7 @@ def candidate_audit_parallel_actions(state: dict[str, Any]) -> list[dict[str, An
             "available": locator_status == "available",
             "unmet_dependencies": [] if locator_ready else ["locator_chunk_preparation"],
             "canonical_next_unchanged": True,
-            "selection_rule": "Coordinator integration requires explicit pull requests and exact receipt/recovery bindings.",
+            "selection_rule": "Coordinator integration requires explicit pull requests and exact receipt/recovery bindings for the selected wave, plus the complete frozen locator-packet set for both preflight and integration.",
         },
         {
             "command": "worker-missing-access-audit",

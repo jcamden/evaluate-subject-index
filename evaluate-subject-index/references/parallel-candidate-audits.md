@@ -137,25 +137,28 @@ integrate-locator-audits --project [candidate-evaluation-repository] [pull-reque
 
 This command is the sole coordinator authority. Require an explicit nonempty proposal list. Bind every selected proposal to exactly one explicitly identified private receipt and recovery root before preflight.
 
+The proposal wave and the frozen locator-packet set have different scopes. Limit pull-request selections, worker bindings, receipts, and recovery roots to the explicitly selected wave. Always retrieve and pass exactly one canonical locator packet for every chunk in the frozen chunk manifest to both `preflight-batch` and `integrate-batch`, including when integrating a partial wave. Do not pass only the selected chunks' packets. The complete set establishes the global assignment denominator, detects cross-chunk duplicates and foreign assignments, and lets the helper compute validated partial completion.
+
 Before merging anything:
 
-1. obtain fresh open-PR evidence directly from the GitHub connector/API for every selected proposal;
-2. verify it is open, targets the expected base, originates from `locator-audit/<chunk-id>`, and changes exactly the allowed aggregate report;
-3. reject control files, checkpoints, PDFs, private audit data, receipts, recovery bundles, and unrelated paths;
-4. require one unique chunk per selected worker;
-5. validate each receipt, recovery inventory, private artifact hash, and public/private hash binding;
-6. require identical frozen source, candidate, benchmark, policy, page-map, chunk-manifest, normalized-candidate, inventory, and packet identities;
-7. verify exact owned pages and packet assignment denominators;
-8. require the batch assignment union to contain every selected packet assignment exactly once; and
-9. reject overlap, missing IDs, duplicates, foreign assignments, stale evidence, and conflicting prior integration.
+1. resolve the complete frozen locator-packet set from canonical state and verify exact one-per-chunk coverage before any GitHub mutation;
+2. obtain fresh open-PR evidence directly from the GitHub connector/API for every selected proposal;
+3. verify it is open, targets the expected base, originates from `locator-audit/<chunk-id>`, and changes exactly the allowed aggregate report;
+4. reject control files, checkpoints, PDFs, private audit data, receipts, recovery bundles, and unrelated paths;
+5. require one unique chunk per selected worker;
+6. validate each receipt, recovery inventory, private artifact hash, and public/private hash binding;
+7. require identical frozen source, candidate, benchmark, policy, page-map, chunk-manifest, normalized-candidate, inventory, and packet identities;
+8. verify exact owned pages and packet assignment denominators;
+9. require the batch assignment union to contain every selected packet assignment exactly once; and
+10. reject overlap, missing IDs, duplicates, foreign assignments, stale evidence, and conflicting prior integration.
 
-Run preflight for the complete selected batch in a disposable integration area. If any member fails, merge none.
+Run preflight for the complete selected batch in a disposable integration area, supplying the complete frozen locator-packet set. If any member fails, merge none.
 
 After preflight passes:
 
 1. merge only the selected public-safe proposals;
 2. obtain fresh merged-PR evidence directly from the connector/API;
-3. materialize the exact accepted private audit bytes at versioned canonical paths;
+3. rerun `integrate-batch` with the same complete frozen locator-packet set used at preflight and materialize the exact accepted private audit bytes at versioned canonical paths;
 4. preserve worker, proposal, base/head/merge commit, receipt, recovery, evidence, and artifact hashes;
 5. register private required artifacts and integration provenance in the artifact manifest;
 6. save the manifest before changing state;

@@ -1552,6 +1552,48 @@ class BatchPreflightTests(ErrorAssertionsMixin, unittest.TestCase):
         self.assertEqual(["CHUNK-001"], result["chunk_ids"])
         self.assertEqual("1" * 40, result["base_commit"])
 
+    def test_three_worker_wave_uses_complete_seventeen_packet_set(self) -> None:
+        chunk_ids = [f"CHUNK-{index:03d}" for index in range(1, 18)]
+        frozen = frozen_fixture()
+        frozen["chunks"] = {
+            chunk_id: {
+                "chunk_id": chunk_id,
+                "owned_document_page_ranges": [[index, index]],
+            }
+            for index, chunk_id in enumerate(chunk_ids, start=1)
+        }
+        args = self.args(
+            [f"https://github.com/example/synthetic-candidate/pull/{index}" for index in range(1, 4)],
+            [f"binding-{index}.json" for index in range(1, 4)],
+        )
+        args.locator_packet = [f"candidate-locator-{chunk_id}.json" for chunk_id in chunk_ids]
+        workers = [
+            self.worker("CHUNK-001", ["LOC-001"]),
+            self.worker("CHUNK-002", ["LOC-002"]),
+            self.worker("CHUNK-003", ["LOC-003"]),
+        ]
+
+        def complete_packet_set(paths: list[str], loaded_frozen: dict[str, Any]) -> dict[str, Any]:
+            self.assertEqual(17, len(paths))
+            self.assertEqual(set(chunk_ids), set(loaded_frozen["chunks"]))
+            return {
+                "packets": {chunk_id: {"assignments": {}} for chunk_id in chunk_ids},
+                "sha256": "a" * 64,
+                "assignment_ids": [],
+            }
+
+        with mock.patch.object(
+            parallel, "load_frozen_inputs", return_value=frozen
+        ), mock.patch.object(
+            parallel, "load_packet_set", side_effect=complete_packet_set
+        ), mock.patch.object(
+            parallel, "load_worker_binding", side_effect=workers
+        ):
+            result = parallel.preflight_batch(args)
+
+        self.assertEqual(["CHUNK-001", "CHUNK-002", "CHUNK-003"], result["chunk_ids"])
+        self.assertEqual(17, len(result["kind_inputs"]["packets"]))
+
     def test_missing_or_unpaired_explicit_selection_is_rejected(self) -> None:
         for selections, bindings in (([], []), (["locator-audit/chunk-001"], [])):
             args = self.args(selections, bindings)

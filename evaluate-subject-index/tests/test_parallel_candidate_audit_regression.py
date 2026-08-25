@@ -60,6 +60,7 @@ class V4StateCompatibilityTests(unittest.TestCase):
         self.assertEqual("available", actions[0]["status"])
         self.assertEqual("blocked", actions[1]["status"])
         self.assertTrue(all(action["canonical_next_unchanged"] for action in actions))
+        self.assertIn("complete frozen locator-packet set", actions[0]["selection_rule"])
 
     def test_missing_access_workers_require_full_canonical_locator_completion(self) -> None:
         state = self.state_through("locator_audit")
