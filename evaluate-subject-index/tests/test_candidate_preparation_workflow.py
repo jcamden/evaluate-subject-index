@@ -28,9 +28,11 @@ from state_cli import next_stage  # noqa: E402
 
 from candidate_preparation_test_support import (  # noqa: E402
     BASE_COMMIT,
+    BEFORE_PREFLIGHT_STAMP,
     BENCHMARK_COMMIT,
     MERGED_COMMIT,
     PUBLIC_PATHS,
+    STAMP,
     SyntheticStudy,
     git_blob_sha,
     read_json,
@@ -860,14 +862,14 @@ class WorkerIntegrationTests(unittest.TestCase):
     def test_preflight_requires_a_distinct_later_publication_observation(self) -> None:
         self.study.freeze_benchmark_state()
         arguments = self.study.preflight_arguments()
-        self.study.make_publication_evidence(observed_at="2026-08-24T12:00:00Z")
+        self.study.make_publication_evidence(observed_at=STAMP)
         _, payload = run_cli("preflight-integration", *arguments, ok=False)
         self.assertEqual("publication_evidence_not_fresh", payload["error"]["code"])
 
     def test_merge_evidence_cannot_predate_the_fresh_open_snapshot(self) -> None:
         self.study.freeze_benchmark_state()
         evidence = self.study.make_merge_evidence()
-        evidence["observed_at"] = "2026-08-24T11:59:00Z"
+        evidence["observed_at"] = BEFORE_PREFLIGHT_STAMP
         early = self.study.root / "early-merge-evidence.json"
         write_json(early, evidence)
         _, payload = run_cli(
@@ -875,6 +877,17 @@ class WorkerIntegrationTests(unittest.TestCase):
             ok=False,
         )
         self.assertEqual("merge_evidence_order", payload["error"]["code"])
+
+    def test_historical_exact_publication_evidence_has_no_ttl(self) -> None:
+        self.study.make_publication_evidence(observed_at=STAMP)
+        _, payload = run_cli(
+            "bind-publication",
+            "--receipt", str(self.study.receipt_path),
+            "--public-dir", str(self.study.public_dir),
+            "--publication-evidence", str(self.study.publication_evidence_path),
+            "--output", str(self.study.root / "historical-bound-receipt.json"),
+        )
+        self.assertTrue(payload["ok"])
 
     def test_benchmark_identity_mismatches_are_rejected(self) -> None:
         receipt = read_json(self.study.bound_receipt_path)

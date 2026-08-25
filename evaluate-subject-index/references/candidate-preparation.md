@@ -54,23 +54,23 @@ integrate-candidate-preparation
 
 Integration always requires exactly one explicit proposal. Never sweep open pull requests, branches, worker directories, checkpoints, or Library content.
 
-These are high-level prompt commands. During `worker-candidate-preparation`, the orchestrator obtains GitHub API evidence after opening the pull request and must pass it to the deterministic helper as `bind-publication --publication-evidence <file>`. Before merge, both `preflight-integration` and `integrate` require a fresh open-PR snapshot as `--publication-evidence <file>` plus final-benchmark proof as `--benchmark-proof <file>`. After merge, `integrate` additionally requires the closed-and-merged snapshot as `--merge-evidence <file>`. Materialize every evidence file directly from GitHub connector/API output; do not accept user-authored JSON, attestations, or command-line assertions as evidence.
+These are high-level prompt commands. During `worker-candidate-preparation`, the orchestrator obtains GitHub API evidence after opening the pull request and must pass it to the deterministic helper as `bind-publication --publication-evidence <file>`. Before merge, both `preflight-integration` and `integrate` require an open-PR snapshot acquired directly for the current integration attempt as `--publication-evidence <file>` plus final-benchmark proof as `--benchmark-proof <file>`. After merge, `integrate` additionally requires the closed-and-merged snapshot as `--merge-evidence <file>`. Materialize every evidence file directly from GitHub connector/API output; do not accept user-authored JSON, attestations, or command-line assertions as evidence.
 
-The helper can validate evidence structure, freshness, object identities, Git blob hashes, file hashes, and cross-artifact consistency, but a local JSON file has no intrinsic authenticated provenance. The orchestrator's direct connector/API observation is therefore the trust boundary. Do not use a user- or worker-supplied evidence file, and do not interpret `evidence_source: github_api` as a signature. The synthetic fixture builders used by tests model connector responses only; they are not an evidence-acquisition mechanism.
+The helper can validate evidence structure, chronology, object identities, Git blob hashes, file hashes, and cross-artifact consistency, but a local JSON file has no intrinsic authenticated provenance. The orchestrator's direct connector/API observation is therefore the trust boundary. Do not use a user- or worker-supplied evidence file, and do not interpret `evidence_source: github_api` as a signature. The synthetic fixture builders used by tests model connector responses only; they are not an evidence-acquisition mechanism.
 
-The publication evidence recorded in the immutable receipt remains valid historical proof of what the worker bound and does not expire. It is distinct from the fresh coordinator snapshot required at preflight/integration, whose SHA-256 becomes `premerge_evidence_sha256`, and from the post-merge snapshot, whose SHA-256 becomes `merge_evidence_sha256`.
+The publication evidence recorded in the immutable receipt remains valid historical proof of what the worker bound and does not expire. It is distinct from the coordinator's current-attempt snapshot required at preflight/integration, whose SHA-256 becomes `premerge_evidence_sha256`, and from the post-merge snapshot, whose SHA-256 becomes `merge_evidence_sha256`. No evidence or immutable benchmark proof expires because a fixed number of hours elapsed; `observed_at` is used only for provenance and chronology.
 
 The evidence-bearing deterministic helper syntax is:
 
 ```text
 candidate_preparation_cli.py preflight-integration ...
-  --publication-evidence <fresh-open-pr-api.json>
-  --benchmark-proof <fresh-final-benchmark-api.json>
+  --publication-evidence <current-open-pr-api.json>
+  --benchmark-proof <final-benchmark-api.json>
 
 candidate_preparation_cli.py integrate ...
-  --publication-evidence <fresh-open-pr-api.json>
-  --benchmark-proof <fresh-final-benchmark-api.json>
-  --merge-evidence <fresh-merged-pr-api.json>
+  --publication-evidence <current-open-pr-api.json>
+  --benchmark-proof <final-benchmark-api.json>
+  --merge-evidence <post-merge-pr-api.json>
 ```
 
 ## Adapter contract
@@ -192,7 +192,7 @@ If the target repository is completely empty, one root bootstrap commit on `main
 
 Create one worker commit and one pull request. Do not merge it. Query the GitHub API after the pull request opens and persist schema-valid `candidate-preparation-publication-evidence-v1`; do not accept caller-supplied branch, commit, state, merge, or file-list assertions as proof. The evidence must show the expected repository, URL/number, open and unmerged state, base/head branches and 40-character commits, exactly one worker commit, and exactly the three allowlisted files with Git blob and recomputed file SHA-256 identities. Bind it with `candidate_preparation_cli.py bind-publication --publication-evidence <file>`. Record its hash and observation time in the private receipt. After one explicit denial, preserve private recovery work and stop retrying.
 
-At coordinator preflight, query the GitHub API again and pass that fresh open/unmerged observation as `--publication-evidence <file>` to both `preflight-integration` and `integrate`. It must be a distinct byte artifact observed strictly later than the receipt-binding snapshot. The immutable receipt's original evidence is historical and does not become invalid merely because its observation time is old, but it cannot stand in for this fresh premerge observation. The post-merge observation must be at least as late as that premerge snapshot.
+At coordinator preflight, query the GitHub API again and pass that current-attempt open/unmerged observation as `--publication-evidence <file>` to both `preflight-integration` and `integrate`. It must be a distinct byte artifact observed strictly later than the receipt-binding snapshot. The immutable receipt's original evidence is historical and does not become invalid merely because its observation time is old, but it cannot stand in for the current-attempt premerge observation. The post-merge observation must be at least as late as that premerge snapshot. If work resumes after an interruption, reacquire the open-PR and benchmark observations instead of deciding reuse from timestamp age.
 
 ## Worker receipt
 
@@ -219,7 +219,7 @@ The receipt is private. It is a handoff record, not a canonical evaluation artif
 
 Before any merge, the coordinator must:
 
-1. create schema-valid `candidate-preparation-publication-evidence-v1` directly from fresh GitHub connector/API output, pass it through `--publication-evidence`, and verify the explicit PR/branch is open, unchanged, and targets the expected base;
+1. create schema-valid `candidate-preparation-publication-evidence-v1` directly from GitHub connector/API output acquired for the current integration attempt, pass it through `--publication-evidence`, and verify the explicit PR/branch is open, unchanged, and targets the expected base;
 2. verify its exact three-path allowlist and public-safety scan;
 3. resolve the explicitly supplied private receipt/recovery root by candidate ID and SHA-256;
 4. validate every private artifact and full QA denominator;
@@ -229,7 +229,7 @@ Before any merge, the coordinator must:
 8. after validating the Git proof, validate every final-benchmark and compatibility field intended for `candidate-benchmark-lock.json`, but do not write or finalize the lock before merged-PR evidence exists; and
 9. validate the complete integration plan without mutating canonical state.
 
-Only after all checks pass may the coordinator merge the public-safe pull request. Query the GitHub API after merge and create strict `candidate-preparation-merge-evidence-v1` directly from the connector response; never accept a user-authored merged-state assertion. Pass it to `candidate_preparation_cli.py integrate --merge-evidence <file>`. It must prove the same repository, PR number/URL, base/head branches and commits, closed-and-merged state, one worker commit, merge commit, and the exact three changed paths with matching Git blob and file SHA-256 identities. The benchmark lock records the fresh premerge and merge evidence hashes, exact public blob map, and final-benchmark proof identity; the integration report records all three evidence hashes.
+Only after all checks pass may the coordinator merge the public-safe pull request. Query the GitHub API after merge and create strict `candidate-preparation-merge-evidence-v1` directly from the connector response; never accept a user-authored merged-state assertion. Pass it to `candidate_preparation_cli.py integrate --merge-evidence <file>`. It must prove the same repository, PR number/URL, base/head branches and commits, closed-and-merged state, one worker commit, merge commit, and the exact three changed paths with matching Git blob and file SHA-256 identities. The benchmark lock records the current-attempt premerge and merge evidence hashes, exact public blob map, and final-benchmark proof identity; the integration report records all three evidence hashes.
 
 Then materialize the exact private worker bytes at versioned canonical paths, register the candidate reference, layout profile, normalized candidate, inventory, exceptions, reports, QA, receipt, and benchmark lock. Write artifacts first, update the artifact manifest, update `evaluation-state.json` last, run complete validation, and create a cumulative private recovery checkpoint. A failure before manifest/state update leaves recoverable unregistered files, not a falsely completed stage.
 

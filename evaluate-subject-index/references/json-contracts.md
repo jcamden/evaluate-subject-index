@@ -45,8 +45,8 @@ The schemas in `schemas/` are machine-readable contracts. Each schema controls e
 | Parallel missing-access worker receipt | `parallel-missing-access-worker-receipt.schema.json` | Private frozen dependencies, subject/task denominators, public binding, recovery inventory, and handoff |
 | Public missing-access worker report | `missing-access-worker-report.schema.json` | Strict aggregate projection used by `aggregate_only` |
 | Missing-access integration batch | `missing-access-batch-integration.schema.json` | Explicit proposals, locator dependencies, accepted private artifacts, provenance, and completion accounting |
-| Candidate-audit open-PR evidence | `candidate-audit-open-pr-evidence.schema.json` | Fresh GitHub-API observation of one open exact-allowlist worker pull request |
-| Candidate-audit merge evidence | `candidate-audit-merge-evidence.schema.json` | Fresh GitHub-API observation that the selected pull request merged unchanged |
+| Candidate-audit open-PR evidence | `candidate-audit-open-pr-evidence.schema.json` | Current-attempt GitHub-API observation of one open exact-allowlist worker pull request |
+| Candidate-audit merge evidence | `candidate-audit-merge-evidence.schema.json` | Post-merge GitHub-API observation that the selected pull request merged unchanged |
 | Candidate-audit recovery metadata | `candidate-audit-worker-recovery.schema.json` | Deterministic private ZIP inventory, artifact hashes, and restricted exclusions |
 | Candidate-audit integration binding | `candidate-audit-integration-binding.schema.json` | One-to-one coordinator-private proposal, receipt, recovery-root, report, and evidence binding |
 | Candidate-audit repository state | `candidate-audit-repository-state.schema.json` | Immutable base branch/commit and existing-branch collision evidence for worker setup |
@@ -91,7 +91,7 @@ Parallel candidate audits reuse `locator-audit-v1` and `missing-access-audit-v1`
 
 Public worker-report schemas are strict allowlists. Permit only aggregate identities, immutable hashes, owned ranges, denominator and status counts, severity/error-code counts, completion, reconnection status, limitations, the private artifact hash, and a public-safety result. Reject candidate headings or subheadings, complete paths, displayed locators or ranges, cross-reference wording, reconstructable source-subject labels, page-specific comparisons, raw extraction, coordinates, exact or extended source text, detailed evidence tied to candidate records, PDFs, Library identifiers, absolute paths, credentials, and secrets.
 
-Publication and merge evidence schemas validate shape, chronology, freshness, branch/base/commit identities, changed paths, Git blob/file hashes, and cross-artifact bindings. They do not authenticate who created a local JSON file. The coordinator must materialize evidence directly from its own GitHub connector/API output; an `evidence_source` string is a format discriminator, never an attestation.
+Publication and merge evidence schemas validate shape, chronology, branch/base/commit identities, changed paths, Git blob/file hashes, and cross-artifact bindings. Evidence timestamps are retained for provenance and ordering but have no elapsed-time TTL. The schemas do not authenticate who created a local JSON file. The coordinator must materialize current-attempt evidence directly from its own GitHub connector/API output; an `evidence_source` string is a format discriminator, never an attestation.
 
 ## Web safety
 

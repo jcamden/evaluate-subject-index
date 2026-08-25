@@ -80,7 +80,7 @@ Workers may write only their isolated private state. They never update canonical
 
 Persist complete private work before attempting GitHub publication. Create one commit and one open, unmerged pull request. Refuse to overwrite an existing worker branch and never merge the worker's own pull request.
 
-The preliminary receipt created before publication is not the coordinator handoff. After the pull request opens, obtain fresh GitHub evidence, run `bind-publication`, rerun `validate-worker`, and persist the resulting final publication-bound receipt plus its receipt-bound recovery ZIP to the existing chunk-specific Library recovery root. Replace the preliminary receipt in place, preserve the canonical filenames, verify the exact PR URL and head commit plus the public-report, private-audit, and recovery-ZIP hashes, and do not change the pull request afterward.
+The preliminary receipt created before publication is not the coordinator handoff. After the pull request opens, obtain a direct GitHub observation, run `bind-publication`, rerun `validate-worker`, and persist the resulting final publication-bound receipt plus its receipt-bound recovery ZIP to the existing chunk-specific Library recovery root. Replace the preliminary receipt in place, preserve the canonical filenames, verify the exact PR URL and head commit plus the public-report, private-audit, and recovery-ZIP hashes, and do not change the pull request afterward.
 
 ## Locator-audit worker
 
@@ -145,7 +145,7 @@ The proposal wave and the frozen locator-packet set have different scopes. Limit
 Before merging anything:
 
 1. resolve the complete frozen locator-packet set from canonical state and verify exact one-per-chunk coverage before any GitHub mutation;
-2. obtain fresh open-PR evidence directly from the GitHub connector/API for every selected proposal;
+2. obtain current-attempt open-PR evidence directly from the GitHub connector/API for every selected proposal;
 3. verify it is open, targets the expected base, originates from `locator-audit/<chunk-id>`, and changes exactly the artifact allowed by the frozen publication profile;
 4. reject control files, checkpoints, PDFs, receipts, recovery bundles, and unrelated paths; in public-audit mode also require the strict canonical-audit publication gate;
 5. require one unique chunk per selected worker;
@@ -160,7 +160,7 @@ Run preflight for the complete selected batch in a disposable integration area, 
 After preflight passes:
 
 1. merge only the selected public-safe proposals;
-2. obtain fresh merged-PR evidence directly from the connector/API;
+2. obtain post-merge PR evidence directly from the connector/API;
 3. rerun `integrate-batch` with the same complete frozen locator-packet set used at preflight and materialize the exact accepted private audit bytes at versioned canonical paths;
 4. preserve worker, proposal, base/head/merge commit, receipt, recovery, evidence, and artifact hashes;
 5. register private required artifacts and integration provenance in the artifact manifest;
@@ -258,7 +258,7 @@ integrate-missing-access-audits --project [candidate-evaluation-repository] [pul
 Use the same explicit, transactional coordinator pattern. Before merging:
 
 1. require complete canonical locator-audit inputs and a valid canonical evaluation;
-2. obtain fresh open-PR evidence directly from the GitHub connector/API;
+2. obtain current-attempt open-PR evidence directly from the GitHub connector/API;
 3. enforce the exact one-artifact public allowlist selected by the frozen publication profile;
 4. resolve the exact private receipt and recovery root bound to every selected proposal;
 5. verify frozen identities, ownership-plan hash, canonical locator-set identity, recovery inventory, and private/public hashes;
@@ -268,7 +268,7 @@ Use the same explicit, transactional coordinator pattern. Before merging:
 
 Validate the complete selected batch before merging any member. If one fails, merge none.
 
-After successful preflight, merge only selected proposals, obtain fresh merged evidence, materialize exact accepted private bytes, record provenance, update manifest first and state last, and validate. Complete `missing_access_audit` only when every required chunk, subject, task, and treatment denominator is covered exactly once. Otherwise preserve validated partial completion. Create one cumulative private checkpoint and one shared-control commit.
+After successful preflight, merge only selected proposals, obtain post-merge evidence, materialize exact accepted private bytes, record provenance, update manifest first and state last, and validate. Complete `missing_access_audit` only when every required chunk, subject, task, and treatment denominator is covered exactly once. Otherwise preserve validated partial completion. Create one cumulative private checkpoint and one shared-control commit.
 
 ## Private and public boundary
 
@@ -336,11 +336,11 @@ The worker or coordinator orchestrator must create evidence JSON directly from G
 - exact commit count when the contract requires one commit;
 - changed path allowlist;
 - Git blob and downloaded file hashes; and
-- observation time and freshness for coordinator preflight.
+- observation time for provenance and chronology.
 
-The worker's publication observation is immutable historical receipt evidence. Coordinator premerge evidence is a separate, fresh observation. Merged evidence is a third observation obtained only after merge and cannot predate premerge evidence.
+The worker's publication observation is immutable historical receipt evidence. Coordinator premerge evidence is a separate observation acquired directly for the current integration attempt. Merged evidence is a third observation obtained only after merge and cannot predate premerge evidence. None of these artifacts expires after a fixed number of hours. If a coordinator attempt is interrupted, reacquire the current GitHub observations before resuming.
 
-The deterministic helper can validate a local evidence file's structure, hash, freshness, and bindings, but it cannot authenticate who created that file. Never accept evidence supplied by a user or worker for coordinator authority. Never treat an `evidence_source` string as authentication or a signature. Synthetic tests may construct evidence fixtures only to test deterministic validation.
+The deterministic helper can validate a local evidence file's structure, hash, chronology, and bindings, but it cannot authenticate who created that file. Never accept evidence supplied by a user or worker for coordinator authority. Never treat an `evidence_source` string as authentication or a signature. Synthetic tests may construct evidence fixtures only to test deterministic validation.
 
 ## Deterministic helper
 
@@ -354,11 +354,11 @@ Provide these operations:
 | `build-missing-access-worker` | Derive and hash deterministic subject/task ownership, validate the complete audit and denominators, build recovery metadata/profile-selected public artifact, and create a pending receipt. |
 | `bind-publication` | Bind one open exact-allowlist pull-request observation, public blob/file hashes, branch/base commits, and proposal identity into the private receipt. |
 | `validate-worker` | Recompute schemas, hashes, identities, denominators, public safety, receipt bindings, and recovery completeness without mutating canonical state. |
-| `preflight-batch` | Validate an explicit proposal/binding batch transactionally, enforce fresh API evidence and uniqueness, detect duplicates/conflicts, and produce a no-mutation integration plan. |
+| `preflight-batch` | Validate an explicit proposal/binding batch transactionally, enforce current-attempt API evidence and uniqueness, detect duplicates/conflicts, and produce a no-mutation integration plan. |
 | `integrate-batch` | After merged evidence, materialize exact private bytes, record provenance, update manifest before state, and refuse any input that differs from preflight. |
 | `completion` | Compute accepted chunks and exact locator-assignment or subject/task coverage, report missing/conflicting IDs, and decide whether the existing stage may complete. |
 
-Validate content, schema, canonical hashes, file hashes, chronology, API-evidence freshness, repository/branch/base/commit identity, source/candidate reconnection, and cross-artifact bindings. Reuse established safe utility functions only when doing so cannot change existing candidate-preparation behavior. The helper performs no substantive judgment and does not modify candidate-preparation scripts or contracts.
+Validate content, schema, canonical hashes, file hashes, chronology, repository/branch/base/commit identity, source/candidate reconnection, and cross-artifact bindings. Treat current observation as an orchestration requirement, not a wall-clock TTL enforced against `observed_at`. Reuse established safe utility functions only when doing so cannot change existing candidate-preparation behavior. The helper performs no substantive judgment and does not modify candidate-preparation scripts or contracts.
 
 ## Help, status, next, and resume
 

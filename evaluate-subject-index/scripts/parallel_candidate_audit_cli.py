@@ -1087,7 +1087,7 @@ def validate_repository_state(
     )
     require(value["schema_version"] == REPOSITORY_STATE_VERSION, "repository_state_schema", f"Expected {REPOSITORY_STATE_VERSION}.")
     require(value["candidate_project"] == project, "repository_identity_mismatch", "Repository evidence names a different candidate project.")
-    require_timestamp(value["observed_at"], "repository_state.observed_at", max_age_hours=24)
+    require_timestamp(value["observed_at"], "repository_state.observed_at")
     require(value["is_empty"] is False, "empty_candidate_repository", "Candidate-audit workers require an immutable existing base commit.")
     require(value["default_branch"] == base_branch, "base_branch_mismatch", "Requested base branch differs from the observed default branch.")
     base_commit = require_commit(value["base_commit"], "repository_state.base_commit")
@@ -1876,7 +1876,7 @@ def evidence_sha256(value: dict[str, Any]) -> str:
 
 def validate_publication_evidence(
     evidence: dict[str, Any], receipt: dict[str, Any], public_payload: bytes,
-    merged: bool, prior_open: dict[str, Any] | None = None, fresh: bool = True,
+    merged: bool, prior_open: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     audit_kind = validate_receipt(receipt)
     required = {
@@ -1925,7 +1925,7 @@ def validate_publication_evidence(
     blob_sha = str(file_record["blob_sha"]).lower()
     require(bool(re.fullmatch(r"[a-f0-9]{40}|[a-f0-9]{64}", blob_sha)), "publication_blob", "Published Git blob identity is invalid.")
     require(git_blob_sha_bytes(public_payload, blob_sha) == blob_sha, "publication_blob_mismatch", "Published Git blob does not match exact public report bytes.")
-    observed_at = require_timestamp(evidence["observed_at"], "publication_evidence.observed_at", max_age_hours=1 if fresh else None)
+    observed_at = require_timestamp(evidence["observed_at"], "publication_evidence.observed_at")
     if prior_open is not None:
         require(evidence["pull_request"] == prior_open.get("pull_request") and evidence["head_commit"] == prior_open.get("head_commit"), "merge_evidence_identity", "Merged evidence does not identify the same PR/head commit.")
         require(evidence["changed_files"] == prior_open.get("changed_files"), "merge_evidence_identity", "Merged evidence changed the reviewed file identity.")
@@ -1988,7 +1988,7 @@ def command_bind_publication(args: argparse.Namespace) -> None:
     public_document, public_payload, public_file_sha = load_json_snapshot(report_path, "Public worker artifact")
     validate_public_artifact(public_document, audit_kind, chunk_id, profile)
     require(public_file_sha == receipt["public_projection"]["sha256"], "public_projection_hash_mismatch", "Public artifact differs from receipt.")
-    evidence, _, evidence_file_sha = load_json_snapshot(evidence_path, "Fresh open-PR evidence")
+    evidence, _, evidence_file_sha = load_json_snapshot(evidence_path, "Current-attempt open-PR evidence")
     evidence_result = validate_publication_evidence(evidence, receipt, public_payload, merged=False)
     recovery_root = Path(args.recovery_root).resolve()
     recovery_zip = Path(args.recovery_zip).resolve() if args.recovery_zip else recovery_root / receipt["private_recovery"]["archive_path"]
@@ -2277,8 +2277,8 @@ def active_canonical_chunks(frozen: dict[str, Any], audit_kind: str) -> list[str
         require(receipt["public_projection"]["sha256"] == report_file_sha, "canonical_public_binding", f"Canonical public report binding differs for {chunk_id}.")
         open_evidence = load_json(paths["open_evidence"], "Canonical open-PR evidence")
         merge_evidence = load_json(paths["merge_evidence"], "Canonical merge evidence")
-        validate_publication_evidence(open_evidence, receipt, report_payload, merged=False, fresh=False)
-        validate_publication_evidence(merge_evidence, receipt, report_payload, merged=True, prior_open=open_evidence, fresh=False)
+        validate_publication_evidence(open_evidence, receipt, report_payload, merged=False)
+        validate_publication_evidence(merge_evidence, receipt, report_payload, merged=True, prior_open=open_evidence)
         active.append(chunk_id)
     return sorted(active)
 
@@ -2358,7 +2358,7 @@ def completion_accounting(frozen: dict[str, Any], audit_kind: str, kind_inputs: 
 def integrate_batch(args: argparse.Namespace) -> dict[str, Any]:
     batch = preflight_batch(args)
     merge_paths = args.merge_evidence or []
-    require(len(merge_paths) == len(batch["workers"]), "merge_evidence_count", "Provide one fresh --merge-evidence for every selected worker.")
+    require(len(merge_paths) == len(batch["workers"]), "merge_evidence_count", "Provide one post-merge --merge-evidence for every selected worker.")
     merges_by_pr: dict[int, tuple[dict[str, Any], bytes, str]] = {}
     for raw_path in merge_paths:
         evidence, payload, digest = load_json_snapshot(Path(raw_path).resolve(), "Fresh merged-PR evidence")
@@ -2591,7 +2591,7 @@ def build_parser() -> argparse.ArgumentParser:
     worker.add_argument("--audit-kind", choices=sorted(AUDIT_KINDS))
     worker.set_defaults(handler=command_validate_worker)
 
-    bind = subparsers.add_parser("bind-publication", help="Bind one explicit PR/branch selection to one receipt, recovery root, report, and fresh open-PR observation.")
+    bind = subparsers.add_parser("bind-publication", help="Bind one explicit PR/branch selection to one receipt, recovery root, report, and current-attempt open-PR observation.")
     bind.add_argument("--receipt", required=True)
     bind.add_argument("--recovery-root", required=True)
     bind.add_argument("--recovery-zip")
@@ -2605,7 +2605,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_batch_arguments(preflight)
     preflight.set_defaults(handler=command_preflight_batch)
 
-    integrate = subparsers.add_parser("integrate-batch", help="Integrate an already-preflighted explicit batch after fresh merged-PR evidence.")
+    integrate = subparsers.add_parser("integrate-batch", help="Integrate an already-preflighted explicit batch after current-attempt merged-PR evidence.")
     add_batch_arguments(integrate)
     integrate.add_argument("--merge-evidence", action="append", required=True, help="Fresh direct merged-PR evidence; repeat per selected worker.")
     integrate.add_argument("--checkpoint-output", required=True, help="New cumulative private checkpoint ZIP beneath evaluation root.")

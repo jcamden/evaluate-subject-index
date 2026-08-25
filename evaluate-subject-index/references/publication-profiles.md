@@ -11,6 +11,8 @@ The default is `aggregate_only`. A v4 state that predates this field is interpre
 
 When already-integrated workers have immutable `aggregate_only` pull-request evidence, do not rewrite those receipts or pretend the later canonical-audit publication occurred on the original worker branch. Preserve the legacy receipt, aggregate report, open/merge evidence, and recovery archive. Normalize the canonical audit through the strict public allowlist, publish it at the deterministic `candidate/...` path, and register one `candidate-audit-publication-migration-v1` record per affected chunk. The migration record must bind the legacy receipt/private/report hashes to the new canonical public bytes and publication commit, state that semantic judgment fields were preserved, and confirm that the legacy private bytes remain in recovery. Coordinators accept this mixed historical provenance only for the one-way `aggregate_only` to `public_evaluation_artifacts` transition.
 
+Before rendering locator-worker prompts, hash-verify the referenced checkpoint and require it to contain an explicit profile identical to the prompt pack. Prompt text never overrides an omitted checkpoint field. For a user-authorized legacy checkpoint whose candidate-audit stages have not started, use `bundle_cli.py migrate-publication-profile` with explicit source and target profiles, validate the migrated bundle, and update the prompt pack to its new SHA-256. The helper refuses in-place semantic migration once audit artifacts or downstream judgment-stage progress are present.
+
 ## Deterministic worker paths
 
 For `aggregate_only`:

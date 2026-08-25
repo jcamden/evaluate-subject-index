@@ -4,8 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
+import stat
+import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -86,6 +89,79 @@ def validate_spec(spec: dict[str, Any]) -> None:
             sha_field(chunk, name)
 
 
+def validate_checkpoint(spec: dict[str, Any], checkpoint: Path) -> None:
+    require(checkpoint.is_file(), f"checkpoint does not exist: {checkpoint}")
+    payload = checkpoint.read_bytes()
+    require(
+        hashlib.sha256(payload).hexdigest() == spec["checkpoint_sha256"],
+        "checkpoint bytes do not match checkpoint_sha256",
+    )
+    require(checkpoint.name == spec["checkpoint_filename"], "checkpoint filename differs from checkpoint_filename")
+    try:
+        with zipfile.ZipFile(checkpoint, "r") as archive:
+            infos = archive.infolist()
+            names = [info.filename for info in infos]
+            require(len(names) == len(set(names)), "checkpoint contains duplicate member paths")
+            required = {"evaluation-state.json", "artifact-manifest.json", "bundle-metadata.json"}
+            require(required.issubset(names), "checkpoint is missing required control files")
+            for info in infos:
+                path = PurePosixPath(info.filename)
+                mode = info.external_attr >> 16
+                require(
+                    not path.is_absolute() and ".." not in path.parts and "\\" not in info.filename,
+                    f"checkpoint contains an unsafe member path: {info.filename}",
+                )
+                require(
+                    not info.is_dir() and not stat.S_ISLNK(mode),
+                    f"checkpoint contains an unsupported member: {info.filename}",
+                )
+            state_payload = archive.read("evaluation-state.json")
+            manifest_payload = archive.read("artifact-manifest.json")
+            state = json.loads(state_payload.decode("utf-8"))
+            manifest = json.loads(manifest_payload.decode("utf-8"))
+            metadata = json.loads(archive.read("bundle-metadata.json").decode("utf-8"))
+    except (OSError, zipfile.BadZipFile, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise PromptSpecError(f"checkpoint is invalid: {exc}") from exc
+    require(isinstance(state, dict), "checkpoint evaluation-state.json must be an object")
+    require(isinstance(manifest, dict), "checkpoint artifact-manifest.json must be an object")
+    require(isinstance(metadata, dict), "checkpoint bundle-metadata.json must be an object")
+    require(
+        state.get("schema_version") == "subject-index-evaluation-state-v4",
+        "checkpoint evaluation state schema is unsupported",
+    )
+    require(
+        manifest.get("schema_version") == "subject-index-artifact-manifest-v1",
+        "checkpoint artifact manifest schema is unsupported",
+    )
+    require(metadata.get("schema_version") == "subject-index-bundle-v1", "checkpoint bundle schema is unsupported")
+    expected_members = set(metadata.get("included_paths", [])) | {"bundle-metadata.json"}
+    require(set(names) == expected_members, "checkpoint members differ from bundle metadata")
+    require(
+        hashlib.sha256(state_payload).hexdigest() == metadata.get("state_sha256"),
+        "checkpoint evaluation state hash differs from bundle metadata",
+    )
+    require(
+        hashlib.sha256(manifest_payload).hexdigest() == metadata.get("manifest_sha256"),
+        "checkpoint artifact manifest hash differs from bundle metadata",
+    )
+    require(state.get("evaluation_id") == spec["evaluation_id"], "checkpoint evaluation_id differs from prompt pack")
+    require(manifest.get("evaluation_id") == spec["evaluation_id"], "checkpoint manifest evaluation_id differs from prompt pack")
+    require(metadata.get("evaluation_id") == spec["evaluation_id"], "checkpoint metadata evaluation_id differs from prompt pack")
+    configuration = state.get("configuration")
+    require(isinstance(configuration, dict), "checkpoint configuration must be an object")
+    require(
+        "publication_profile" in configuration,
+        "checkpoint omits configuration.publication_profile; run bundle_cli.py migrate-publication-profile before rendering prompts",
+    )
+    checkpoint_profile = configuration.get("publication_profile")
+    prompt_profile = spec.get("publication_profile", "aggregate_only")
+    require(checkpoint_profile in PUBLICATION_PROFILES, "checkpoint publication_profile is invalid")
+    require(
+        checkpoint_profile == prompt_profile,
+        "checkpoint publication_profile differs from prompt pack publication_profile",
+    )
+
+
 def render_chunk(spec: dict[str, Any], chunk: dict[str, Any]) -> str:
     chunk_id = chunk["chunk_id"]
     lower_chunk = chunk_id.lower()
@@ -149,7 +225,7 @@ Audit every one of the {chunk['expected_locator_assignments']} packet assignment
 
 Use `parallel_candidate_audit_cli.py build-locator-worker`, `bind-publication`, and `validate-worker`. {publication_instruction}
 
-After the pull request has been created, obtain a fresh GitHub observation of its exact URL, number, open state, head branch and commit, base branch and commit, one-commit history, changed-path allowlist, and public-artifact blob/file hash. Run `bind-publication` with that observation, then rerun `validate-worker`. Save the resulting final publication-bound `locator-audit-worker-receipt.json` and its receipt-bound `locator-audit-worker-recovery.zip` to the existing Library recovery root `{recovery_root}`, replacing the earlier pre-publication receipt while preserving the canonical filenames. Verify that the saved final receipt names the exact pull-request URL and head commit and binds the {binding_nouns} plus the recovery ZIP. Do not modify or merge the pull request afterward.
+After the pull request has been created, obtain a direct GitHub observation of its exact URL, number, open state, head branch and commit, base branch and commit, one-commit history, changed-path allowlist, and public-artifact blob/file hash. Run `bind-publication` with that observation, then rerun `validate-worker`. Save the resulting final publication-bound `locator-audit-worker-receipt.json` and its receipt-bound `locator-audit-worker-recovery.zip` to the existing Library recovery root `{recovery_root}`, replacing the earlier pre-publication receipt while preserving the canonical filenames. Verify that the saved final receipt names the exact pull-request URL and head commit and binds the {binding_nouns} plus the recovery ZIP. Do not modify or merge the pull request afterward.
 ```
 """
 
@@ -169,11 +245,14 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest="operation", required=True)
     renderer = subparsers.add_parser("render-locator-pack")
     renderer.add_argument("--input", required=True)
+    renderer.add_argument("--checkpoint", required=True)
     renderer.add_argument("--output", required=True)
     args = parser.parse_args()
     try:
         spec = json.loads(Path(args.input).read_text(encoding="utf-8"))
         require(isinstance(spec, dict), "input must be a JSON object")
+        validate_spec(spec)
+        validate_checkpoint(spec, Path(args.checkpoint))
         output = Path(args.output)
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(render(spec), encoding="utf-8")

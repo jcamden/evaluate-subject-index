@@ -3,11 +3,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 
@@ -59,15 +61,49 @@ def prompt_spec() -> dict:
     }
 
 
+def write_checkpoint(root: Path, spec: dict, profile: str = "aggregate_only", include_profile: bool = True) -> Path:
+    checkpoint = root / spec["checkpoint_filename"]
+    configuration = {}
+    if include_profile:
+        configuration["publication_profile"] = profile
+    state = {
+        "schema_version": "subject-index-evaluation-state-v4",
+        "evaluation_id": spec["evaluation_id"],
+        "configuration": configuration,
+    }
+    manifest = {
+        "schema_version": "subject-index-artifact-manifest-v1",
+        "evaluation_id": spec["evaluation_id"],
+        "artifacts": [],
+    }
+    state_payload = json.dumps(state).encode("utf-8")
+    manifest_payload = json.dumps(manifest).encode("utf-8")
+    metadata = {
+        "schema_version": "subject-index-bundle-v1",
+        "evaluation_id": spec["evaluation_id"],
+        "state_sha256": hashlib.sha256(state_payload).hexdigest(),
+        "manifest_sha256": hashlib.sha256(manifest_payload).hexdigest(),
+        "included_paths": ["artifact-manifest.json", "evaluation-state.json"],
+    }
+    with zipfile.ZipFile(checkpoint, "w") as archive:
+        archive.writestr("artifact-manifest.json", manifest_payload)
+        archive.writestr("evaluation-state.json", state_payload)
+        archive.writestr("bundle-metadata.json", json.dumps(metadata))
+    spec["checkpoint_sha256"] = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+    return checkpoint
+
+
 class WorkerPromptCliTests(unittest.TestCase):
     def test_locator_pack_requires_final_publication_bound_library_handoff(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             input_path = root / "spec.json"
             output_path = root / "worker-locator-audit-prompts.md"
-            input_path.write_text(json.dumps(prompt_spec()), encoding="utf-8")
+            spec = prompt_spec()
+            checkpoint = write_checkpoint(root, spec)
+            input_path.write_text(json.dumps(spec), encoding="utf-8")
             completed = subprocess.run(
-                [sys.executable, str(SCRIPT), "render-locator-pack", "--input", str(input_path), "--output", str(output_path)],
+                [sys.executable, str(SCRIPT), "render-locator-pack", "--input", str(input_path), "--checkpoint", str(checkpoint), "--output", str(output_path)],
                 cwd=SKILL_ROOT,
                 text=True,
                 capture_output=True,
@@ -89,11 +125,12 @@ class WorkerPromptCliTests(unittest.TestCase):
             root = Path(temporary)
             spec = prompt_spec()
             spec["chunks"].append(dict(spec["chunks"][0]))
+            checkpoint = write_checkpoint(root, spec)
             input_path = root / "spec.json"
             output_path = root / "prompts.md"
             input_path.write_text(json.dumps(spec), encoding="utf-8")
             completed = subprocess.run(
-                [sys.executable, str(SCRIPT), "render-locator-pack", "--input", str(input_path), "--output", str(output_path)],
+                [sys.executable, str(SCRIPT), "render-locator-pack", "--input", str(input_path), "--checkpoint", str(checkpoint), "--output", str(output_path)],
                 cwd=SKILL_ROOT,
                 text=True,
                 capture_output=True,
@@ -108,11 +145,12 @@ class WorkerPromptCliTests(unittest.TestCase):
             root = Path(temporary)
             spec = prompt_spec()
             spec["publication_profile"] = "public_evaluation_artifacts"
+            checkpoint = write_checkpoint(root, spec, "public_evaluation_artifacts")
             input_path = root / "spec.json"
             output_path = root / "prompts.md"
             input_path.write_text(json.dumps(spec), encoding="utf-8")
             completed = subprocess.run(
-                [sys.executable, str(SCRIPT), "render-locator-pack", "--input", str(input_path), "--output", str(output_path)],
+                [sys.executable, str(SCRIPT), "render-locator-pack", "--input", str(input_path), "--checkpoint", str(checkpoint), "--output", str(output_path)],
                 cwd=SKILL_ROOT,
                 text=True,
                 capture_output=True,
@@ -126,6 +164,46 @@ class WorkerPromptCliTests(unittest.TestCase):
                 rendered,
             )
             self.assertIn("exact validated canonical audit bytes", rendered)
+
+    def test_legacy_checkpoint_without_profile_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            spec = prompt_spec()
+            spec["publication_profile"] = "public_evaluation_artifacts"
+            checkpoint = write_checkpoint(root, spec, include_profile=False)
+            input_path = root / "spec.json"
+            output_path = root / "prompts.md"
+            input_path.write_text(json.dumps(spec), encoding="utf-8")
+            completed = subprocess.run(
+                [sys.executable, str(SCRIPT), "render-locator-pack", "--input", str(input_path), "--checkpoint", str(checkpoint), "--output", str(output_path)],
+                cwd=SKILL_ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertNotEqual(0, completed.returncode)
+            self.assertIn("migrate-publication-profile", completed.stdout)
+            self.assertFalse(output_path.exists())
+
+    def test_checkpoint_profile_mismatch_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            spec = prompt_spec()
+            spec["publication_profile"] = "public_evaluation_artifacts"
+            checkpoint = write_checkpoint(root, spec, "aggregate_only")
+            input_path = root / "spec.json"
+            output_path = root / "prompts.md"
+            input_path.write_text(json.dumps(spec), encoding="utf-8")
+            completed = subprocess.run(
+                [sys.executable, str(SCRIPT), "render-locator-pack", "--input", str(input_path), "--checkpoint", str(checkpoint), "--output", str(output_path)],
+                cwd=SKILL_ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertNotEqual(0, completed.returncode)
+            self.assertIn("differs from prompt pack", completed.stdout)
+            self.assertFalse(output_path.exists())
 
 
 if __name__ == "__main__":

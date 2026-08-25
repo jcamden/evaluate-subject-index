@@ -824,9 +824,9 @@ class MissingAccessWorkerContractTests(ErrorAssertionsMixin, unittest.TestCase):
             chunk_manifest="chunks.json",
             policy="policy.json",
             benchmark="benchmark.json",
-            benchmark_lock="lock.json",
-            normalized_candidate="candidate.json",
-            item_inventory="inventory.json",
+            benchmark_lock=str(SKILL_ROOT / "lock.json"),
+            normalized_candidate=str(SKILL_ROOT / "candidate.json"),
+            item_inventory=str(SKILL_ROOT / "inventory.json"),
         )
         with mock.patch.object(parallel, "load_canonical_run", return_value=run), mock.patch.object(
             parallel, "validate_json_identity_file", side_effect=values
@@ -844,9 +844,9 @@ class MissingAccessWorkerContractTests(ErrorAssertionsMixin, unittest.TestCase):
             chunk_manifest="chunks.json",
             policy="policy.json",
             benchmark="benchmark.json",
-            benchmark_lock="lock.json",
-            normalized_candidate="candidate.json",
-            item_inventory="inventory.json",
+            benchmark_lock=str(SKILL_ROOT / "lock.json"),
+            normalized_candidate=str(SKILL_ROOT / "candidate.json"),
+            item_inventory=str(SKILL_ROOT / "inventory.json"),
         )
         with mock.patch.object(parallel, "load_canonical_run", return_value=run), mock.patch.object(
             parallel, "validate_json_identity_file", side_effect=values
@@ -1027,12 +1027,11 @@ class PublicProjectionAndRepositoryTests(ErrorAssertionsMixin, unittest.TestCase
             self.repository_state(candidate_project="example/other-candidate"),
         )
 
-    def test_stale_repository_evidence_is_refused(self) -> None:
-        self.assert_error(
-            "stale_evidence",
-            self.validate_repository,
-            self.repository_state(observed_at="2020-01-01T00:00:00Z"),
+    def test_historical_repository_observation_has_no_ttl(self) -> None:
+        result = self.validate_repository(
+            self.repository_state(observed_at="2020-01-01T00:00:00Z")
         )
+        self.assertEqual("1" * 40, result["base_commit"])
 
     def source_reconnection_files(
         self, directory: Path
@@ -1467,22 +1466,21 @@ class RecoveryAndReceiptTests(ErrorAssertionsMixin, unittest.TestCase):
                     False,
                 )
 
-    def test_stale_or_caller_authored_api_evidence_is_rejected(self) -> None:
+    def test_historical_exact_evidence_has_no_ttl_but_caller_shape_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             _, _, receipt, _, _, public_payload = self.build_locator_worker_private(
                 Path(directory)
             )
-            stale = self.publication_evidence(
+            historical = self.publication_evidence(
                 receipt, public_payload, observed_at="2020-01-01T00:00:00Z"
             )
-            self.assert_error(
-                "stale_evidence",
-                parallel.validate_publication_evidence,
-                stale,
+            result = parallel.validate_publication_evidence(
+                historical,
                 receipt,
                 public_payload,
                 False,
             )
+            self.assertEqual("locator", result["audit_kind"])
             caller = self.publication_evidence(
                 receipt, public_payload, evidence_source="caller_supplied"
             )

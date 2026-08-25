@@ -16,6 +16,7 @@ from typing import Any
 STATE_SCHEMA_VERSION = "subject-index-evaluation-state-v4"
 MANIFEST_SCHEMA_VERSION = "subject-index-artifact-manifest-v1"
 BUNDLE_SCHEMA_VERSION = "subject-index-bundle-v1"
+PUBLICATION_PROFILES = {"aggregate_only", "public_evaluation_artifacts"}
 
 
 def now() -> str:
@@ -277,6 +278,143 @@ def command_import(args: argparse.Namespace) -> None:
     })
 
 
+def command_migrate_publication_profile(args: argparse.Namespace) -> None:
+    bundle = Path(args.input).resolve()
+    if not bundle.is_file():
+        fail("bundle_not_found", f"Bundle does not exist: {bundle}")
+    output = Path(args.output).resolve()
+    if output.exists() and not args.force:
+        fail("output_exists", f"Refusing to overwrite existing bundle: {output}")
+
+    with zipfile.ZipFile(bundle, "r") as archive:
+        infos = archive.infolist()
+        names = [info.filename for info in infos]
+        if len(names) != len(set(names)):
+            fail("duplicate_members", "Bundle contains duplicate member paths.")
+        for info in infos:
+            safe_relative_path(info.filename)
+            if info.is_dir() or is_symlink_member(info):
+                fail("unsupported_member", f"Bundle contains an unsupported member: {info.filename}")
+        required = {"evaluation-state.json", "artifact-manifest.json", "bundle-metadata.json"}
+        missing = sorted(required - set(names))
+        if missing:
+            fail("missing_control_files", "Bundle is missing required control files.", missing)
+        members = {info.filename: archive.read(info.filename) for info in infos}
+
+    try:
+        metadata = json.loads(members["bundle-metadata.json"].decode("utf-8"))
+        state = json.loads(members["evaluation-state.json"].decode("utf-8"))
+        manifest = json.loads(members["artifact-manifest.json"].decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        fail("invalid_bundle_json", f"Bundle control JSON is invalid: {exc}")
+    if not all(isinstance(item, dict) for item in (metadata, state, manifest)):
+        fail("invalid_bundle_controls", "Bundle control files must be JSON objects.")
+    if metadata.get("schema_version") != BUNDLE_SCHEMA_VERSION:
+        fail("unsupported_bundle", f"Expected {BUNDLE_SCHEMA_VERSION}.")
+    if state.get("schema_version") != STATE_SCHEMA_VERSION:
+        fail("unsupported_state", f"Expected {STATE_SCHEMA_VERSION}.")
+    if manifest.get("schema_version") != MANIFEST_SCHEMA_VERSION:
+        fail("unsupported_manifest", f"Expected {MANIFEST_SCHEMA_VERSION}.")
+    if state.get("evaluation_id") != manifest.get("evaluation_id") or state.get("evaluation_id") != metadata.get("evaluation_id"):
+        fail("identity_mismatch", "Bundle state, manifest, and metadata evaluation IDs differ.")
+    expected_members = set(metadata.get("included_paths", [])) | {"bundle-metadata.json"}
+    if set(names) != expected_members:
+        fail(
+            "bundle_inventory_mismatch",
+            "ZIP members do not match bundle metadata.",
+            {"expected": sorted(expected_members), "actual": sorted(names)},
+        )
+    if sha256_bytes(members["evaluation-state.json"]) != metadata.get("state_sha256"):
+        fail("state_hash_mismatch", "Bundled evaluation-state.json does not match bundle metadata.")
+    if sha256_bytes(members["artifact-manifest.json"]) != metadata.get("manifest_sha256"):
+        fail("manifest_hash_mismatch", "Bundled artifact-manifest.json does not match bundle metadata.")
+
+    included = set(metadata.get("included_paths", []))
+    artifact_errors: list[str] = []
+    for record in manifest.get("artifacts", []):
+        if not isinstance(record, dict):
+            fail("invalid_manifest_record", "Every manifest artifact must be an object.")
+        relative = safe_relative_path(str(record.get("path", "")))
+        if relative in included and sha256_bytes(members.get(relative, b"")) != record.get("sha256"):
+            artifact_errors.append(relative)
+    if artifact_errors:
+        fail("artifact_hash_mismatch", "Bundled artifacts failed manifest hash validation.", artifact_errors)
+
+    configuration = state.get("configuration")
+    if not isinstance(configuration, dict):
+        fail("invalid_configuration", "Evaluation state configuration must be an object.")
+    explicit_profile = configuration.get("publication_profile")
+    current_profile = explicit_profile if explicit_profile is not None else "aggregate_only"
+    if current_profile not in PUBLICATION_PROFILES:
+        fail("invalid_publication_profile", "The checkpoint publication profile is invalid.")
+    if current_profile != args.from_profile:
+        fail(
+            "publication_profile_source_mismatch",
+            "The checkpoint's effective publication profile differs from --from-profile.",
+            {"expected": args.from_profile, "actual": current_profile, "explicit": explicit_profile is not None},
+        )
+    if explicit_profile == args.publication_profile:
+        fail("migration_not_needed", "The checkpoint already explicitly selects the requested publication profile.")
+
+    judgment_stages = ("locator_audit", "missing_access_audit", "structure_audit", "scoring")
+    started = {
+        name: state.get("stages", {}).get(name, {}).get("status")
+        for name in judgment_stages
+        if state.get("stages", {}).get(name, {}).get("status") not in {None, "not_started"}
+    }
+    audit_paths = sorted(
+        name for name in names
+        if "/locator-audits/" in name
+        or "/missing-access-audits/" in name
+        or name.startswith("validation/locator-audit-worker.")
+        or name.startswith("validation/missing-access-audit-worker.")
+    )
+    if started or audit_paths:
+        fail(
+            "candidate_audit_migration_requires_revalidation",
+            "Refusing an in-place checkpoint profile migration after candidate-audit work has started.",
+            {"started_stages": started, "audit_paths": audit_paths},
+        )
+
+    source_bundle_sha256 = sha256_file(bundle)
+    configuration["publication_profile"] = args.publication_profile
+    state["updated_at"] = now()
+    state_bytes = (json.dumps(state, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    members["evaluation-state.json"] = state_bytes
+    metadata["created_at"] = now()
+    metadata["state_sha256"] = sha256_bytes(state_bytes)
+    metadata["publication_profile_migration"] = {
+        "from": current_profile,
+        "to": args.publication_profile,
+        "source_bundle_sha256": source_bundle_sha256,
+        "source_profile_was_explicit": explicit_profile is not None,
+    }
+    members["bundle-metadata.json"] = (json.dumps(metadata, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output.with_suffix(output.suffix + ".tmp")
+    try:
+        with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for name in sorted(members):
+                add_bytes(archive, name, members[name])
+        temporary.replace(output)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+    emit({
+        "command": "migrate-publication-profile",
+        "ok": True,
+        "evaluation_id": state["evaluation_id"],
+        "from_profile": current_profile,
+        "publication_profile": args.publication_profile,
+        "source_profile_was_explicit": explicit_profile is not None,
+        "source_bundle_sha256": source_bundle_sha256,
+        "artifacts_written": [{"path": str(output), "sha256": sha256_file(output)}],
+        "warnings": [],
+    })
+
+
 def add_package_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--state", required=True)
     parser.add_argument("--output")
@@ -300,6 +438,14 @@ def build_parser() -> argparse.ArgumentParser:
     importing.add_argument("--input", required=True)
     importing.add_argument("--output-dir", required=True)
     importing.set_defaults(func=command_import)
+
+    migration = subparsers.add_parser("migrate-publication-profile")
+    migration.add_argument("--input", required=True)
+    migration.add_argument("--output", required=True)
+    migration.add_argument("--from-profile", choices=sorted(PUBLICATION_PROFILES), required=True)
+    migration.add_argument("--publication-profile", choices=sorted(PUBLICATION_PROFILES), required=True)
+    migration.add_argument("--force", action="store_true")
+    migration.set_defaults(func=command_migrate_publication_profile)
     return parser
 
 

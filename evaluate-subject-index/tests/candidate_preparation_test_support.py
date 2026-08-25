@@ -21,9 +21,10 @@ from candidate_preparation_cli import canonical_hash  # noqa: E402
 from state_cli import STAGES, validate_state  # noqa: E402
 
 
-STAMP = "2026-08-24T12:00:00Z"
-PREFLIGHT_STAMP = "2026-08-24T12:01:00Z"
-MERGE_STAMP = "2026-08-24T12:02:00Z"
+STAMP = "2020-01-01T12:00:00Z"
+BEFORE_PREFLIGHT_STAMP = "2020-01-01T12:00:30Z"
+PREFLIGHT_STAMP = "2020-01-01T12:01:00Z"
+MERGE_STAMP = "2020-01-01T12:02:00Z"
 SOURCE_SHA = "1" * 64
 BASE_COMMIT = "b" * 40
 HEAD_COMMIT = "c" * 40
