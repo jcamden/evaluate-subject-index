@@ -130,7 +130,30 @@ Persist each worker's complete artifact, preliminary receipt, and recovery bundl
 
 For coordinator fan-in, supply an explicit binding for every selected proposal: one pull request or branch, one receipt, and one recovery root. Resolve only those bindings and reject missing, duplicated, ambiguous, or extra recovery material. Never sweep `workers/`, Library, or open pull requests and never infer a receipt from a candidate ID or chunk ID alone.
 
+When agent-side storage transfer alone prevents materializing a missing-access worker handoff under `public_evaluation_artifacts`, create a new isolated coordinator reconstruction root instead of placing private material in the public repository. The reconstructed receipt and ZIP are private required provenance, and the ZIP must contain the complete public audit snapshot, ownership plan, current open-PR evidence, and reconstruction record. Preserve known original worker hashes as declarations only. Do not use this fallback for inaccessible canonical inputs, incomplete public artifacts, aggregate-only reports, or failed substantive validation.
+
 Accepted complete audit ledgers become canonical required artifacts only after coordinator integration. Their manifest visibility is private in `aggregate_only` and public in `public_evaluation_artifacts`. Cumulative private checkpoints may contain those JSON ledgers while continuing to exclude restricted source and candidate PDFs by default. Public GitHub branches never contain worker receipts or recovery ZIPs. Read [parallel-candidate-audits.md](parallel-candidate-audits.md) and [publication-profiles.md](publication-profiles.md).
+
+## HTTP 502 checkpoint transfer recovery
+
+Treat a ChatGPT Library HTTP 502 during authenticated checkpoint byte transfer as a transport failure, not evidence that the checkpoint is missing, invalid, or out of storage capacity. After one confirmed 502, do not keep retrying the same transfer, replace the canonical Library item, or ask the user to re-upload it to Library. Stop before substantive work and return a resumable blocker containing:
+
+- `blocker: checkpoint_transfer_http_502`;
+- `resume_mode: manual_checkpoint_attachment`;
+- the canonical Library path and filename;
+- the expected archive SHA-256; and
+- the expected byte length when known.
+
+Ask the user to attach the exact checkpoint to the same worker conversation. On resume:
+
+1. select the attached conversation file only as the alternate transfer source;
+2. compute its SHA-256 before extraction and require the expected archive hash;
+3. validate the checkpoint metadata, every declared member hash and byte length, path safety, and archive completeness;
+4. import into the same new or isolated worker root required by the original command;
+5. run complete canonical validation; and
+6. continue the original worker workflow without changing its immutable base, frozen identities, denominators, branch, publication profile, or recovery root.
+
+Do not accept a matching filename, attachment metadata, Library identifier, or user assertion in place of byte verification. A mismatched attachment is an integrity failure, not another 502 recovery. Do not use this fallback for permission denial, missing Library metadata, HTTP 404, invalid archive structure, schema failure, member-hash failure, or canonical-validation failure. This checkpoint-input recovery is separate from the coordinator-only `reconstruct-public-handoff` fallback for unavailable missing-access receipts or recovery ZIPs.
 
 ## Import and resume
 

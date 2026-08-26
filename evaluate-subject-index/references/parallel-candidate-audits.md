@@ -69,6 +69,8 @@ One worker owns one candidate, one audit type, and one exact chunk. Require:
 
 Import the compatible validated checkpoint into isolation. Validate every input before substantive work. Never use conversational memory, a filename, a Library identifier, or a candidate ID in place of a content hash and explicit artifact binding.
 
+When the checkpoint is resolved in ChatGPT Library but authenticated agent-side byte transfer returns HTTP 502, stop before substantive work and request manual attachment of that exact checkpoint in the same worker conversation. Report `checkpoint_transfer_http_502`, the canonical filename and Library path, expected SHA-256, and expected byte length when known. Do not repeatedly retry the failing transfer, replace or re-upload the canonical Library item, infer state from conversational memory, or substitute individually gathered files. Resume only after the attachment matches the expected archive hash and every declared member hash and byte length, imports into the worker's isolated root, and the complete canonical evaluation validates. The attachment changes transport only; it does not change checkpoint identity or frozen inputs. Other transfer, authorization, not-found, schema, and integrity failures retain their normal blocker semantics.
+
 Workers may write only their isolated private state. They never update canonical:
 
 - `evaluation-state.json`;
@@ -275,6 +277,10 @@ Use the same explicit, transactional coordinator pattern. Before merging:
 
 Validate the complete selected batch before merging any member. If one fails, merge none.
 
+If and only if the frozen profile is `public_evaluation_artifacts` and a storage-transfer failure prevents the coordinator from materializing the final worker receipt or recovery ZIP, the coordinator may run `reconstruct-public-handoff` for an explicitly selected missing-access proposal. This is a replacement private handoff, not a waiver. Require the exact canonical audit bytes downloaded from the proposal, fresh direct open-PR evidence, the complete canonical locator-audit set, and all normal frozen inputs. Recompute the audit schema, public safety, byte identity, ownership plan, subject/task/treatment denominators, frozen identities, and proposal identity before writing anything.
+
+The helper creates a `parallel-missing-access-coordinator-reconstructed-receipt-v1` receipt, a new deterministic private recovery ZIP, and the normal explicit integration binding. Both receipt and recovery identify `coordinator_reconstructed_from_public_artifact`; the recovery includes a self-hashed `candidate-audit-coordinator-reconstruction-v1` record. Record any known worker-declared receipt and ZIP hashes as unmaterialized provenance, but do not claim those unavailable bytes were validated. This fallback is forbidden for `aggregate_only`, where the proposal lacks the complete audit, and for locator audits, which remain source-grounded. The reconstructed binding must pass unchanged `preflight-batch` and `integrate-batch` gates.
+
 After successful preflight, merge only selected proposals, obtain post-merge evidence, materialize exact accepted private bytes, record provenance, update manifest first and state last, and validate. Complete `missing_access_audit` only when every required chunk, subject, task, and treatment denominator is covered exactly once. Otherwise preserve validated partial completion. Create one cumulative private checkpoint and one shared-control commit.
 
 ## Private and public boundary
@@ -330,6 +336,8 @@ Treat bindings as coordinator-private runtime input. Validate one-to-one cardina
 
 Worker recovery ZIPs are private, deterministic inventories. Exclude restricted PDFs and the final receipt to avoid a self-referential hash cycle. Include the complete private JSON audit, worker state, worker manifest, recovery metadata, and—after publication—the immutable worker open-PR evidence; bind the final receipt to the finished ZIP hash outside the archive. Validate the ZIP before publication and again during coordinator preflight.
 
+A reconstructed missing-access recovery ZIP follows the same privacy and hash rules but labels its state as coordinator-reconstructed and additionally includes `coordinator-reconstruction.json`. That record binds the exact public proposal bytes and fresh evidence, lists the deterministic assurances rerun by the coordinator, and states that the original worker receipt and recovery bytes were not materialized or validated.
+
 When Library is used, the worker must replace the preliminary receipt and ZIP copies with these final publication-bound bytes before reporting success. Filenames remain `locator-audit-worker-receipt.json` plus `locator-audit-worker-recovery.zip`, or `missing-access-worker-receipt.json` plus `missing-access-worker-recovery.zip`; the enclosing audit-type and chunk folder supplies scope. A coordinator must reject a receipt whose publication status is pending or whose PR URL/head commit and public/private/recovery hashes do not match the selected proposal and files.
 
 ## GitHub evidence
@@ -360,6 +368,7 @@ Provide these operations:
 | `build-locator-worker` | Validate the locator packet/audit, compute exact counts and hashes, build recovery metadata and the profile-selected strict public artifact, and create a pending private receipt. |
 | `build-missing-access-worker` | Derive and hash deterministic subject/task ownership, validate the complete audit and denominators, build recovery metadata/profile-selected public artifact, and create a pending receipt. |
 | `bind-publication` | Bind one open exact-allowlist pull-request observation, public blob/file hashes, branch/base commits, and proposal identity into a final `published_unmerged` private receipt; deterministically rebuild its recovery ZIP and write the integration binding against the final hashes. |
+| `reconstruct-public-handoff` | For a `public_evaluation_artifacts` missing-access proposal whose original private handoff cannot be materialized, revalidate the complete public canonical audit and create a coordinator-labeled private receipt, recovery ZIP, and normal integration binding. |
 | `validate-worker` | Recompute schemas, hashes, identities, denominators, public safety, receipt bindings, and recovery completeness without mutating canonical state. |
 | `preflight-batch` | Validate an explicit proposal/binding batch transactionally, enforce current-attempt API evidence and uniqueness, detect duplicates/conflicts, and produce a no-mutation integration plan. |
 | `integrate-batch` | After merged evidence, materialize exact private bytes, record provenance, update manifest before state, and refuse any input that differs from preflight. |

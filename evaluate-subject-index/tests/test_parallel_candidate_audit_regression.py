@@ -70,5 +70,30 @@ class V4StateCompatibilityTests(unittest.TestCase):
         self.assertEqual("available", actions[1]["status"])
 
 
+class CheckpointTransferRecoveryContractTests(unittest.TestCase):
+    """Keep HTTP 502 recovery explicit, resumable, and hash-bound."""
+
+    def test_manual_attachment_recovery_is_documented_at_all_worker_layers(self) -> None:
+        required_markers = (
+            "checkpoint_transfer_http_502",
+            "manual_checkpoint_attachment",
+            "expected archive SHA-256",
+        )
+        texts = {
+            relative: (SKILL_ROOT / relative).read_text(encoding="utf-8")
+            for relative in (
+                "SKILL.md",
+                "references/parallel-candidate-audits.md",
+                "references/storage-and-checkpoints.md",
+            )
+        }
+        combined = "\n".join(texts.values())
+        for marker in required_markers:
+            self.assertIn(marker, combined)
+        self.assertIn("same worker conversation", texts["references/parallel-candidate-audits.md"])
+        self.assertIn("A filename or attachment alone is never authority", texts["SKILL.md"])
+        self.assertIn("This checkpoint-input recovery is separate", texts["references/storage-and-checkpoints.md"])
+
+
 if __name__ == "__main__":
     unittest.main()
