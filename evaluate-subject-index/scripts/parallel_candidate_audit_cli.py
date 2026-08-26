@@ -62,6 +62,7 @@ LOCATOR_AUDIT_VERSION = "locator-audit-v1"
 MISSING_AUDIT_VERSION = "missing-access-audit-v1"
 LOCATOR_RECEIPT_VERSION = "parallel-locator-audit-worker-receipt-v1"
 MISSING_RECEIPT_VERSION = "parallel-missing-access-worker-receipt-v2"
+RECONSTRUCTED_MISSING_RECEIPT_VERSION = "parallel-missing-access-coordinator-reconstructed-receipt-v1"
 LOCATOR_REPORT_VERSION = "locator-audit-worker-report-v1"
 MISSING_REPORT_VERSION = "missing-access-worker-report-v2"
 OPEN_EVIDENCE_VERSION = "candidate-audit-open-pr-evidence-v1"
@@ -74,6 +75,8 @@ MISSING_INTEGRATION_VERSION = "missing-access-batch-integration-v1"
 AGGREGATE_ONLY = "aggregate_only"
 PUBLIC_EVALUATION_ARTIFACTS = "public_evaluation_artifacts"
 PUBLICATION_MIGRATION_VERSION = "candidate-audit-publication-migration-v1"
+COORDINATOR_RECONSTRUCTION_VERSION = "candidate-audit-coordinator-reconstruction-v1"
+COORDINATOR_RECONSTRUCTION_MODE = "coordinator_reconstructed_from_public_artifact"
 PUBLICATION_PROFILES = {AGGREGATE_ONLY, PUBLIC_EVALUATION_ARTIFACTS}
 
 AUDIT_KINDS = {"locator", "missing_access"}
@@ -1540,6 +1543,7 @@ def build_recovery(
     audit_payload: bytes,
     public_payload: bytes,
     ownership: dict[str, Any],
+    reconstruction_record: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     require(not recovery_root.exists() or not any(recovery_root.iterdir()), "recovery_root_not_isolated", "Worker recovery root must be unique and empty.")
     require(not recovery_zip.exists(), "output_exists", f"Refusing to overwrite {recovery_zip}.")
@@ -1555,7 +1559,7 @@ def build_recovery(
         "evaluation_id": frozen["state"]["evaluation_id"],
         "candidate_id": frozen["candidate_id"],
         "chunk_id": chunk_id,
-        "status": "complete_private_work_preserved",
+        "status": "coordinator_reconstructed_from_public_artifact" if reconstruction_record else "complete_private_work_preserved",
         "checkpoint_ref": checkpoint_ref,
         "canonical_state_updated": False,
         "benchmark_repository_modified": False,
@@ -1567,6 +1571,8 @@ def build_recovery(
         ownership_name: json_bytes(ownership),
         public_path: public_payload,
     }
+    if reconstruction_record is not None:
+        member_payloads["coordinator-reconstruction.json"] = json_bytes(reconstruction_record)
     worker_manifest = {
         "schema_version": "candidate-audit-worker-manifest-v1",
         "evaluation_id": frozen["state"]["evaluation_id"],
@@ -1589,6 +1595,8 @@ def build_recovery(
             "public",
         ),
     }
+    if reconstruction_record is not None:
+        artifact_types["coordinator-reconstruction.json"] = ("coordinator_reconstruction_record", "private")
     metadata = {
         "schema_version": RECOVERY_VERSION,
         "recovery_metadata_sha256": "",
@@ -1679,6 +1687,19 @@ def validate_recovery_archive(
             require(len(evidence_records) == 1, "recovery_publication_evidence", "Recovery must not repeat open-PR publication evidence.")
             require(receipt.get("status") == "published_unmerged", "recovery_publication_evidence", "Preliminary recovery cannot contain open-PR publication evidence.")
             require(evidence_records[0]["sha256"] == receipt["publication"]["evidence_sha256"], "recovery_publication_evidence", "Recovered open-PR evidence differs from the final receipt.")
+        handoff = receipt.get("handoff")
+        reconstruction_records = [item for item in metadata.get("artifacts", []) if item.get("artifact") == "coordinator_reconstruction_record"]
+        if handoff is None:
+            require(not reconstruction_records, "unexpected_reconstruction_record", "Ordinary worker recovery cannot contain a coordinator reconstruction record.")
+        else:
+            require(len(reconstruction_records) == 1, "reconstruction_record_missing", "Reconstructed handoff recovery must contain exactly one coordinator reconstruction record.")
+            record_entry = reconstruction_records[0]
+            try:
+                record = json.loads(members[record_entry["path"]].decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise PreparationError("reconstruction_record_invalid", "Coordinator reconstruction record is not valid UTF-8 JSON.") from exc
+            validate_reconstruction_record(record, receipt)
+            require(record["record_sha256"] == handoff["record_sha256"], "reconstruction_record_mismatch", "Receipt and recovery bind different coordinator reconstruction records.")
     return {"metadata": metadata, "members": members, "archive_sha256": sha256_file(archive)}
 
 
@@ -1796,11 +1817,93 @@ def make_receipt(
     return receipt
 
 
+def validate_optional_declared_sha256(value: Any, field: str) -> None:
+    require(value is None or isinstance(value, str), "reconstruction_original_handoff", f"{field} must be null or a SHA-256 string.")
+    if value is not None:
+        require_sha256(value, field)
+
+
+def validate_reconstruction_record(record: dict[str, Any], receipt: dict[str, Any] | None = None) -> None:
+    exact_keys(
+        record,
+        {
+            "schema_version", "record_sha256", "mode", "reconstructed_at", "authority",
+            "evaluation_id", "candidate_id", "chunk_id", "public_artifact_source",
+            "original_worker_handoff", "assurances", "limitations",
+        },
+        "Coordinator reconstruction record",
+    )
+    require(record["schema_version"] == COORDINATOR_RECONSTRUCTION_VERSION, "reconstruction_record_schema", f"Expected {COORDINATOR_RECONSTRUCTION_VERSION}.")
+    validate_self_hash(record, "record_sha256", "Coordinator reconstruction record")
+    require(record["mode"] == COORDINATOR_RECONSTRUCTION_MODE and record["authority"] == "coordinator", "reconstruction_mode", "Coordinator reconstruction mode or authority is invalid.")
+    require_timestamp(record["reconstructed_at"], "reconstruction_record.reconstructed_at")
+    source = exact_keys(
+        record["public_artifact_source"],
+        {"candidate_project", "pull_request", "pull_request_url", "head_commit", "repository_path", "file_sha256", "blob_sha", "open_pr_evidence_sha256"},
+        "Coordinator reconstruction public source",
+    )
+    require_github_project(source["candidate_project"], "reconstruction_record.public_artifact_source.candidate_project")
+    require(isinstance(source["pull_request"], int) and not isinstance(source["pull_request"], bool) and source["pull_request"] > 0, "reconstruction_public_source", "Reconstruction pull-request number is invalid.")
+    require(source["pull_request_url"] == f"https://github.com/{source['candidate_project']}/pull/{source['pull_request']}", "reconstruction_public_source", "Reconstruction pull-request URL is inconsistent.")
+    require_commit(source["head_commit"], "reconstruction_record.public_artifact_source.head_commit")
+    safe_relative_path(source["repository_path"])
+    require_sha256(source["file_sha256"], "reconstruction_record.public_artifact_source.file_sha256")
+    require(isinstance(source["blob_sha"], str) and bool(re.fullmatch(r"[a-f0-9]{40}|[a-f0-9]{64}", source["blob_sha"])), "reconstruction_public_source", "Reconstruction Git blob identity is invalid.")
+    require_sha256(source["open_pr_evidence_sha256"], "reconstruction_record.public_artifact_source.open_pr_evidence_sha256")
+    original = exact_keys(record["original_worker_handoff"], {"materialization_status", "declared_receipt_sha256", "declared_recovery_sha256"}, "Original worker handoff declaration")
+    require(original["materialization_status"] == "agent_materialization_unavailable", "reconstruction_original_handoff", "Original worker handoff materialization status is invalid.")
+    validate_optional_declared_sha256(original["declared_receipt_sha256"], "reconstruction_record.original_worker_handoff.declared_receipt_sha256")
+    validate_optional_declared_sha256(original["declared_recovery_sha256"], "reconstruction_record.original_worker_handoff.declared_recovery_sha256")
+    require(
+        record["assurances"] == {
+            "publication_profile": PUBLIC_EVALUATION_ARTIFACTS,
+            "public_artifact_is_complete_canonical_audit": True,
+            "public_artifact_byte_identity_recomputed": True,
+            "frozen_identities_recomputed": True,
+            "exact_denominators_recomputed": True,
+            "public_safety_revalidated": True,
+            "fresh_github_evidence_required": True,
+        },
+        "reconstruction_assurances",
+        "Coordinator reconstruction assurances are incomplete.",
+    )
+    require(record["limitations"] == ["Original worker receipt and recovery ZIP bytes were not materialized or validated by the coordinator."], "reconstruction_limitations", "Coordinator reconstruction limitation must be explicit and exact.")
+    if receipt is not None:
+        publication = receipt["publication"]
+        require(record["evaluation_id"] == receipt["evaluation_id"] and record["candidate_id"] == receipt["candidate_id"] and record["chunk_id"] == receipt["chunk"]["chunk_id"], "reconstruction_receipt_identity", "Reconstruction record differs from receipt identity.")
+        require(source == {
+            "candidate_project": receipt["repositories"]["candidate_project"],
+            "pull_request": publication["pull_request"],
+            "pull_request_url": publication["pull_request_url"],
+            "head_commit": publication["head_commit"],
+            "repository_path": publication["changed_path"],
+            "file_sha256": publication["file_sha256"],
+            "blob_sha": publication["blob_sha"],
+            "open_pr_evidence_sha256": publication["evidence_sha256"],
+        }, "reconstruction_receipt_publication", "Reconstruction record does not bind the receipt's exact public proposal.")
+
+
+def validate_receipt_handoff(receipt: dict[str, Any]) -> None:
+    handoff = exact_keys(receipt["handoff"], {"mode", "record_sha256", "original_worker_handoff"}, "Reconstructed receipt handoff")
+    require(handoff["mode"] == COORDINATOR_RECONSTRUCTION_MODE, "reconstruction_mode", "Receipt reconstruction mode is invalid.")
+    require_sha256(handoff["record_sha256"], "receipt.handoff.record_sha256")
+    original = exact_keys(handoff["original_worker_handoff"], {"materialization_status", "declared_receipt_sha256", "declared_recovery_sha256"}, "Receipt original worker handoff")
+    require(original["materialization_status"] == "agent_materialization_unavailable", "reconstruction_original_handoff", "Receipt original handoff status is invalid.")
+    validate_optional_declared_sha256(original["declared_receipt_sha256"], "receipt.handoff.original_worker_handoff.declared_receipt_sha256")
+    validate_optional_declared_sha256(original["declared_recovery_sha256"], "receipt.handoff.original_worker_handoff.declared_recovery_sha256")
+
+
 def validate_receipt(receipt: dict[str, Any], audit_kind: str | None = None, publication_profile: str | None = None) -> str:
-    exact_keys(receipt, RECEIPT_REQUIRED, "Worker receipt")
+    reconstructed = "handoff" in receipt
+    exact_keys(receipt, RECEIPT_REQUIRED | ({"handoff"} if reconstructed else set()), "Worker receipt")
     inferred = "locator" if receipt.get("audit_kind") == "locator_audit" else "missing_access" if receipt.get("audit_kind") == "missing_access" else None
     require(inferred is not None and (audit_kind is None or inferred == audit_kind), "receipt_kind", "Worker receipt audit kind is invalid.")
-    require(receipt["schema_version"] == receipt_version(inferred), "receipt_schema", "Worker receipt schema version is invalid.")
+    expected_receipt_version = RECONSTRUCTED_MISSING_RECEIPT_VERSION if reconstructed else receipt_version(inferred)
+    require(receipt["schema_version"] == expected_receipt_version, "receipt_schema", "Worker receipt schema version is invalid.")
+    if reconstructed:
+        require(inferred == "missing_access", "reconstruction_kind", "Coordinator reconstruction is limited to benchmark-first missing-access audits.")
+        require(isinstance(receipt.get("receipt_id"), str) and bool(re.fullmatch(r"MACR-[A-F0-9]{12}", receipt["receipt_id"])), "reconstruction_receipt_id", "Coordinator-reconstructed receipt identity is invalid.")
+        validate_receipt_handoff(receipt)
     validate_self_hash(receipt, "receipt_sha256", "Worker receipt")
     require_timestamp(receipt["created_at"], "receipt.created_at")
     chunk_id = validate_chunk_id(receipt.get("chunk", {}).get("chunk_id"))
@@ -1835,6 +1938,8 @@ def validate_receipt(receipt: dict[str, Any], audit_kind: str | None = None, pub
             require_sha256(value, f"receipt.identities.{field}")
     require(receipt.get("source_reconnection") == receipt_source_reconnection(inferred), "receipt_reconnection", "Worker receipt source/candidate input gate is incomplete.")
     require(receipt.get("validation") == validation_gates(inferred), "receipt_validation", "Worker receipt validation gates differ from the strict profile.")
+    if reconstructed:
+        require(inferred_profile == PUBLIC_EVALUATION_ARTIFACTS and receipt.get("status") == "published_unmerged", "reconstruction_profile", "Coordinator reconstruction requires a final public_evaluation_artifacts receipt.")
     publication = receipt.get("publication")
     if receipt["status"] == "ready_for_pull_request":
         require(
@@ -2013,11 +2118,75 @@ def validate_publication_migration(
     require(normalization["semantic_fields_preserved"] is True and normalization["legacy_artifact_retained_in_recovery"] is True, "publication_migration_normalization", "Publication migration must preserve semantic fields and legacy recovery bytes.")
 
 
+def worker_recovery_filenames(audit_kind: str) -> tuple[str, str]:
+    """Return the canonical receipt and archive names for one audit worker."""
+    require(audit_kind in AUDIT_KINDS, "invalid_audit_kind", f"Unknown audit kind: {audit_kind}")
+    stem = "locator-audit-worker" if audit_kind == "locator" else "missing-access-worker"
+    return f"{stem}-receipt.json", f"{stem}-recovery.zip"
+
+
+def prepare_worker_recovery_paths(
+    args: argparse.Namespace,
+    audit_kind: str,
+) -> tuple[Path, Path, Path]:
+    """Derive and preflight all private worker outputs from one recovery root.
+
+    The deprecated explicit output options are accepted only when they repeat the
+    canonical derived paths. They never select a different destination.
+    """
+    recovery_root = Path(args.recovery_root).resolve()
+    receipt_name, archive_name = worker_recovery_filenames(audit_kind)
+    receipt_output = recovery_root / receipt_name
+    recovery_zip = recovery_root / archive_name
+
+    for option, expected, label in (
+        (getattr(args, "receipt_output", None), receipt_output, "Worker receipt"),
+        (getattr(args, "recovery_zip", None), recovery_zip, "Worker recovery ZIP"),
+    ):
+        if option is not None:
+            supplied = Path(option).resolve()
+            require(
+                supplied == expected,
+                "recovery_output_override_mismatch",
+                f"{label} is derived from --recovery-root and must be {expected}; remove the explicit override.",
+            )
+
+    require(
+        not recovery_root.exists() or recovery_root.is_dir(),
+        "recovery_root_invalid",
+        f"Worker recovery root is not a directory: {recovery_root}",
+    )
+    require(
+        not recovery_root.exists() or not any(recovery_root.iterdir()),
+        "recovery_root_not_isolated",
+        "Worker recovery root must be unique and empty.",
+    )
+    require_no_symlink_components(recovery_root.parent, "Worker recovery parent")
+    require(
+        path_is_within(receipt_output, recovery_root)
+        and path_is_within(recovery_zip, recovery_root),
+        "privacy_boundary_collision",
+        "Derived private recovery outputs must remain beneath the isolated recovery root.",
+    )
+    for path, label in (
+        (receipt_output, "Worker receipt"),
+        (recovery_zip, "Worker recovery ZIP"),
+    ):
+        require(not path.exists(), "output_exists", f"Refusing to overwrite {label}: {path}")
+        require_no_symlink_components(path.parent, f"{label} parent")
+    return recovery_root, recovery_zip, receipt_output
+
+
 def command_build_worker(args: argparse.Namespace, audit_kind: str) -> None:
     project = require_github_project(args.project, "project")
     chunk_id = validate_chunk_id(args.chunk_id)
     worker_branch = args.branch or branch_for(audit_kind, chunk_id)
     require(worker_branch == branch_for(audit_kind, chunk_id), "worker_branch_invalid", "Parallel candidate-audit branches use the deterministic kind/chunk branch exactly.")
+    public_output = Path(args.public_output).resolve()
+    recovery_root, recovery_zip, receipt_output = prepare_worker_recovery_paths(args, audit_kind)
+    require(not path_is_within(public_output, recovery_root), "privacy_boundary_collision", "Public candidate-repository report must be outside the private worker recovery root.")
+    require(not public_output.exists(), "output_exists", f"Refusing to overwrite Public report: {public_output}")
+    require_no_symlink_components(public_output.parent, "Public report parent")
     repository_state = validate_repository_state(Path(args.repository_state), project, args.base_branch, worker_branch)
     frozen = load_frozen_inputs(args, audit_kind)
     require(chunk_id in frozen["chunks"], "unknown_chunk", f"Chunk {chunk_id} is absent from the frozen manifest.")
@@ -2050,17 +2219,7 @@ def command_build_worker(args: argparse.Namespace, audit_kind: str) -> None:
         public_document = report
         public_payload = json_bytes(report)
     expected_public_path = public_path_for(audit_kind, chunk_id, publication_profile)
-    public_output = Path(args.public_output).resolve()
     require(public_output.as_posix().endswith("/" + expected_public_path) or public_output.as_posix() == expected_public_path, "public_output_path", f"Public output must end in {expected_public_path}.")
-    recovery_root = Path(args.recovery_root).resolve()
-    recovery_zip = Path(args.recovery_zip).resolve() if args.recovery_zip else recovery_root / (("locator-audit-worker" if audit_kind == "locator" else "missing-access-worker") + "-recovery.zip")
-    receipt_output = Path(args.receipt_output).resolve() if args.receipt_output else recovery_root / (("locator-audit-worker-receipt.json" if audit_kind == "locator" else "missing-access-worker-receipt.json"))
-    require(len({public_output, recovery_zip, receipt_output}) == 3, "worker_output_collision", "Public report, private receipt, and recovery ZIP outputs must be distinct.")
-    require(not path_is_within(public_output, recovery_root), "privacy_boundary_collision", "Public candidate-repository report must be outside the private worker recovery root.")
-    require(path_is_within(recovery_zip, recovery_root) and path_is_within(receipt_output, recovery_root), "privacy_boundary_collision", "Private recovery ZIP and worker receipt must remain beneath the isolated recovery root.")
-    for path, label in ((public_output, "Public report"), (receipt_output, "Worker receipt")):
-        require(not path.exists(), "output_exists", f"Refusing to overwrite {label}: {path}")
-        require_no_symlink_components(path.parent, f"{label} parent")
     recovery = build_recovery(recovery_root, recovery_zip, audit_kind, frozen, chunk_id, identities, audit_name, audit_payload, public_payload, ownership)
     receipt = make_receipt(
         audit_kind, frozen, chunk_id, project, args.base_branch, repository_state["base_commit"], worker_branch,
@@ -2237,6 +2396,193 @@ def command_bind_publication(args: argparse.Namespace) -> None:
     else:
         replace_bytes_atomic(output, binding_payload)
     emit({"ok": True, "operation": "bind-publication", "binding": str(output), "audit_kind": audit_kind, "chunk_id": chunk_id, "publication_profile": profile, "pull_request": evidence["pull_request"], "receipt_status": receipt["status"], "receipt_file_sha256": receipt_file_sha, "receipt_sha256": receipt["receipt_sha256"], "open_evidence_sha256": evidence_result["evidence_sha256"], "recovery_sha256": recovery["archive_sha256"], "recovery_root_explicit": True})
+
+
+def command_reconstruct_public_handoff(args: argparse.Namespace) -> None:
+    """Reconstruct a strict private handoff from a complete public missing-access audit."""
+    project = require_github_project(args.project, "project")
+    frozen = load_frozen_inputs(args, "missing_access")
+    publication_profile = frozen.get("publication_profile", publication_profile_for(frozen["state"]))
+    require(publication_profile == PUBLIC_EVALUATION_ARTIFACTS, "reconstruction_profile", "Coordinator reconstruction is available only under public_evaluation_artifacts.")
+    require(frozen["state"]["stages"]["locator_audit"]["status"] == "completed", "locator_stage_incomplete", "Missing-access handoff reconstruction requires complete canonical locator audits.")
+
+    public_path = Path(args.public_report).resolve()
+    evidence_path = Path(args.publication_evidence).resolve()
+    binding_output = Path(args.output).resolve()
+    recovery_root, recovery_zip, receipt_output = prepare_worker_recovery_paths(args, "missing_access")
+    require(
+        len({recovery_zip, receipt_output, binding_output, public_path, evidence_path}) == 5,
+        "reconstruction_output_collision",
+        "Reconstruction inputs and outputs must be distinct.",
+    )
+    require(
+        not path_is_within(public_path, recovery_root)
+        and not path_is_within(evidence_path, recovery_root),
+        "privacy_boundary_collision",
+        "GitHub-derived public audit and evidence inputs must remain outside the reconstructed recovery root.",
+    )
+    require(not binding_output.exists(), "output_exists", f"Refusing to overwrite Reconstructed binding: {binding_output}")
+    require_no_symlink_components(binding_output.parent, "Reconstructed binding parent")
+
+    audit, audit_payload, audit_sha = load_json_snapshot(public_path, "Public canonical missing-access audit")
+    chunk_id = validate_chunk_id(audit.get("chunk_id"))
+    require(chunk_id in frozen["chunks"], "unknown_chunk", f"Chunk {chunk_id} is absent from the frozen manifest.")
+    validate_public_artifact(audit, "missing_access", chunk_id, publication_profile)
+
+    locator_set = load_locator_audit_set(args.locator_audit or [], frozen)
+    workset = build_missing_worksets(frozen)[chunk_id]
+    require(audit.get("missing_access_ownership_sha256") == workset["workset_sha256"], "missing_access_ownership_mismatch", "Public missing-access audit is not bound to the deterministic workset.")
+    result = validate_missing_access_audit(
+        audit,
+        frozen,
+        workset,
+        chunk_id,
+        parallel=True,
+        locator_audit_set_sha256=locator_set["sha256"],
+    )
+    identities = {
+        **common_report_identities(frozen),
+        "missing_access_ownership_sha256": workset["workset_sha256"],
+        "locator_audit_set_sha256": locator_set["sha256"],
+    }
+    ownership = {"schema_version": "missing-access-ownership-plan-v1", **workset, "locator_audit_set_sha256": locator_set["sha256"]}
+
+    evidence, evidence_payload, evidence_file_sha = load_json_snapshot(evidence_path, "Current-attempt open-PR evidence")
+    worker_branch = branch_for("missing_access", chunk_id)
+    base_branch = require_nonempty_string(evidence.get("base_branch"), "publication_evidence.base_branch", 256)
+    worker_base_commit = require_commit(evidence.get("worker_base_commit"), "publication_evidence.worker_base_commit")
+    require(evidence.get("head_branch") == worker_branch, "publication_branch_mismatch", "GitHub evidence names a different missing-access worker branch.")
+
+    placeholder_recovery = {
+        "archive_sha256": "0" * 64,
+        "archive_byte_length": 0,
+        "metadata_sha256": "0" * 64,
+        "checkpoint_ref": "pending-coordinator-reconstruction",
+        "archive_path": Path("missing-access-worker-recovery.zip"),
+    }
+    preliminary = make_receipt(
+        "missing_access", frozen, chunk_id, project, base_branch, worker_base_commit, worker_branch,
+        identities, f"missing-access-audit.{chunk_id}.json", audit_payload, result,
+        placeholder_recovery, f"workers/missing-access-audit/{chunk_id}", audit_payload,
+    )
+    evidence_result = validate_publication_evidence(evidence, preliminary, audit_payload, merged=False)
+
+    selection = parse_selection(args.selection, project, "missing_access")
+    if selection["type"] == "branch":
+        require(selection["branch"] == worker_branch, "binding_selection", "Selected branch differs from the reconstructed proposal.")
+    else:
+        require(selection["pull_request"] == evidence["pull_request"] and selection["pull_request_url"] == evidence["pull_request_url"], "binding_selection", "Selected pull request differs from the reconstructed proposal.")
+
+    original_worker_handoff = {
+        "materialization_status": "agent_materialization_unavailable",
+        "declared_receipt_sha256": args.declared_worker_receipt_sha256,
+        "declared_recovery_sha256": args.declared_worker_recovery_sha256,
+    }
+    validate_optional_declared_sha256(original_worker_handoff["declared_receipt_sha256"], "declared_worker_receipt_sha256")
+    validate_optional_declared_sha256(original_worker_handoff["declared_recovery_sha256"], "declared_worker_recovery_sha256")
+    changed_file = evidence["changed_files"][0]
+    reconstruction_record = {
+        "schema_version": COORDINATOR_RECONSTRUCTION_VERSION,
+        "record_sha256": "",
+        "mode": COORDINATOR_RECONSTRUCTION_MODE,
+        "reconstructed_at": now(),
+        "authority": "coordinator",
+        "evaluation_id": frozen["state"]["evaluation_id"],
+        "candidate_id": frozen["candidate_id"],
+        "chunk_id": chunk_id,
+        "public_artifact_source": {
+            "candidate_project": project,
+            "pull_request": evidence["pull_request"],
+            "pull_request_url": evidence["pull_request_url"],
+            "head_commit": evidence["head_commit"],
+            "repository_path": changed_file["path"],
+            "file_sha256": audit_sha,
+            "blob_sha": str(changed_file["blob_sha"]).lower(),
+            "open_pr_evidence_sha256": evidence_file_sha,
+        },
+        "original_worker_handoff": original_worker_handoff,
+        "assurances": {
+            "publication_profile": PUBLIC_EVALUATION_ARTIFACTS,
+            "public_artifact_is_complete_canonical_audit": True,
+            "public_artifact_byte_identity_recomputed": True,
+            "frozen_identities_recomputed": True,
+            "exact_denominators_recomputed": True,
+            "public_safety_revalidated": True,
+            "fresh_github_evidence_required": True,
+        },
+        "limitations": ["Original worker receipt and recovery ZIP bytes were not materialized or validated by the coordinator."],
+    }
+    reconstruction_record["record_sha256"] = canonical_hash(reconstruction_record, "record_sha256")
+    validate_reconstruction_record(reconstruction_record)
+
+    recovery = build_recovery(
+        recovery_root, recovery_zip, "missing_access", frozen, chunk_id, identities,
+        f"missing-access-audit.{chunk_id}.json", audit_payload, audit_payload, ownership,
+        reconstruction_record=reconstruction_record,
+    )
+    receipt = make_receipt(
+        "missing_access", frozen, chunk_id, project, base_branch, worker_base_commit, worker_branch,
+        identities, f"missing-access-audit.{chunk_id}.json", audit_payload, result, recovery,
+        f"workers/missing-access-audit/{chunk_id}", audit_payload,
+    )
+    recovery = rebuild_recovery_with_publication_evidence(recovery_root, recovery_zip, validate_recovery_archive(recovery_root, recovery_zip), evidence_payload)
+    receipt["private_recovery"]["sha256"] = recovery["archive_sha256"]
+    receipt["private_recovery"]["byte_length"] = recovery_zip.stat().st_size
+    receipt["private_recovery"]["metadata_sha256"] = recovery["metadata"]["recovery_metadata_sha256"]
+    receipt["receipt_sha256"] = canonical_hash(receipt, "receipt_sha256")
+    receipt = finalize_publication_receipt(receipt, evidence, evidence_file_sha)
+    receipt["schema_version"] = RECONSTRUCTED_MISSING_RECEIPT_VERSION
+    receipt["receipt_id"] = stable_identifier("MACR", {
+        "evaluation_id": receipt["evaluation_id"],
+        "candidate_id": receipt["candidate_id"],
+        "chunk_id": chunk_id,
+        "public_artifact_sha256": audit_sha,
+        "open_pr_evidence_sha256": evidence_file_sha,
+        "mode": COORDINATOR_RECONSTRUCTION_MODE,
+    })
+    receipt["handoff"] = {
+        "mode": COORDINATOR_RECONSTRUCTION_MODE,
+        "record_sha256": reconstruction_record["record_sha256"],
+        "original_worker_handoff": original_worker_handoff,
+    }
+    receipt["limitations"] = [
+        "Pull request is open and unmerged; canonical integration remains coordinator-only.",
+        "Original worker receipt and recovery ZIP bytes were unavailable; this handoff was reconstructed from the complete public canonical audit and fresh GitHub evidence.",
+    ]
+    receipt["receipt_sha256"] = canonical_hash(receipt, "receipt_sha256")
+    validate_receipt(receipt, "missing_access", publication_profile)
+    write_json_atomic(receipt_output, receipt)
+    receipt_file_sha = sha256_file(receipt_output)
+    recovery = validate_recovery_archive(recovery_root, recovery_zip, receipt)
+
+    binding = {
+        "schema_version": BINDING_VERSION,
+        "audit_kind": "missing_access",
+        "candidate_project": project,
+        "selection": selection,
+        "receipt": {"path": str(receipt_output), "sha256": receipt_file_sha},
+        "recovery": {"root": str(recovery_root), "archive_path": str(recovery_zip), "archive_sha256": recovery["archive_sha256"]},
+        "public_report": {"path": str(public_path), "sha256": audit_sha},
+        "open_pr_evidence": {"path": str(evidence_path), "sha256": evidence_file_sha},
+    }
+    replace_bytes_atomic(binding_output, json_bytes(binding))
+    emit({
+        "ok": True,
+        "operation": "reconstruct-public-handoff",
+        "audit_kind": "missing_access",
+        "chunk_id": chunk_id,
+        "publication_profile": publication_profile,
+        "handoff_mode": COORDINATOR_RECONSTRUCTION_MODE,
+        "pull_request": evidence["pull_request"],
+        "binding": str(binding_output),
+        "receipt": str(receipt_output),
+        "receipt_sha256": receipt["receipt_sha256"],
+        "recovery_archive": str(recovery_zip),
+        "recovery_sha256": recovery["archive_sha256"],
+        "public_file_sha256": audit_sha,
+        "open_evidence_sha256": evidence_result["evidence_sha256"],
+        "original_worker_handoff_materialized": False,
+    })
 
 
 def resolve_bound_path(binding_path: Path, value: Any, field: str) -> Path:
@@ -2772,9 +3118,9 @@ def add_worker_arguments(parser: argparse.ArgumentParser, audit_kind: str) -> No
     parser.add_argument("--repository-state", required=True, help="Fresh direct GitHub repository-state evidence JSON.")
     parser.add_argument("--base-branch", default="main", help="Expected candidate repository base branch (default: main).")
     parser.add_argument("--branch", help="Worker branch; if supplied it must equal the deterministic default.")
-    parser.add_argument("--recovery-root", required=True, help="Unique empty private candidate/chunk recovery root.")
-    parser.add_argument("--recovery-zip", help="Private recovery ZIP output (default: beneath recovery root).")
-    parser.add_argument("--receipt-output", help="Private receipt output (default: beneath recovery root).")
+    parser.add_argument("--recovery-root", required=True, help="Unique empty local private root; canonical receipt and recovery-ZIP names are derived beneath it.")
+    parser.add_argument("--recovery-zip", help=argparse.SUPPRESS)
+    parser.add_argument("--receipt-output", help=argparse.SUPPRESS)
     parser.add_argument("--public-output", required=True, help="Exact allowlisted aggregate report output in candidate repository checkout.")
     if audit_kind == "locator":
         parser.add_argument("--locator-packet", required=True, help="Exact locator-only packet for this chunk.")
@@ -2829,6 +3175,24 @@ def build_parser() -> argparse.ArgumentParser:
     bind.add_argument("--selection", help="Explicit PR URL or worker branch (default: PR URL in evidence).")
     bind.add_argument("--output", required=True, help="Private candidate-audit-integration-binding-v1 output bound to the finalized receipt and recovery ZIP.")
     bind.set_defaults(handler=command_bind_publication)
+
+    reconstruct = subparsers.add_parser(
+        "reconstruct-public-handoff",
+        help="Reconstruct a private missing-access receipt/recovery/binding from a complete public canonical audit when the original worker handoff cannot be materialized.",
+    )
+    add_frozen_arguments(reconstruct)
+    reconstruct.add_argument("--project", required=True, help="Exact public candidate GitHub owner/repository.")
+    reconstruct.add_argument("--selection", required=True, help="Explicit PR URL or missing-access worker branch.")
+    reconstruct.add_argument("--public-report", required=True, help="Exact public canonical missing-access audit bytes downloaded from the selected PR.")
+    reconstruct.add_argument("--publication-evidence", required=True, help="Fresh direct GitHub open-PR evidence for the selected proposal.")
+    reconstruct.add_argument("--locator-audit", action="append", required=True, help="Canonical locator audit; repeat once for every frozen chunk.")
+    reconstruct.add_argument("--recovery-root", required=True, help="Unique empty local private root; canonical reconstructed receipt and ZIP names are derived beneath it.")
+    reconstruct.add_argument("--recovery-zip", help=argparse.SUPPRESS)
+    reconstruct.add_argument("--receipt-output", help=argparse.SUPPRESS)
+    reconstruct.add_argument("--output", required=True, help="Private candidate-audit-integration-binding-v1 output.")
+    reconstruct.add_argument("--declared-worker-receipt-sha256", help="Optional worker-declared receipt hash retained as unmaterialized provenance.")
+    reconstruct.add_argument("--declared-worker-recovery-sha256", help="Optional worker-declared recovery-ZIP hash retained as unmaterialized provenance.")
+    reconstruct.set_defaults(handler=command_reconstruct_public_handoff)
 
     preflight = subparsers.add_parser("preflight-batch", help="Transactionally validate an explicit selected batch without mutation or sweeping.")
     add_batch_arguments(preflight)

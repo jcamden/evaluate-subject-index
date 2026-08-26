@@ -63,6 +63,8 @@ Both public modes continue to exclude source PDFs, PDF chunks, extracted source 
 
 The worker preserves a private recovery copy even when the canonical audit is public. In public mode, the receipt must bind the public artifact hash to the private audit hash exactly; the coordinator recomputes substantive validation from frozen inputs and requires byte identity before integration.
 
+For missing-access audits only, this byte identity also permits a guarded recovery from an agent-side storage-transfer failure. When the original worker receipt or ZIP cannot be materialized, `reconstruct-public-handoff` may treat the exact public canonical audit as the audit source, rerun every frozen-identity, ownership, denominator, schema, safety, Git blob, and proposal gate, and generate a new private coordinator-labeled handoff. The record must explicitly disclose that the original worker bytes were unavailable. This is not permitted in `aggregate_only` and does not relax preflight or integration.
+
 ## Downstream public artifacts
 
 Under `public_evaluation_artifacts`, register the canonical locator and missing-access audits as `public`. The item inventory, structure audit, item assessments, final evaluation result, and web-report JSON may also be published after their own schema and safety validation. Keep normalized candidate layout evidence, source evidence stores, receipts, GitHub observation files, recovery data, and restricted documents private or restricted.

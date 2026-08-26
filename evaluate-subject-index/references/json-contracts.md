@@ -42,12 +42,13 @@ The schemas in `schemas/` are machine-readable contracts. Each schema controls e
 | Public locator worker report | `locator-audit-worker-report.schema.json` | Strict aggregate projection used by `aggregate_only` |
 | Locator integration batch | `locator-audit-batch-integration.schema.json` | Explicit proposals, accepted private artifacts, provenance, conflicts, and stage-completion accounting |
 | Missing-access batch | `missing-access-audit.schema.json` | Benchmark-to-index concept coverage and locator recall, with source-grounded benchmark lineage |
-| Parallel missing-access worker receipt | `parallel-missing-access-worker-receipt.schema.json` | V2 private frozen dependencies, benchmark-first input mode, subject/task denominators, public binding, recovery inventory, and handoff |
+| Parallel missing-access worker receipt | `parallel-missing-access-worker-receipt.schema.json` | V2 worker receipts plus the coordinator-reconstructed public-artifact fallback, frozen dependencies, benchmark-first input mode, exact denominators, public binding, and recovery inventory |
 | Public missing-access worker report | `missing-access-worker-report.schema.json` | V2 strict aggregate projection used by `aggregate_only` |
 | Missing-access integration batch | `missing-access-batch-integration.schema.json` | Explicit proposals, locator dependencies, accepted private artifacts, provenance, and completion accounting |
 | Candidate-audit open-PR evidence | `candidate-audit-open-pr-evidence.schema.json` | Current-attempt GitHub-API observation of one open exact-allowlist worker pull request |
 | Candidate-audit merge evidence | `candidate-audit-merge-evidence.schema.json` | Post-merge GitHub-API observation that the selected pull request merged unchanged |
 | Candidate-audit recovery metadata | `candidate-audit-worker-recovery.schema.json` | Deterministic private ZIP inventory, artifact hashes, and restricted exclusions |
+| Candidate-audit coordinator reconstruction | `candidate-audit-coordinator-reconstruction.schema.json` | Self-hashed private provenance for a missing-access handoff reconstructed from complete public canonical audit bytes |
 | Candidate-audit integration binding | `candidate-audit-integration-binding.schema.json` | One-to-one coordinator-private proposal, receipt, recovery-root, report, and evidence binding |
 | Candidate-audit repository state | `candidate-audit-repository-state.schema.json` | Immutable base branch/commit and existing-branch collision evidence for worker setup |
 | Structure audit | `structure-audit.schema.json` | Global hierarchy, navigation, cross-reference, mechanics, and density evidence |

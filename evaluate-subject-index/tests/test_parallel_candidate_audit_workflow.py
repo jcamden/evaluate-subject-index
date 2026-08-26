@@ -976,6 +976,84 @@ class MissingAccessWorkerContractTests(ErrorAssertionsMixin, unittest.TestCase):
                 )
 
 
+class WorkerRecoveryPathContractTests(ErrorAssertionsMixin, unittest.TestCase):
+    def worker_args(self, root: Path, **overrides: Any) -> argparse.Namespace:
+        values = {
+            "project": "example/synthetic-candidate",
+            "chunk_id": "CHUNK-001",
+            "branch": None,
+            "public_output": str(root / "repository" / "candidate" / "missing-access-audits" / "missing-access-audit.CHUNK-001.v1.json"),
+            "recovery_root": str(root / "local-worker" / "recovery"),
+            "recovery_zip": None,
+            "receipt_output": None,
+        }
+        values.update(overrides)
+        return argparse.Namespace(**values)
+
+    def test_one_root_derives_both_canonical_private_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            args = self.worker_args(Path(directory))
+            root, archive, receipt = parallel.prepare_worker_recovery_paths(
+                args, "missing_access"
+            )
+            self.assertEqual(root / "missing-access-worker-recovery.zip", archive)
+            self.assertEqual(root / "missing-access-worker-receipt.json", receipt)
+
+    def test_legacy_override_cannot_select_an_outside_recovery_zip(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            args = self.worker_args(base, recovery_zip=str(base / "outside.zip"))
+            error = self.assert_error(
+                "recovery_output_override_mismatch",
+                parallel.prepare_worker_recovery_paths,
+                args,
+                "missing_access",
+            )
+            self.assertIn("remove the explicit override", str(error))
+
+    def test_recovery_boundary_failure_precedes_frozen_input_loading(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            recovery_root = base / "local-worker" / "recovery"
+            args = self.worker_args(
+                base,
+                public_output=str(recovery_root / "public.json"),
+            )
+            with mock.patch.object(parallel, "load_frozen_inputs") as load_frozen:
+                self.assert_error(
+                    "privacy_boundary_collision",
+                    parallel.command_build_worker,
+                    args,
+                    "missing_access",
+                )
+                load_frozen.assert_not_called()
+
+    def test_nonempty_recovery_root_fails_before_frozen_input_loading(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            args = self.worker_args(base)
+            recovery_root = Path(args.recovery_root)
+            recovery_root.mkdir(parents=True)
+            (recovery_root / "stale.json").write_text("{}", encoding="utf-8")
+            with mock.patch.object(parallel, "load_frozen_inputs") as load_frozen:
+                self.assert_error(
+                    "recovery_root_not_isolated",
+                    parallel.command_build_worker,
+                    args,
+                    "missing_access",
+                )
+                load_frozen.assert_not_called()
+
+    def test_deprecated_output_options_are_hidden_from_worker_help(self) -> None:
+        parser = parallel.build_parser()
+        choices = parser._subparsers._group_actions[0].choices
+        for command in ("build-locator-worker", "build-missing-access-worker"):
+            help_text = choices[command].format_help()
+            self.assertNotIn("--recovery-zip", help_text)
+            self.assertNotIn("--receipt-output", help_text)
+            self.assertIn("--recovery-root", help_text)
+
+
 class PublicProjectionAndRepositoryTests(ErrorAssertionsMixin, unittest.TestCase):
     def setUp(self) -> None:
         self.frozen = frozen_fixture()
@@ -1475,6 +1553,84 @@ class RecoveryAndReceiptTests(ErrorAssertionsMixin, unittest.TestCase):
             )
             binding = json.loads(binding_path.read_text(encoding="utf-8"))
             self.assertEqual(parallel.sha256_file(receipt_path), binding["receipt"]["sha256"])
+
+    def test_reconstruct_public_handoff_creates_preflight_compatible_private_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            directory_path = Path(directory)
+            frozen = frozen_fixture()
+            frozen["state"]["configuration"] = {"publication_profile": "public_evaluation_artifacts"}
+            frozen["publication_profile"] = "public_evaluation_artifacts"
+            frozen["root"] = directory_path / "canonical"
+            frozen["state"]["candidate"] = {"normalized_path": "candidate/synthetic-candidate/candidate-index.v2.json"}
+            workset = parallel.build_missing_worksets(frozen)["CHUNK-001"]
+            audit = missing_audit(frozen, "CHUNK-001")
+            audit["provenance"]["locator_audit_set_sha256"] = "d" * 64
+            audit_payload = parallel.json_bytes(audit)
+            public_path = directory_path / "missing-access-public.json"
+            public_path.write_bytes(audit_payload)
+
+            evidence = self.publication_evidence({}, audit_payload)
+            evidence.update({
+                "audit_kind": "missing_access",
+                "head_branch": "missing-access-audit/chunk-001",
+            })
+            evidence["changed_files"][0]["path"] = "candidate/missing-access-audits/missing-access-audit.CHUNK-001.v1.json"
+            evidence_path = directory_path / "open-pr-evidence.json"
+            evidence_path.write_bytes(parallel.json_bytes(evidence))
+            recovery_root = directory_path / "reconstructed" / "CHUNK-001"
+            binding_path = directory_path / "binding.json"
+            args = argparse.Namespace(
+                project="example/synthetic-candidate",
+                selection="https://github.com/example/synthetic-candidate/pull/17",
+                public_report=str(public_path),
+                publication_evidence=str(evidence_path),
+                locator_audit=["canonical-locator-audit.json"],
+                recovery_root=str(recovery_root),
+                recovery_zip=None,
+                receipt_output=None,
+                output=str(binding_path),
+                declared_worker_receipt_sha256="e" * 64,
+                declared_worker_recovery_sha256="f" * 64,
+            )
+            with mock.patch.object(parallel, "load_frozen_inputs", return_value=frozen), mock.patch.object(
+                parallel, "load_locator_audit_set", return_value={"sha256": "d" * 64}
+            ), contextlib.redirect_stdout(sys.stderr), self.assertRaises(SystemExit) as emitted:
+                parallel.command_reconstruct_public_handoff(args)
+            self.assertEqual(0, emitted.exception.code)
+
+            receipt_path = recovery_root / "missing-access-worker-receipt.json"
+            archive_path = recovery_root / "missing-access-worker-recovery.zip"
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            self.assertEqual(parallel.RECONSTRUCTED_MISSING_RECEIPT_VERSION, receipt["schema_version"])
+            self.assertEqual(parallel.COORDINATOR_RECONSTRUCTION_MODE, receipt["handoff"]["mode"])
+            self.assertEqual("e" * 64, receipt["handoff"]["original_worker_handoff"]["declared_receipt_sha256"])
+            parallel.validate_receipt(receipt, "missing_access", "public_evaluation_artifacts")
+            recovery = parallel.validate_recovery_archive(recovery_root, archive_path, receipt)
+            reconstruction_records = [
+                item for item in recovery["metadata"]["artifacts"]
+                if item["artifact"] == "coordinator_reconstruction_record"
+            ]
+            self.assertEqual(1, len(reconstruction_records))
+
+            selection = parallel.parse_selection(args.selection, args.project, "missing_access")
+            loaded = parallel.load_worker_binding(
+                binding_path,
+                selection,
+                args.project,
+                "missing_access",
+                frozen,
+                {
+                    "locator_set": {"sha256": "d" * 64},
+                    "worksets": {"CHUNK-001": workset},
+                },
+            )
+            self.assertEqual("CHUNK-001", loaded["chunk_id"])
+            self.assertEqual(audit_payload, loaded["audit_payload"])
+
+    def test_reconstruct_public_handoff_rejects_aggregate_only_profile(self) -> None:
+        args = argparse.Namespace(project="example/synthetic-candidate")
+        with mock.patch.object(parallel, "load_frozen_inputs", return_value=frozen_fixture()):
+            self.assert_error("reconstruction_profile", parallel.command_reconstruct_public_handoff, args)
 
     def test_coordinator_rejects_preliminary_receipt_binding(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

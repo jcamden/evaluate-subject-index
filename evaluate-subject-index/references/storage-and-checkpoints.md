@@ -112,6 +112,13 @@ Every ZIP contains `bundle-metadata.json` with the profile, evaluation ID, state
 
 Never let parallel workers replace the canonical Library state, manifest, or cumulative checkpoint. Give each worker a unique recovery root such as `workers/CHUNK-003/` beneath the study folder. A worker may retain its isolated state, manifest, receipt, artifact, and portable recovery bundle there.
 
+Treat local construction and durable persistence as two explicit phases:
+
+1. Materialize a unique empty local candidate/chunk directory and pass only that directory as `--recovery-root` to the candidate-audit worker builder. The helper derives the canonical receipt and recovery-ZIP names beneath it; do not select those paths separately.
+2. Complete local `bind-publication` and `validate-worker`, then copy or replace the exact final canonical receipt and receipt-bound ZIP in the corresponding durable Library worker folder.
+
+The builder preflights the local root before frozen input loading or substantive audit validation. It rejects a non-directory or nonempty root, symlinked boundary, public output inside the private root, or legacy output override that differs from the canonical derived path. A remote Library path or item identifier is a persistence destination, not a local filesystem path for the builder. When Library has been materialized locally, use only the exact isolated local directory and still perform the normal containment checks.
+
 Worker recovery files are not canonical and do not belong in the benchmark pull request. The branch publishes only the unique chapter artifact. After accepted pull requests are merged, the coordinating run materializes those artifacts into the canonical study, registers their hashes, validates the complete run, and creates one new cumulative checkpoint.
 
 A Git branch and Library worker recovery copy serve different purposes: the branch is the reviewable merge proposal; the Library copy preserves work if branch publication is blocked. Neither supersedes canonical integration.

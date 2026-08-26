@@ -10,8 +10,8 @@
     "public_projection", "validation", "publication", "limitations"
   ],
   "properties": {
-    "schema_version": {"const": "parallel-missing-access-worker-receipt-v2"},
-    "receipt_id": {"type": "string", "pattern": "^MAW-[A-F0-9]{12}$"},
+    "schema_version": {"enum": ["parallel-missing-access-worker-receipt-v2", "parallel-missing-access-coordinator-reconstructed-receipt-v1"]},
+    "receipt_id": {"type": "string", "pattern": "^(?:MAW|MACR)-[A-F0-9]{12}$"},
     "receipt_sha256": {"$ref": "#/$defs/sha256"},
     "created_at": {"type": "string", "format": "date-time"},
     "status": {"enum": ["ready_for_pull_request", "published_unmerged", "publication_blocked"]},
@@ -72,7 +72,17 @@
       "additionalProperties": false
     },
     "publication": {"$ref": "#/$defs/publication"},
-    "limitations": {"type": "array", "items": {"type": "string", "maxLength": 500}}
+    "limitations": {"type": "array", "items": {"type": "string", "maxLength": 500}},
+    "handoff": {
+      "type": "object",
+      "required": ["mode", "record_sha256", "original_worker_handoff"],
+      "properties": {
+        "mode": {"const": "coordinator_reconstructed_from_public_artifact"},
+        "record_sha256": {"$ref": "#/$defs/sha256"},
+        "original_worker_handoff": {"$ref": "#/$defs/originalWorkerHandoff"}
+      },
+      "additionalProperties": false
+    }
   },
   "$defs": {
     "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
@@ -209,7 +219,35 @@
           "additionalProperties": false
         }
       ]
+    },
+    "originalWorkerHandoff": {
+      "type": "object",
+      "required": ["materialization_status", "declared_receipt_sha256", "declared_recovery_sha256"],
+      "properties": {
+        "materialization_status": {"const": "agent_materialization_unavailable"},
+        "declared_receipt_sha256": {"oneOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+        "declared_recovery_sha256": {"oneOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]}
+      },
+      "additionalProperties": false
     }
   },
+  "allOf": [
+    {
+      "if": {"properties": {"schema_version": {"const": "parallel-missing-access-coordinator-reconstructed-receipt-v1"}}, "required": ["schema_version"]},
+      "then": {
+        "required": ["handoff"],
+        "properties": {
+          "receipt_id": {"type": "string", "pattern": "^MACR-[A-F0-9]{12}$"},
+          "status": {"const": "published_unmerged"},
+          "repositories": {
+            "properties": {
+              "public_report_path": {"type": "string", "pattern": "^candidate/missing-access-audits/missing-access-audit\\.CHUNK-[A-Za-z0-9._-]+\\.v1\\.json$"}
+            }
+          }
+        }
+      },
+      "else": {"not": {"required": ["handoff"]}}
+    }
+  ],
   "additionalProperties": false
 }

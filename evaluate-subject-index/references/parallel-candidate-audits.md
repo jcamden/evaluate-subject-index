@@ -69,6 +69,10 @@ One worker owns one candidate, one audit type, and one exact chunk. Require:
 
 Import the compatible validated checkpoint into isolation. Validate every input before substantive work. Never use conversational memory, a filename, a Library identifier, or a candidate ID in place of a content hash and explicit artifact binding.
 
+The deterministic worker builder accepts one unique empty local `--recovery-root` and derives both canonical private outputs beneath it: the kind-specific receipt and recovery ZIP. Explicit receipt or archive overrides cannot select another destination. Before loading frozen inputs or performing audit validation, preflight the resolved recovery root for directory type, emptiness, symlink components, output collisions, and containment, and verify that the public repository output is outside it. A failure at this gate is a resumable configuration failure; it does not invalidate already prepared substantive judgments.
+
+Keep the local builder root distinct from the durable Library recovery destination. Build, bind publication, and validate against the local root first. Only then copy or replace the final publication-bound receipt and receipt-bound ZIP in the chunk-specific Library folder. A Library path or identifier is never passed to the filesystem helper unless it has first been materialized as that exact isolated local directory.
+
 When the checkpoint is resolved in ChatGPT Library but authenticated agent-side byte transfer returns HTTP 502, stop before substantive work and request manual attachment of that exact checkpoint in the same worker conversation. Report `checkpoint_transfer_http_502`, the canonical filename and Library path, expected SHA-256, and expected byte length when known. Do not repeatedly retry the failing transfer, replace or re-upload the canonical Library item, infer state from conversational memory, or substitute individually gathered files. Resume only after the attachment matches the expected archive hash and every declared member hash and byte length, imports into the worker's isolated root, and the complete canonical evaluation validates. The attachment changes transport only; it does not change checkpoint identity or frozen inputs. Other transfer, authorization, not-found, schema, and integrity failures retain their normal blocker semantics.
 
 Workers may write only their isolated private state. They never update canonical:
@@ -365,8 +369,8 @@ Provide these operations:
 
 | Operation | Responsibility |
 | --- | --- |
-| `build-locator-worker` | Validate the locator packet/audit, compute exact counts and hashes, build recovery metadata and the profile-selected strict public artifact, and create a pending private receipt. |
-| `build-missing-access-worker` | Derive and hash deterministic subject/task ownership, validate the complete audit and denominators, build recovery metadata/profile-selected public artifact, and create a pending receipt. |
+| `build-locator-worker` | Preflight one local recovery root, derive canonical private outputs beneath it, validate the locator packet/audit, compute exact counts and hashes, build recovery metadata and the profile-selected strict public artifact, and create a pending private receipt. |
+| `build-missing-access-worker` | Preflight one local recovery root, derive canonical private outputs beneath it, derive and hash deterministic subject/task ownership, validate the complete audit and denominators, build recovery metadata/profile-selected public artifact, and create a pending receipt. |
 | `bind-publication` | Bind one open exact-allowlist pull-request observation, public blob/file hashes, branch/base commits, and proposal identity into a final `published_unmerged` private receipt; deterministically rebuild its recovery ZIP and write the integration binding against the final hashes. |
 | `reconstruct-public-handoff` | For a `public_evaluation_artifacts` missing-access proposal whose original private handoff cannot be materialized, revalidate the complete public canonical audit and create a coordinator-labeled private receipt, recovery ZIP, and normal integration binding. |
 | `validate-worker` | Recompute schemas, hashes, identities, denominators, public safety, receipt bindings, and recovery completeness without mutating canonical state. |
