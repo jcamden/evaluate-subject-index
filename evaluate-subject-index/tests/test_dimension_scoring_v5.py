@@ -2180,12 +2180,12 @@ class EndToEndCalculationTests(unittest.TestCase):
         precision = next(item for item in reliability["components"] if item["component_id"] == "strict_locator_precision")
         self.assertEqual("0.75", precision["normalized_value"])
 
-    def test_score_only_migration_preserves_input_and_gate_bytes(self) -> None:
+    def test_score_only_migration_preserves_input_and_non_dyadic_gate_bytes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             config = calculation_files(root, *base_documents())
             historical = root / "historical-v4.json"
-            historical_gates = [{"gate_id": "GATE-X", "status": "failed", "metrics": {"rate": 0.125}}]
+            historical_gates = [{"gate_id": "GATE-X", "status": "failed", "metrics": {"rate": 0.086737}}]
             historical_value = historical_v4_result(gates=historical_gates, input_root=root)
             historical_value["scorecard"][1]["rating"] = 3.3333
             historical_value["scorecard"][1]["points"] = 10
@@ -2274,6 +2274,31 @@ class EndToEndCalculationTests(unittest.TestCase):
             web_path = root / "web-report.v4.json"
             write_json(web_path, web_report)
             self.assertTrue(v5.validate_projection_artifacts(calculations, evaluation_path, web_path)["ok"])
+
+            mismatched_web_report = copy.deepcopy(web_report)
+            mismatched_web_report["migration_comparison"]["gate_comparison"]["previous_outcomes"][0]["metrics"]["rate"] = 0.086738
+            mismatched_web_path = root / "web-report.gate-mismatch.v4.json"
+            write_json(mismatched_web_path, mismatched_web_report)
+            mismatch = run_cli(
+                "dimension_score_cli.py",
+                "validate-projections",
+                "--calculation",
+                calculations,
+                "--evaluation-result",
+                evaluation_path,
+                "--web-report",
+                mismatched_web_path,
+                expect_ok=False,
+            )
+            self.assertEqual("migration_projection_mismatch", mismatch["error"]["code"])
+            self.assertEqual(
+                0.086737,
+                mismatch["error"]["details"]["expected"]["previous_outcomes"][0]["metrics"]["rate"],
+            )
+            self.assertEqual(
+                0.086738,
+                mismatch["error"]["details"]["actual"]["previous_outcomes"][0]["metrics"]["rate"],
+            )
             config_hash_before_receipt = digest(config)
             refused_receipt = run_cli(
                 "dimension_score_cli.py",
@@ -2317,6 +2342,7 @@ class EndToEndCalculationTests(unittest.TestCase):
             self.assertEqual(receipt["validation_sha256"], v5.canonical_hash(receipt, "validation_sha256"))
             self.assertEqual(digest(evaluation_path), receipt["artifacts"]["evaluation_result"]["sha256"])
             self.assertEqual(digest(web_path), receipt["artifacts"]["web_report"]["sha256"])
+            self.assertEqual(0.086737, receipt["gate_comparison"]["historical_outcomes"][0]["metrics"]["rate"])
             for artifact in receipt["artifacts"].values():
                 self.assertFalse(Path(artifact["path"]).is_absolute())
                 self.assertNotIn("\\", artifact["path"])
