@@ -20,7 +20,7 @@ Apply the same validated combined locator state and precedence used by the V6 re
 
 Eligible weak presence is limited to an inspectable, indexable `unsupported` assignment classified as `passing_mention`, `attribution_only`, `citation_only`, or `incidental_example`, with no validated `SCP`, `CMP`, `CON`, or `STA` disqualifier and no structured fabricated, nonexistent, or out-of-scope defect.
 
-The grade of 70 is intentionally retained for partial support even though its dimension-calculation credit is 0.50. The grade of 25 is likewise not the 0.25 precision numerator by another name; the two policies happen to distinguish the same combined state on different scales.
+The grade of 70 is intentionally retained for partial support even though its dimension-calculation credit is 0.50. It applies to every valid `partially_supported` judgment, including one paired with a weak-presence treatment class or a diagnostic `SCP`, `CMP`, `CON`, or `STA` code. Those fields explain the limitation and retain their non-reliability consequences; they do not override the judgment. The grade of 25 is likewise not the 0.25 precision numerator by another name; the two policies happen to distinguish the same `unsupported` weak-presence state on different scales.
 
 Every grade-25 popover must state plainly that:
 
@@ -29,7 +29,7 @@ Every grade-25 popover must state plainly that:
 - the locator remains editorially unjustified; and
 - limited diagnostic credit only distinguishes it from a wholly false destination.
 
-Each locator assessment also exposes its dimension reliability credit, credit tier, source-scope status, disqualifying codes, and disqualifying defect IDs. A weak grade never changes the underlying `unsupported` judgment, erases a defect, clears a gate, or earns selectivity credit.
+Each locator assessment also exposes its dimension reliability credit, credit tier, source-scope status, codes that actually disqualified `unsupported` weak presence, and disqualifying defect IDs. Diagnostic codes on positive judgments remain in the bound locator ledger rather than being mislabeled as credit disqualifiers. A weak grade never changes the underlying `unsupported` judgment, erases a defect, clears a gate, or earns selectivity credit.
 
 ## Complete-path grades
 

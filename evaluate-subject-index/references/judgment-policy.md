@@ -42,27 +42,27 @@ Record indexable source-word counts by approved chapter/unit for later density m
 The unit is one expanded locator assignment plus its complete heading path. Judge:
 
 - `supported`: the owned page substantively supports the exact path and required stance;
-- `partially_supported`: the topic is materially present, but the path is too broad, too narrow, vague, or only partly sustained;
+- `partially_supported`: the page contains genuine relevant evidence for the path, but supports it only partly; the treatment may be substantive, mixed, a passing mention, attribution-only, citation-only, or an incidental example;
 - `unsupported`: absent, incidental, attribution-only, example-only, wrong sense, wrong relation, or wrong stance;
 - `uninspectable`: the page or mapping cannot be evaluated reliably.
 
 Do not mark a child locator supported because only its parent appears. Do not mark an entire page range supported after checking only its first page. Report `uninspectable` outside the precision denominator unless the frozen uncertainty policy says otherwise.
 
-For compound or enumerated paths, require every named component on every assigned page. When components are supported only on different pages, use `unsupported` with `CMP`; do not average the components into partial support. Use `partially_supported` when the page materially supports the asserted subject but the path is genuinely too broad, narrow, vague, or qualified—not as a compromise for an improper union.
+For compound or enumerated paths, require every named component on every assigned page. When components are supported only on different pages, use `unsupported` with `CMP`; do not average the components into partial support. Use `partially_supported` when the page genuinely supports some of the asserted access claim but the path is too broad, narrow, vague, qualified, or only weakly sustained. A weak-presence treatment class may therefore coexist with `partially_supported`; the judgment records partial support for the path, while the treatment class records the kind of presence. Do not use partial support as a compromise for an improper union.
 
 Retain the four judgments as editorial facts; V6 does not create a new favorable judgment. The scored reliability layer deterministically combines judgment, treatment class, source-scope status, error codes, and structured defects:
 
 | Combined state | V6 reliability credit | Strict substantive credit |
 | --- | ---: | ---: |
 | `supported` with substantive or mixed treatment | 1.00 | 1 |
-| `partially_supported` with substantive or mixed treatment | 0.50 | 0 |
+| `partially_supported` with any genuine relevant treatment, including a weak-presence class | 0.50 | 0 |
 | indexable, inspectable `unsupported` plus `passing_mention`, `attribution_only`, `citation_only`, or `incidental_example` | 0.25 | 0 |
 | all other `unsupported` | 0.00 | 0 |
 | `uninspectable` | neutral bounds | excluded centrally |
 
-The 0.25 tier distinguishes a weakly relevant destination from a wholly false one; it does not make the locator substantively valid. A validated `SCP`, `CMP`, `CON`, or `STA` failure reduces otherwise eligible weak presence to zero. Known out-of-scope, fabricated, nonexistent, or nonindexable assignments also receive zero by precedence. Preserve every applicable defect and gate consequence.
+The 0.25 tier distinguishes an `unsupported` but weakly relevant destination from a wholly false one; it does not make the locator substantively valid. For an `unsupported` assignment, a validated `SCP`, `CMP`, `CON`, or `STA` failure reduces otherwise eligible weak presence to zero. Those codes remain diagnostic when the frozen judgment is `supported` or `partially_supported` and do not override its 1.00 or 0.50 reliability credit. Known out-of-scope, fabricated, nonexistent, or nonindexable assignments still receive zero by precedence. Preserve every applicable defect and gate consequence.
 
-Reject contradictory combined states rather than choosing a favorable credit. A positive judgment requires indexable scope and substantive or mixed treatment. An excluded destination is known adverse evidence, not `uninspectable`. An unavailable or ambiguous destination is `uninspectable`, not a measured failure. An `unsupported` assignment whose page materially treats the subject must carry the structured scope, compound, conceptual, stance, or locator-position reason that makes the asserted path fail.
+Reject contradictory combined states rather than choosing a favorable credit. A positive judgment requires indexable scope; `supported` requires substantive or mixed treatment, while `partially_supported` may use any genuine relevant treatment class. Diagnostic scope, compound, conceptual, or stance codes explain the judgment and retain their existing ownership, defect, cap, and gate consequences, but do not replace a positive judgment in reliability arithmetic. An excluded destination is known adverse evidence, not `uninspectable`. An unavailable or ambiguous destination is `uninspectable`, not a measured failure. An `unsupported` assignment whose page materially treats the subject must carry the structured scope, compound, conceptual, stance, or locator-position reason that makes the asserted path fail.
 
 V6 continues to publish strict substantive precision separately. Historical V5 calculations retain their original strict-only dimension arithmetic and must never be reinterpreted as V6.
 

@@ -17,6 +17,16 @@ WEAK_PRESENCE_CLASSES = frozenset(
     {"passing_mention", "attribution_only", "citation_only", "incidental_example"}
 )
 SUBSTANTIVE_TREATMENT_CLASSES = frozenset({"substantive", "mixed"})
+PARTIAL_TREATMENT_CLASSES = frozenset(
+    {
+        "substantive",
+        "mixed",
+        "passing_mention",
+        "attribution_only",
+        "citation_only",
+        "incidental_example",
+    }
+)
 ZERO_DISQUALIFYING_CODES = frozenset({"SCP", "CMP", "CON", "STA"})
 RELIABILITY_FAILURE_CODES = frozenset({"SCP", "CMP", "CON", "STA", "LOC_POS"})
 KNOWN_FALSE_DESTINATION_KINDS = frozenset(
@@ -127,8 +137,10 @@ def combined_state_errors(record: Mapping[str, Any]) -> list[str]:
     if judgment in {"supported", "partially_supported"}:
         if scope != "indexable":
             errors.append("inconsistent:positive_judgment_requires_indexable_scope")
-        if treatment not in SUBSTANTIVE_TREATMENT_CLASSES:
-            errors.append("inconsistent:positive_judgment_requires_material_treatment")
+    if judgment == "supported" and treatment not in SUBSTANTIVE_TREATMENT_CLASSES:
+        errors.append("inconsistent:supported_judgment_requires_material_treatment")
+    if judgment == "partially_supported" and treatment not in PARTIAL_TREATMENT_CLASSES:
+        errors.append("inconsistent:partial_judgment_requires_relevant_presence")
 
     if scope == "excluded" and judgment != "unsupported":
         errors.append("inconsistent:excluded_scope_requires_unsupported")
@@ -139,8 +151,6 @@ def combined_state_errors(record: Mapping[str, Any]) -> list[str]:
     if judgment == "uninspectable" and scope == "excluded":
         errors.append("inconsistent:known_excluded_scope_is_not_uninspectable")
 
-    if judgment in {"supported", "partially_supported"} and set(codes) & ZERO_DISQUALIFYING_CODES:
-        errors.append("inconsistent:positive_judgment_with_independent_zero_failure")
     if judgment == "unsupported" and treatment in SUBSTANTIVE_TREATMENT_CLASSES:
         if not set(codes) & RELIABILITY_FAILURE_CODES:
             errors.append("incomplete:unsupported_material_treatment_requires_failure_code")
@@ -185,21 +195,19 @@ def assign_locator_credit(
         for defect in matched_defects
         if defect.get("defect_kind") in KNOWN_FALSE_DESTINATION_KINDS
     ]
-    disqualifying_codes = sorted(
+    potential_disqualifying_codes = sorted(
         (codes | {str(defect.get("code")) for defect in structured_zero_defects})
         & ZERO_DISQUALIFYING_CODES
     )
-    disqualifying_defect_ids = sorted(
+    potential_disqualifying_defect_ids = sorted(
         str(defect.get("defect_id"))
         for defect in [*structured_zero_defects, *false_destination_defects]
         if defect.get("defect_id")
     )
-    disqualifying_defect_ids = sorted(set(disqualifying_defect_ids))
+    potential_disqualifying_defect_ids = sorted(set(potential_disqualifying_defect_ids))
 
-    if judgment in {"supported", "partially_supported"} and (
-        structured_zero_defects or false_destination_defects
-    ):
-        raise ValueError("inconsistent:positive_judgment_with_structured_zero_failure")
+    if judgment in {"supported", "partially_supported"} and false_destination_defects:
+        raise ValueError("inconsistent:positive_judgment_with_false_destination")
 
     if judgment == "uninspectable":
         return LocatorCreditAssignment(
@@ -211,8 +219,8 @@ def assign_locator_credit(
             None,
             None,
             False,
-            tuple(disqualifying_codes),
-            tuple(disqualifying_defect_ids),
+            tuple(potential_disqualifying_codes),
+            tuple(potential_disqualifying_defect_ids),
             "Evidence is uninspectable; the assignment is neutral and enters uncertainty bounds.",
         )
 
@@ -231,8 +239,8 @@ def assign_locator_credit(
             RELIABILITY_CREDIT["other_unsupported"],
             DIAGNOSTIC_GRADE["other_unsupported"],
             False,
-            tuple(sorted(set(disqualifying_codes) | ({"SCP"} if scope != "indexable" else set()))),
-            tuple(disqualifying_defect_ids),
+            tuple(sorted(set(potential_disqualifying_codes) | ({"SCP"} if scope != "indexable" else set()))),
+            tuple(potential_disqualifying_defect_ids),
             reason,
         )
 
@@ -241,8 +249,12 @@ def assign_locator_credit(
         rationale = "The page substantively supports the complete heading path."
     elif judgment == "partially_supported":
         tier = "partially_supported"
-        rationale = "The page materially supports the subject but only partially supports the complete path."
-    elif treatment in WEAK_PRESENCE_CLASSES and not disqualifying_codes:
+        rationale = (
+            "The page provides genuine relevant presence but only partially supports the complete path; "
+            "the frozen judgment controls reliability credit while treatment class and error codes retain "
+            "their diagnostic roles."
+        )
+    elif treatment in WEAK_PRESENCE_CLASSES and not potential_disqualifying_codes:
         tier = "eligible_weak_presence"
         rationale = (
             "The page contains the subject only weakly, incidentally, or as attribution/citation; "
@@ -264,7 +276,15 @@ def assign_locator_credit(
         RELIABILITY_CREDIT[tier],
         DIAGNOSTIC_GRADE[tier],
         tier == "eligible_weak_presence",
-        tuple(disqualifying_codes),
-        tuple(disqualifying_defect_ids),
+        (
+            tuple(potential_disqualifying_codes)
+            if tier == "other_unsupported"
+            else ()
+        ),
+        (
+            tuple(potential_disqualifying_defect_ids)
+            if tier == "other_unsupported"
+            else ()
+        ),
         rationale,
     )

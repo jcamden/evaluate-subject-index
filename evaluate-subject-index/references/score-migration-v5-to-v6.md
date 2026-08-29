@@ -16,6 +16,8 @@ The migration accepts the original hash-bound calculation input plus immutable V
 
 If a required field is missing or a combined state is contradictory, preflight returns one locator-specific `missing_requirements` record with the field/state errors. Migration stops. It does not read narrative rationales to guess a treatment class and does not reopen source pages automatically.
 
+Preflight treats the frozen judgment as authoritative for the 1.00 and 0.50 tiers. `partially_supported` may coexist with substantive, mixed, passing-mention, attribution-only, citation-only, or incidental-example treatment, and diagnostic `SCP`, `CMP`, `CON`, or `STA` codes do not override a positive reliability judgment. Those codes remain frozen evidence for their existing dimensions, defects, caps, gates, and disclosures. For `unsupported` evidence, treatment class and applicable disqualifiers continue to distinguish limited 0.25 weak-presence credit from zero.
+
 ```bash
 python evaluate-subject-index/scripts/dimension_score_v6_cli.py migration-preflight \
   --input /evaluation/dimension-calculation-input.json \

@@ -37,7 +37,7 @@ Each locator assignment must retain all of these structured fields before V6 sco
 - error codes and applicable structured defects; and
 - inspectability status.
 
-The calculator rejects contradictory or incomplete combinations. It does not infer a treatment class from prose and does not silently select the more favorable state. Examples of invalid combinations include a positive judgment on excluded or unavailable material, a `supported` judgment paired with an independent zero-requiring failure, and an `unsupported` substantive or mixed treatment with no structured reason for the failure.
+The calculator rejects contradictory or incomplete combinations. It does not infer a treatment class from prose and does not silently select the more favorable state. Examples of invalid combinations include a positive judgment on excluded or unavailable material, a `supported` judgment with non-material treatment, and an `unsupported` substantive or mixed treatment with no structured reason for the failure. A `partially_supported` judgment may pair with substantive, mixed, or weak-presence treatment, and diagnostic error codes do not override a positive judgment's reliability credit.
 
 ## Locator reliability credit
 
@@ -58,12 +58,12 @@ Apply this precedence:
 
 1. A known out-of-scope, nonexistent, fabricated, or nonindexable destination receives 0.
 2. A consistent `supported` assignment receives 1.
-3. A consistent `partially_supported` assignment receives 0.5.
+3. A consistent `partially_supported` assignment receives 0.5 regardless of whether its genuine relevant presence is substantive, mixed, passing, attribution-only, citation-only, or an incidental example.
 4. An `unsupported` assignment in one of the four weak-presence classes receives 0.25 unless a validated `SCP`, `CMP`, `CON`, or `STA` failure requires 0.
 5. Every remaining `unsupported` assignment receives 0.
 6. `uninspectable` remains neutral and enters the established lower/upper calculation.
 
-The per-locator provenance records the assigned tier, credit, rationale, any disqualifying code, and the ID of any structured fabricated, nonexistent, or out-of-scope defect.
+The per-locator provenance records the assigned tier, credit, rationale, any code that actually disqualified an `unsupported` weak-presence assignment, and the ID of any structured fabricated, nonexistent, or out-of-scope defect. Diagnostic codes attached to `supported` or `partially_supported` evidence remain in the frozen ledger and retain their other consequences without being mislabeled as reliability disqualifiers.
 
 ## Page-reference Reliability — 25 points
 
@@ -117,6 +117,7 @@ Assume each page is inspectable and indexable unless stated otherwise.
 | --- | --- | ---: | ---: | ---: | ---: |
 | A section explains the subject and supports the asserted relation and stance | `supported` + `substantive` | 1.00 | 1 | 100 | 1.00 |
 | The subject is materially discussed, but the delivered heading is broader than the page supports | `partially_supported` + `mixed` | 0.50 | 0 | 70 | 0.50 |
+| A passing mention, attribution, citation, or incidental example genuinely but only partly supports the asserted path | `partially_supported` + a weak-presence class | 0.50 | 0 | 70 | 0.00 |
 | The subject appears once as an incidental illustration | `unsupported` + `incidental_example` | 0.25 | 0 | 25 | 0.00 |
 | A person or work appears only in attribution or a citation | `unsupported` + `attribution_only` or `citation_only` | 0.25 | 0 | 25 | 0.00 |
 | The asserted subject is absent | `unsupported` + `absent` | 0.00 | 0 | 0 | excluded from ordinary selectivity ownership |
@@ -124,6 +125,8 @@ Assume each page is inspectable and indexable unless stated otherwise.
 | A compound path combines components that are not all supported on the page | `unsupported` + `CMP` | 0.00 | 0 | 0 | unchanged ownership |
 
 The diagnostic grade of 25 must explain that the page contains the subject only weakly, incidentally, or as attribution/citation; it is not substantive index treatment; the locator remains editorially unjustified; and the limited grade distinguishes it only from a wholly false destination.
+
+Judgment controls the 1.00 and 0.50 reliability tiers. Treatment class distinguishes 0.25 from 0 only after the frozen judgment is `unsupported`. Error codes explain the evidence state and continue to affect their owning dimensions, defects, caps, gates, and disclosures; they do not silently rewrite `supported` or `partially_supported` for reliability arithmetic.
 
 ## V5 versus V6
 
