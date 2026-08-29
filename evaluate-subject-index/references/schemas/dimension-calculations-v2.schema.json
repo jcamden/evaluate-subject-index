@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dimension-calculations-v2.schema.json",
+  "title": "Deterministic V6 subject-index dimension calculations",
+  "type": "object",
+  "required": ["schema_version", "calculation_id", "evaluation_id", "rubric_version", "calculation_profile", "audit_mode", "status", "evidence_identity", "input_artifacts", "diagnostic_item_grades", "publication_readiness_gates", "dimensions", "total_score", "maximum_score", "arithmetic_check", "calculation_sha256"],
+  "properties": {
+    "schema_version": {"const": "subject-index-dimension-calculations-v2"},
+    "calculation_id": {"type": "string", "pattern": "^CALC-[A-F0-9]{12}$"},
+    "evaluation_id": {"type": "string", "minLength": 1},
+    "rubric_version": {"const": "subject-index-rubric-v6"},
+    "calculation_profile": {"const": "subject-index-dimension-calculation-v2"},
+    "audit_mode": {"enum": ["full", "pilot"]},
+    "status": {"enum": ["scored", "not_scored_insufficient_evidence"]},
+    "evidence_identity": {"$ref": "dimension-calculations.schema.json#/properties/evidence_identity"},
+    "migration_context": {
+      "type": "object",
+      "required": ["from_rubric_version", "migration_schema_version", "migration_record_path", "historical_calculation_sha256", "historical_result_sha256", "historical_web_report_sha256", "historical_gate_outcomes_sha256", "gate_outcomes_action"],
+      "properties": {
+        "from_rubric_version": {"const": "subject-index-rubric-v5"},
+        "migration_schema_version": {"const": "subject-index-score-migration-v5-to-v6-v1"},
+        "migration_record_path": {"$ref": "score-migration.schema.json#/$defs/portablePath"},
+        "historical_calculation_sha256": {"$ref": "#/$defs/sha256"},
+        "historical_result_sha256": {"$ref": "#/$defs/sha256"},
+        "historical_web_report_sha256": {"$ref": "#/$defs/sha256"},
+        "historical_gate_outcomes_sha256": {"$ref": "#/$defs/sha256"},
+        "gate_outcomes_action": {"const": "preserve_identically"}
+      },
+      "additionalProperties": false
+    },
+    "input_artifacts": {"type": "array", "minItems": 3, "items": {"$ref": "dimension-calculations.schema.json#/$defs/inputArtifact"}, "uniqueItems": true},
+    "diagnostic_item_grades": {
+      "type": "object",
+      "required": ["used_in_dimension_arithmetic", "policy", "required_policy_version", "expected_source_subjects"],
+      "properties": {
+        "used_in_dimension_arithmetic": {"const": false},
+        "policy": {"const": "separate_non_additive_display_layer"},
+        "required_policy_version": {"const": "subject-index-item-grading-v2"},
+        "expected_source_subjects": {"$ref": "dimension-calculations.schema.json#/properties/diagnostic_item_grades/properties/expected_source_subjects"}
+      },
+      "additionalProperties": false
+    },
+    "publication_readiness_gates": {
+      "type": "object",
+      "required": ["used_in_score_arithmetic", "policy"],
+      "properties": {
+        "used_in_score_arithmetic": {"const": false},
+        "policy": {"const": "separate_claim_restrictions_unchanged_from_v5"}
+      },
+      "additionalProperties": false
+    },
+    "dimensions": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {"$ref": "#/$defs/dimension"},
+      "allOf": [
+        {"contains": {"properties": {"dimension_id": {"const": "meaningful_coverage"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "editorial_selectivity"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "conceptual_stance_fidelity"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "page_reference_reliability"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "findability_navigation"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "mechanics_consistency"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1}
+      ]
+    },
+    "total_score": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+    "maximum_score": {"const": 100},
+    "arithmetic_check": {"type": "boolean"},
+    "calculation_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "creditAssignment": {
+      "type": "object",
+      "required": ["locator_id", "judgment", "treatment_class", "source_scope_status", "credit_tier", "reliability_credit", "diagnostic_grade", "weak_presence_eligible", "disqualifying_codes", "disqualifying_defect_ids", "rationale"],
+      "properties": {
+        "locator_id": {"type": "string", "pattern": "^LOC-"},
+        "judgment": {"enum": ["supported", "partially_supported", "unsupported", "uninspectable", "not_measured"]},
+        "treatment_class": {"type": ["string", "null"]},
+        "source_scope_status": {"type": ["string", "null"]},
+        "credit_tier": {"enum": ["supported", "partially_supported", "eligible_weak_presence", "other_unsupported", "uninspectable", "not_measured"]},
+        "reliability_credit": {"enum": ["1", "0.5", "0.25", "0", null]},
+        "diagnostic_grade": {"enum": [100, 70, 25, 0, null]},
+        "weak_presence_eligible": {"type": "boolean"},
+        "disqualifying_codes": {"type": "array", "items": {"enum": ["SCP", "CMP", "CON", "STA"]}, "uniqueItems": true},
+        "disqualifying_defect_ids": {"type": "array", "items": {"type": "string", "pattern": "^DEFECT-"}, "uniqueItems": true},
+        "rationale": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "reliabilityProvenance": {
+      "type": "object",
+      "required": ["original_locator_denominator", "assessable_locator_denominator", "uninspectable_locator_count", "not_measured_locator_count", "counts_by_judgment", "counts_by_treatment_class", "counts_by_reliability_credit_tier", "locator_credit_assignments", "weighted_precision_numerator", "weighted_precision_denominator", "weighted_locator_precision", "strict_precision_numerator", "strict_precision_denominator", "strict_substantive_precision", "treatment_recall_numerator", "treatment_recall_denominator", "treatment_recall", "weighted_f1", "strict_precision_uncertainty", "weighted_precision_uncertainty", "treatment_recall_uncertainty", "pre_cap_rating", "cap_evaluations", "applied_cap", "uncertainty_lower", "uncertainty_upper", "rounding", "final_rating", "dimension_weight", "awarded_points"],
+      "properties": {
+        "original_locator_denominator": {"type": "integer", "minimum": 0},
+        "assessable_locator_denominator": {"type": "integer", "minimum": 0},
+        "uninspectable_locator_count": {"type": "integer", "minimum": 0},
+        "not_measured_locator_count": {"type": "integer", "minimum": 0},
+        "counts_by_judgment": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+        "counts_by_treatment_class": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+        "counts_by_reliability_credit_tier": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+        "locator_credit_assignments": {"type": "array", "items": {"$ref": "#/$defs/creditAssignment"}},
+        "weighted_precision_numerator": {"$ref": "dimension-calculations.schema.json#/$defs/decimal"},
+        "weighted_precision_denominator": {"type": "integer", "minimum": 0},
+        "weighted_locator_precision": {"$ref": "dimension-calculations.schema.json#/$defs/decimal"},
+        "strict_precision_numerator": {"type": "integer", "minimum": 0},
+        "strict_precision_denominator": {"type": "integer", "minimum": 0},
+        "strict_substantive_precision": {"$ref": "dimension-calculations.schema.json#/$defs/decimal"},
+        "treatment_recall_numerator": {"type": "integer", "minimum": 0},
+        "treatment_recall_denominator": {"type": "integer", "minimum": 0},
+        "treatment_recall": {"$ref": "dimension-calculations.schema.json#/$defs/decimal"},
+        "weighted_f1": {"$ref": "dimension-calculations.schema.json#/$defs/decimal"},
+        "strict_precision_uncertainty": {"$ref": "#/$defs/uncertaintyTriple"},
+        "weighted_precision_uncertainty": {"$ref": "#/$defs/uncertaintyTriple"},
+        "treatment_recall_uncertainty": {"$ref": "#/$defs/uncertaintyTriple"},
+        "pre_cap_rating": {"$ref": "dimension-calculations.schema.json#/$defs/decimal"},
+        "cap_evaluations": {"type": "array", "items": {"$ref": "dimension-calculations.schema.json#/$defs/cap"}},
+        "applied_cap": {"$ref": "dimension-calculations.schema.json#/$defs/appliedCap"},
+        "uncertainty_lower": {"$ref": "dimension-calculations.schema.json#/$defs/bound"},
+        "uncertainty_upper": {"$ref": "dimension-calculations.schema.json#/$defs/bound"},
+        "rounding": {"type": "object"},
+        "final_rating": {"type": ["number", "null"], "minimum": 0, "maximum": 5},
+        "dimension_weight": {"const": 25},
+        "awarded_points": {"type": ["number", "null"], "minimum": 0, "maximum": 25}
+      },
+      "additionalProperties": false
+    },
+    "uncertaintyTriple": {
+      "type": "object",
+      "required": ["lower", "central", "upper"],
+      "properties": {
+        "lower": {"$ref": "dimension-calculations.schema.json#/$defs/decimal"},
+        "central": {"$ref": "dimension-calculations.schema.json#/$defs/decimal"},
+        "upper": {"$ref": "dimension-calculations.schema.json#/$defs/decimal"}
+      },
+      "additionalProperties": false
+    },
+    "dimension": {
+      "type": "object",
+      "required": ["dimension_id", "status", "formula_id", "input_roles", "input_artifacts", "denominators", "raw_status_counts", "credit_mappings", "components", "base_rating", "unrounded_rating", "cap_evaluations", "applied_cap", "pre_cap_rating", "post_cap_rating", "missing_data_bounds", "rounding", "final_rating", "dimension_weight", "awarded_points", "warnings"],
+      "properties": {
+        "dimension_id": {"enum": ["meaningful_coverage", "editorial_selectivity", "conceptual_stance_fidelity", "page_reference_reliability", "findability_navigation", "mechanics_consistency"]},
+        "status": {"enum": ["scored", "not_scored_incomplete_full_audit", "not_scored_insufficient_evidence"]},
+        "formula_id": {"type": "string", "pattern": "^subject-index-dimension-calculation-v2:"},
+        "input_roles": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "input_artifacts": {"type": "array", "minItems": 1, "items": {"$ref": "dimension-calculations.schema.json#/$defs/inputArtifact"}, "uniqueItems": true},
+        "denominators": {"type": "object", "required": ["components"], "properties": {"components": {"type": "array", "minItems": 1, "items": {"$ref": "dimension-calculations.schema.json#/$defs/denominator"}}}, "additionalProperties": false},
+        "raw_status_counts": {"type": "object"},
+        "credit_mappings": {"type": "object"},
+        "components": {"type": "array", "minItems": 1, "items": {"$ref": "dimension-calculations.schema.json#/$defs/component"}},
+        "base_rating": {"$ref": "dimension-calculations.schema.json#/$defs/decimal"},
+        "unrounded_rating": {"$ref": "dimension-calculations.schema.json#/$defs/decimal"},
+        "cap_evaluations": {"type": "array", "minItems": 1, "items": {"$ref": "dimension-calculations.schema.json#/$defs/cap"}},
+        "applied_cap": {"$ref": "dimension-calculations.schema.json#/$defs/appliedCap"},
+        "pre_cap_rating": {"$ref": "dimension-calculations.schema.json#/$defs/decimal"},
+        "post_cap_rating": {"$ref": "dimension-calculations.schema.json#/$defs/decimal"},
+        "missing_data_bounds": {"type": "object", "required": ["lower", "upper", "stable_rating", "stable_cap_outcome"], "properties": {"lower": {"$ref": "dimension-calculations.schema.json#/$defs/bound"}, "upper": {"$ref": "dimension-calculations.schema.json#/$defs/bound"}, "stable_rating": {"type": "boolean"}, "stable_cap_outcome": {"type": "boolean"}}, "additionalProperties": false},
+        "rounding": {"type": "object", "required": ["mode", "quantum", "input", "output"], "properties": {"mode": {"const": "ROUND_HALF_UP"}, "quantum": {"type": "string"}, "input": {"$ref": "dimension-calculations.schema.json#/$defs/decimal"}, "output": {"type": ["number", "null"], "minimum": 0, "maximum": 5}}, "additionalProperties": false},
+        "final_rating": {"type": ["number", "null"], "minimum": 0, "maximum": 5},
+        "dimension_weight": {"enum": [5, 15, 20, 25]},
+        "awarded_points": {"type": ["number", "null"], "minimum": 0},
+        "warnings": {"type": "array", "items": {"type": "string"}},
+        "reliability_provenance": {"$ref": "#/$defs/reliabilityProvenance"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"dimension_id": {"const": "page_reference_reliability"}}, "required": ["dimension_id"]},
+          "then": {"required": ["reliability_provenance"]},
+          "else": {"not": {"required": ["reliability_provenance"]}}
+        }
+      ],
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
