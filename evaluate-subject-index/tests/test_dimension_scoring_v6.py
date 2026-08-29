@@ -862,17 +862,37 @@ class DiagnosticProjectionMigrationAndCompatibilityTests(unittest.TestCase):
             self.assertEqual(before, {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in frozen_paths})
             migration = json.loads(migration_path.read_text())
             self.assertEqual(v6.TOOL_VERSION, migration["tool"]["version"])
+            self.assertEqual(
+                {
+                    "path": ".",
+                    "resolution": "migration_record_relative_ancestor_v1",
+                },
+                migration["artifact_path_root"],
+            )
             for historical_tool_version in (
                 "dimension-score-cli-v6.0.0",
                 "dimension-score-cli-v6.0.1",
+                "dimension-score-cli-v6.0.2",
             ):
                 historical_migration = copy.deepcopy(migration)
                 historical_migration["tool"]["version"] = historical_tool_version
+                historical_migration.pop("artifact_path_root")
                 v5.validate_schema_document(
                     historical_migration,
                     "score-migration-v5-to-v6.schema.json",
                     f"Historical {historical_tool_version} migration",
                 )
+            missing_current_root = copy.deepcopy(migration)
+            missing_current_root.pop("artifact_path_root")
+            with self.assertRaises(v5.CalculationError) as missing_root:
+                v5.validate_schema_document(
+                    missing_current_root,
+                    "score-migration-v5-to-v6.schema.json",
+                    "Current migration without artifact root",
+                )
+            self.assertEqual(
+                "input_schema_validation_failed", missing_root.exception.code
+            )
             self.assertTrue(migration["precision_comparison"]["strict_precision_unchanged"])
             self.assertEqual(gates, migration["gate_preservation"]["preserved_outcomes"])
             self.assertFalse(migration["invalidation"]["upstream_evidence_invalidated"])
@@ -924,6 +944,177 @@ class DiagnosticProjectionMigrationAndCompatibilityTests(unittest.TestCase):
                 result["metrics"]["locator_precision"], web["precision_diagnostics"]
             )
             self.assertEqual("v5_to_v6", web["migration_comparison"]["status"])
+
+    def test_sibling_v5_v6_layout_is_rooted_contained_and_deterministic(self) -> None:
+        def migrate_layout(layout_root: Path) -> dict[str, bytes]:
+            historical_root = layout_root / "candidate" / "v5-migration"
+            migrated_root = layout_root / "candidate" / "v6-migration"
+            historical_root.mkdir(parents=True)
+            migrated_root.mkdir(parents=True)
+            locator, missing, structure = base_documents()
+            locator["judgments"][0].update(
+                judgment="unsupported",
+                treatment_class="passing_mention",
+                error_codes=[],
+            )
+            config = calculation_files(historical_root, locator, missing, structure)
+            old_calculation = v5.calculate_loaded(v5.load_inputs(config))
+            old_calculation_path = historical_root / "dimension-calculations.v1.json"
+            v6.write_json(old_calculation_path, old_calculation)
+            old_items = minimal_item_assessments(
+                old_calculation, historical_root / "item-inventory.json"
+            )
+            old_items_path = historical_root / "item-assessments.v2.json"
+            v6.write_json(old_items_path, old_items)
+            gates = [{"gate_id": "systematic_incidental", "status": "failed"}]
+            old_result_path = historical_root / "evaluation-result.v6.json"
+            v6.write_json(
+                old_result_path,
+                evaluation_projection(
+                    old_calculation,
+                    old_calculation_path,
+                    old_items_path,
+                    gates,
+                ),
+            )
+            old_web_path = historical_root / "web-report.v4.json"
+            v6.write_json(
+                old_web_path,
+                web_projection(
+                    old_calculation,
+                    old_calculation_path,
+                    old_items_path,
+                    gates,
+                ),
+            )
+            new_calculation_path = migrated_root / "dimension-calculations.v2.json"
+            migration_path = migrated_root / "score-migration.v5-to-v6.v1.json"
+            run_cli(
+                "dimension_score_v6_cli.py",
+                "score-only-migration",
+                "--input",
+                config,
+                "--historical-calculation",
+                old_calculation_path,
+                "--historical-result",
+                old_result_path,
+                "--historical-web-report",
+                old_web_path,
+                "--calculations-output",
+                new_calculation_path,
+                "--migration-record-output",
+                migration_path,
+                "--methodology-commit",
+                "1" * 40,
+                "--migration-timestamp",
+                "2026-08-29T20:14:39Z",
+            )
+            migration = json.loads(migration_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                {
+                    "path": "..",
+                    "resolution": "migration_record_relative_ancestor_v1",
+                },
+                migration["artifact_path_root"],
+            )
+            self.assertEqual(
+                "v5-migration/dimension-calculations.v1.json",
+                migration["from"]["calculation"]["path"],
+            )
+            self.assertEqual(
+                "v6-migration/dimension-calculations.v2.json",
+                migration["to"]["calculation"]["path"],
+            )
+            for reference in (
+                migration["from"]["calculation"],
+                migration["from"]["evaluation_result"],
+                migration["from"]["item_assessments"],
+                migration["from"]["web_report"],
+                migration["to"]["calculation"],
+            ):
+                self.assertNotIn("..", Path(reference["path"]).parts)
+
+            new_items_path = migrated_root / "item-assessments.v3.json"
+            run_cli(
+                "item_grade_cli.py",
+                "upgrade-v6-assessments",
+                "--item-assessments",
+                old_items_path,
+                "--locator-audit",
+                historical_root / "locator.json",
+                "--structure-audit",
+                historical_root / "structure.json",
+                "--output",
+                new_items_path,
+            )
+            metadata_path = migrated_root / "projection-metadata.json"
+            v6.write_json(
+                metadata_path,
+                {
+                    "schema_version": "subject-index-v6-projection-metadata-v1",
+                    "candidate_label": "Synthetic",
+                    "inclusion_policy": "standard",
+                    "uncertainty_policy": "v6_bounds",
+                    "critical_gates": gates,
+                },
+            )
+            result_path = migrated_root / "evaluation-result.v7.json"
+            web_path = migrated_root / "web-report.v5.json"
+            result, web = v6.build_projections(
+                new_calculation_path,
+                new_items_path,
+                metadata_path,
+                result_path,
+                web_path,
+                migration_path,
+            )
+            v6.write_json(result_path, result)
+            v6.write_json(web_path, web)
+            validation = v6.validate_projection_artifacts(
+                new_calculation_path, result_path, web_path
+            )
+            self.assertTrue(validation["migration_validated"])
+            return {
+                path.name: path.read_bytes()
+                for path in (
+                    new_calculation_path,
+                    migration_path,
+                    new_items_path,
+                    result_path,
+                    web_path,
+                )
+            }
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            first = migrate_layout(root / "layout-a")
+            second = migrate_layout(root / "layout-b")
+            self.assertEqual(first, second)
+
+    def test_migration_artifact_root_rejects_nonancestor_and_root_escape(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            record_path = root / "candidate" / "v6-migration" / "migration.json"
+            record_path.parent.mkdir(parents=True)
+            record_path.write_text("{}", encoding="utf-8")
+            with self.assertRaises(v5.CalculationError) as nonancestor:
+                v6.migration_artifact_root(
+                    {
+                        "artifact_path_root": {
+                            "path": "v5-migration",
+                            "resolution": "migration_record_relative_ancestor_v1",
+                        }
+                    },
+                    record_path,
+                )
+            self.assertEqual(
+                "migration_artifact_root_invalid", nonancestor.exception.code
+            )
+            with self.assertRaises(v5.CalculationError) as traversal:
+                v6.resolve_migration_artifact_path(
+                    {}, "../outside.json", record_path, label="test.path"
+                )
+            self.assertEqual("nonportable_artifact_path", traversal.exception.code)
 
     def test_migration_requires_and_preserves_historical_counterfactual_view(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

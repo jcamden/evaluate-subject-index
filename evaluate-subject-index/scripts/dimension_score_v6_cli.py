@@ -17,7 +17,7 @@ import os
 from collections import Counter
 from copy import deepcopy
 from decimal import Decimal
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Iterable, Sequence
 
 import dimension_score_cli as v5
@@ -33,8 +33,9 @@ ITEM_ASSESSMENT_SCHEMA = "subject-index-item-assessments-v3"
 ITEM_GRADING_POLICY = "subject-index-item-grading-v2"
 MIGRATION_SCHEMA = "subject-index-score-migration-v5-to-v6-v1"
 TOOL_NAME = "dimension_score_v6_cli.py"
-TOOL_VERSION = "dimension-score-cli-v6.0.2"
+TOOL_VERSION = "dimension-score-cli-v6.0.3"
 METHODOLOGY_REPOSITORY = "https://github.com/jcamden/evaluate-subject-index"
+ARTIFACT_PATH_ROOT_RESOLUTION = "migration_record_relative_ancestor_v1"
 SCORE_VIEW_SHARED_EVIDENCE_FIELDS = (
     "candidate_sha256",
     "source_sha256",
@@ -54,6 +55,153 @@ def write_json(path: Path, value: dict[str, Any]) -> None:
     """Write Decimal-bearing documents without introducing binary-float math."""
 
     v5.write_json(path, v5.json_output_value(value))
+
+
+def migration_artifact_root_spec(
+    artifact_paths: Iterable[Path], migration_path: Path
+) -> tuple[Path, dict[str, str]]:
+    """Choose one bounded ancestor for every V5/V6 migration artifact path."""
+
+    resolved_paths = [Path(path).resolve() for path in artifact_paths]
+    v5.require(
+        resolved_paths,
+        "migration_artifact_root_invalid",
+        "At least one artifact is required to derive the migration artifact root.",
+    )
+    try:
+        common_parent = Path(
+            os.path.commonpath([str(path.parent) for path in resolved_paths])
+        ).resolve()
+    except ValueError as exc:
+        raise v5.CalculationError(
+            "migration_artifact_root_invalid",
+            "Migration artifacts must share one filesystem-rooted ancestor.",
+        ) from exc
+    filesystem_root = Path(common_parent.anchor).resolve()
+    v5.require(
+        common_parent != filesystem_root and common_parent.is_dir(),
+        "migration_artifact_root_invalid",
+        "The migration artifact root must be an existing directory below the filesystem root.",
+        {"root": str(common_parent)},
+    )
+    for path in resolved_paths:
+        v5.require(
+            path.is_relative_to(common_parent),
+            "migration_artifact_root_invalid",
+            "Every migration artifact must remain below the common artifact root.",
+            {"artifact": str(path), "root": str(common_parent)},
+        )
+    relative_root = os.path.relpath(
+        common_parent, start=migration_path.resolve().parent
+    ).replace(os.sep, "/")
+    parts = PurePosixPath(relative_root).parts
+    v5.require(
+        relative_root == "." or (parts and all(part == ".." for part in parts)),
+        "migration_artifact_root_invalid",
+        "The migration artifact root must be the record directory or one of its ancestors.",
+        {"path": relative_root},
+    )
+    return common_parent, {
+        "path": relative_root,
+        "resolution": ARTIFACT_PATH_ROOT_RESOLUTION,
+    }
+
+
+def portable_rooted_artifact_reference(
+    target: Path, artifact_root: Path, *, label: str
+) -> str:
+    """Store a normalized descendant path beneath a validated artifact root."""
+
+    root = artifact_root.resolve()
+    resolved = target.resolve()
+    v5.require(
+        resolved.is_relative_to(root),
+        "nonportable_artifact_path",
+        f"{label} must remain below the migration artifact root.",
+        {"artifact": str(resolved), "root": str(root)},
+    )
+    reference = os.path.relpath(resolved, start=root).replace(os.sep, "/")
+    v5.require_portable_relative_path(reference, label=label)
+    v5.require(
+        ".." not in PurePosixPath(reference).parts,
+        "nonportable_artifact_path",
+        f"{label} must not traverse above the migration artifact root.",
+        {"path": reference},
+    )
+    return reference
+
+
+def migration_artifact_root(
+    migration: dict[str, Any], migration_path: Path
+) -> Path:
+    """Resolve a new rooted record or preserve historical container-relative behavior."""
+
+    root_spec = migration.get("artifact_path_root")
+    if root_spec is None:
+        return migration_path.resolve().parent
+    v5.require(
+        isinstance(root_spec, dict)
+        and root_spec.get("resolution") == ARTIFACT_PATH_ROOT_RESOLUTION,
+        "migration_artifact_root_invalid",
+        "The V6 migration artifact-root resolution mode is invalid.",
+    )
+    stored_path = root_spec.get("path")
+    v5.require(
+        isinstance(stored_path, str) and stored_path,
+        "migration_artifact_root_invalid",
+        "The V6 migration artifact-root path is required.",
+    )
+    parts = PurePosixPath(stored_path).parts
+    v5.require(
+        stored_path == "." or (parts and all(part == ".." for part in parts)),
+        "migration_artifact_root_invalid",
+        "The V6 migration artifact root must be the record directory or an ancestor.",
+        {"path": stored_path},
+    )
+    root = (migration_path.resolve().parent / Path(stored_path)).resolve()
+    filesystem_root = Path(root.anchor).resolve()
+    v5.require(
+        root != filesystem_root
+        and root.is_dir()
+        and migration_path.resolve().is_relative_to(root),
+        "migration_artifact_root_invalid",
+        "The V6 migration artifact root must contain the migration record and remain below the filesystem root.",
+        {"root": str(root)},
+    )
+    return root
+
+
+def resolve_migration_artifact_path(
+    migration: dict[str, Any],
+    stored_path: Any,
+    migration_path: Path,
+    *,
+    label: str,
+) -> Path:
+    """Resolve one migration binding without permitting root escape or symlink escape."""
+
+    reference = v5.require_portable_relative_path(stored_path, label=label)
+    v5.require(
+        ".." not in PurePosixPath(reference).parts,
+        "nonportable_artifact_path",
+        f"{label} must not traverse above the migration artifact root.",
+        {"path": reference},
+    )
+    root = migration_artifact_root(migration, migration_path)
+    resolved = (root / Path(reference)).resolve()
+    v5.require(
+        resolved.is_relative_to(root),
+        "score_migration_binding_mismatch",
+        f"{label} escapes the migration artifact root.",
+        {"resolved": str(resolved), "root": str(root)},
+    )
+    v5.require(
+        resolved.is_file(),
+        "score_migration_binding_mismatch",
+        f"{label} does not resolve to a file.",
+        {"resolved": str(resolved)},
+    )
+    return resolved
 
 
 def locator_state_requirements(ledgers: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1040,6 +1188,17 @@ def command_migrate(args: argparse.Namespace) -> None:
             }
             for artifact in loaded["input_artifacts"]
         ]
+        artifact_root, artifact_root_spec = migration_artifact_root_spec(
+            (
+                historical_calculation_path,
+                historical_result_path,
+                item_path,
+                historical_web_report_path,
+                calculations_output,
+                migration_output,
+            ),
+            migration_output,
+        )
         migration = {
             "schema_version": MIGRATION_SCHEMA,
             "evaluation_id": calculations["evaluation_id"],
@@ -1053,33 +1212,34 @@ def command_migrate(args: argparse.Namespace) -> None:
                 "calculation_profile": CALCULATION_PROFILE,
                 "credit_values_frozen_not_candidate_fitted": True,
             },
+            "artifact_path_root": artifact_root_spec,
             "from": {
                 "rubric_version": "subject-index-rubric-v5",
                 "calculation_profile": "subject-index-dimension-calculation-v1",
                 "calculation": {
-                    "path": v5.portable_relative_reference(
-                        historical_calculation_path, migration_output, label="from.calculation.path"
+                    "path": portable_rooted_artifact_reference(
+                        historical_calculation_path, artifact_root, label="from.calculation.path"
                     ),
                     "sha256": protected_hashes[historical_calculation_path],
                     "calculation_sha256": old_calculation["calculation_sha256"],
                 },
                 "evaluation_result": {
-                    "path": v5.portable_relative_reference(
-                        historical_result_path, migration_output, label="from.evaluation_result.path"
+                    "path": portable_rooted_artifact_reference(
+                        historical_result_path, artifact_root, label="from.evaluation_result.path"
                     ),
                     "sha256": protected_hashes[historical_result_path],
                 },
                 "item_assessments": {
-                    "path": v5.portable_relative_reference(
-                        item_path, migration_output, label="from.item_assessments.path"
+                    "path": portable_rooted_artifact_reference(
+                        item_path, artifact_root, label="from.item_assessments.path"
                     ),
                     "sha256": protected_hashes[item_path],
                     "schema_version": old_result["item_assessments"]["schema_version"],
                     "grading_policy": old_result["item_assessments"]["grading_policy"],
                 },
                 "web_report": {
-                    "path": v5.portable_relative_reference(
-                        historical_web_report_path, migration_output, label="from.web_report.path"
+                    "path": portable_rooted_artifact_reference(
+                        historical_web_report_path, artifact_root, label="from.web_report.path"
                     ),
                     "sha256": protected_hashes[historical_web_report_path],
                 },
@@ -1094,8 +1254,8 @@ def command_migrate(args: argparse.Namespace) -> None:
                 "target_item_assessment_schema_version": ITEM_ASSESSMENT_SCHEMA,
                 "target_web_report_schema_version": WEB_REPORT_SCHEMA,
                 "calculation": {
-                    "path": v5.portable_relative_reference(
-                        calculations_output, migration_output, label="to.calculation.path"
+                    "path": portable_rooted_artifact_reference(
+                        calculations_output, artifact_root, label="to.calculation.path"
                     ),
                     "sha256": v5.sha256_file(calculations_output),
                     "calculation_sha256": calculations["calculation_sha256"],
@@ -1888,7 +2048,8 @@ def validate_v5_to_v6_migration_projection(
     )
 
     new_calculation_ref = migration["to"]["calculation"]
-    bound_new_calculation = v5.resolve_stored_artifact_path(
+    bound_new_calculation = resolve_migration_artifact_path(
+        migration,
         new_calculation_ref["path"],
         result_migration_path,
         label="migration.to.calculation.path",
@@ -1911,7 +2072,8 @@ def validate_v5_to_v6_migration_projection(
     }
     historical_paths: dict[str, Path] = {}
     for label, reference in historical_refs.items():
-        path = v5.resolve_stored_artifact_path(
+        path = resolve_migration_artifact_path(
+            migration,
             reference["path"],
             result_migration_path,
             label=f"migration.from.{label}.path",
