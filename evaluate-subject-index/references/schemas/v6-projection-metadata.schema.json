@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "v6-projection-metadata.schema.json",
+  "title": "V6 result and web projection metadata",
+  "type": "object",
+  "required": ["schema_version", "candidate_label", "inclusion_policy", "uncertainty_policy", "critical_gates"],
+  "properties": {
+    "schema_version": {"const": "subject-index-v6-projection-metadata-v1"},
+    "candidate_label": {"type": "string", "minLength": 1},
+    "inclusion_policy": {"type": "string", "minLength": 1},
+    "uncertainty_policy": {"type": "string", "minLength": 1},
+    "critical_gates": {"type": "array", "items": {"type": "object"}},
+    "report_id": {"type": "string"},
+    "headline": {"type": "string"},
+    "summary": {"type": "string"},
+    "interpretation": {"type": "string"},
+    "defect_counts": {"type": "object"},
+    "strengths": {"type": "array", "items": {"type": "object"}},
+    "defects": {"type": "array", "items": {"type": "object"}},
+    "examples": {"type": "array", "items": {"type": "object"}},
+    "limitations": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": false
+}

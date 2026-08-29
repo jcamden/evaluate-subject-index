@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "item-assessments-v3.schema.json",
+  "title": "Projection-safe V6 diagnostic item grades",
+  "type": "object",
+  "required": ["schema_version", "grading_policy", "evaluation_id", "candidate_id", "candidate_sha256", "item_inventory_sha256", "item_inventory_artifact", "evidence_identity", "assessment_completeness", "audit_mode", "scope_complete", "grade_disclosure", "locator_grading_provenance", "color_legend", "locator_assessments", "path_assessments", "heading_node_assessments", "cross_reference_assessments", "source_subject_assessments", "summary"],
+  "properties": {
+    "schema_version": {"const": "subject-index-item-assessments-v3"},
+    "grading_policy": {"const": "subject-index-item-grading-v2"},
+    "evaluation_id": {"type": "string", "minLength": 1},
+    "candidate_id": {"type": "string", "minLength": 1},
+    "candidate_sha256": {"$ref": "#/$defs/sha256"},
+    "item_inventory_sha256": {"$ref": "#/$defs/sha256"},
+    "item_inventory_artifact": {"$ref": "item-assessments-v2.schema.json#/properties/item_inventory_artifact"},
+    "evidence_identity": {"$ref": "item-assessments-v2.schema.json#/properties/evidence_identity"},
+    "assessment_completeness": {"$ref": "item-assessments-v2.schema.json#/properties/assessment_completeness"},
+    "audit_mode": {"enum": ["full", "pilot"]},
+    "scope_complete": {"type": "boolean"},
+    "grade_disclosure": {"type": "string", "minLength": 1},
+    "locator_grading_provenance": {
+      "type": "object",
+      "required": ["dimension_credit_mapping", "diagnostic_grade_mapping", "selectivity_mapping_unchanged", "weak_presence_selectivity_credit", "counts_by_credit_tier"],
+      "properties": {
+        "dimension_credit_mapping": {
+          "type": "object",
+          "required": ["supported", "partially_supported", "eligible_weak_presence", "other_unsupported", "uninspectable"],
+          "properties": {"supported": {"const": "1"}, "partially_supported": {"const": "0.5"}, "eligible_weak_presence": {"const": "0.25"}, "other_unsupported": {"const": "0"}, "uninspectable": {"type": "null"}},
+          "additionalProperties": false
+        },
+        "diagnostic_grade_mapping": {
+          "type": "object",
+          "required": ["supported", "partially_supported", "eligible_weak_presence", "other_unsupported", "uninspectable"],
+          "properties": {"supported": {"const": 100}, "partially_supported": {"const": 70}, "eligible_weak_presence": {"const": 25}, "other_unsupported": {"const": 0}, "uninspectable": {"type": "null"}},
+          "additionalProperties": false
+        },
+        "selectivity_mapping_unchanged": {"const": true},
+        "weak_presence_selectivity_credit": {"const": 0},
+        "counts_by_credit_tier": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}}
+      },
+      "additionalProperties": false
+    },
+    "color_legend": {"$ref": "item-assessments.schema.json#/properties/color_legend"},
+    "locator_assessments": {"type": "array", "items": {"allOf": [{"$ref": "item-assessments.schema.json#/$defs/assessedItem"}, {"type": "object", "required": ["locator_id", "path_id", "judgment", "dimension_reliability_credit", "credit_tier", "disqualifying_codes", "disqualifying_defect_ids"], "properties": {"dimension_reliability_credit": {"enum": ["1", "0.5", "0.25", "0", null]}, "credit_tier": {"enum": ["supported", "partially_supported", "eligible_weak_presence", "other_unsupported", "uninspectable"]}, "disqualifying_codes": {"type": "array", "items": {"enum": ["SCP", "CMP", "CON", "STA"]}, "uniqueItems": true}, "disqualifying_defect_ids": {"type": "array", "items": {"type": "string", "pattern": "^DEFECT-"}, "uniqueItems": true}}}]}},
+    "path_assessments": {"$ref": "item-assessments.schema.json#/properties/path_assessments"},
+    "heading_node_assessments": {"$ref": "item-assessments.schema.json#/properties/heading_node_assessments"},
+    "cross_reference_assessments": {"$ref": "item-assessments.schema.json#/properties/cross_reference_assessments"},
+    "source_subject_assessments": {"$ref": "item-assessments.schema.json#/properties/source_subject_assessments"},
+    "summary": {"type": "object"}
+  },
+  "$defs": {"sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}},
+  "additionalProperties": false
+}

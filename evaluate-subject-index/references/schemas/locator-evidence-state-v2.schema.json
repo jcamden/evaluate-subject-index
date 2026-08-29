@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "locator-evidence-state-v2.schema.json",
+  "title": "V6 combined locator evidence state",
+  "type": "object",
+  "required": ["locator_id", "judgment", "treatment_class", "source_scope_status", "error_codes"],
+  "properties": {
+    "locator_id": {"type": "string", "pattern": "^LOC-"},
+    "judgment": {"enum": ["supported", "partially_supported", "unsupported", "uninspectable"]},
+    "treatment_class": {"enum": ["substantive", "mixed", "passing_mention", "attribution_only", "citation_only", "incidental_example", "absent", "unavailable"]},
+    "source_scope_status": {"enum": ["indexable", "excluded", "unavailable", "ambiguous"]},
+    "error_codes": {
+      "type": "array",
+      "items": {"enum": ["SCP", "SEL", "CON", "STA", "LOC_POS", "CMP", "HED", "SUB", "XRF", "DEN", "MEC"]},
+      "uniqueItems": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"judgment": {"enum": ["supported", "partially_supported"]}}, "required": ["judgment"]},
+      "then": {
+        "properties": {
+          "source_scope_status": {"const": "indexable"},
+          "treatment_class": {"enum": ["substantive", "mixed"]},
+          "error_codes": {"not": {"contains": {"enum": ["SCP", "CMP", "CON", "STA"]}}}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"source_scope_status": {"const": "excluded"}}, "required": ["source_scope_status"]},
+      "then": {"properties": {"judgment": {"const": "unsupported"}}}
+    },
+    {
+      "if": {"properties": {"source_scope_status": {"enum": ["unavailable", "ambiguous"]}}, "required": ["source_scope_status"]},
+      "then": {"properties": {"judgment": {"const": "uninspectable"}}}
+    },
+    {
+      "if": {"properties": {"treatment_class": {"const": "unavailable"}}, "required": ["treatment_class"]},
+      "then": {"properties": {"judgment": {"const": "uninspectable"}}}
+    },
+    {
+      "if": {"properties": {"judgment": {"const": "unsupported"}}, "required": ["judgment"]},
+      "then": {"properties": {"source_scope_status": {"enum": ["indexable", "excluded"]}, "treatment_class": {"not": {"const": "unavailable"}}}}
+    },
+    {
+      "if": {
+        "properties": {
+          "judgment": {"const": "unsupported"},
+          "treatment_class": {"enum": ["substantive", "mixed"]}
+        },
+        "required": ["judgment", "treatment_class"]
+      },
+      "then": {"properties": {"error_codes": {"contains": {"enum": ["SCP", "CMP", "CON", "STA", "LOC_POS"]}}}}
+    }
+  ],
+  "additionalProperties": true
+}

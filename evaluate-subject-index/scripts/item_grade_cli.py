@@ -11,8 +11,11 @@ import re
 from pathlib import Path
 from typing import Any, Iterable
 
+from locator_relevance import assign_locator_credit
+
 
 GRADING_POLICY = "subject-index-item-grading-v1"
+V6_GRADING_POLICY = "subject-index-item-grading-v2"
 COMPONENT_WEIGHTS = {
     "meaningful_coverage": 20.0,
     "editorial_selectivity": 10.0,
@@ -953,6 +956,166 @@ def build_assessments(
     return result
 
 
+def rebuild_summary(result: dict[str, Any]) -> None:
+    collections = {
+        "locators": result["locator_assessments"],
+        "paths": result["path_assessments"],
+        "heading_nodes": result["heading_node_assessments"],
+        "cross_references": result["cross_reference_assessments"],
+        "source_subjects": result["source_subject_assessments"],
+    }
+    result["summary"] = {
+        name: {
+            "total": len(items),
+            "graded": sum(item["grade"]["score"] is not None for item in items),
+            "not_measured": sum(item["grade"]["score"] is None for item in items),
+            "bands": {
+                band: sum(item["grade"]["band"] == band for item in items)
+                for band in ("excellent", "strong", "mixed", "weak", "poor", "not_measured")
+            },
+        }
+        for name, items in collections.items()
+    }
+
+
+def build_v6_assessments(
+    result: dict[str, Any],
+    locator_batches: list[dict[str, Any]],
+    structure: dict[str, Any],
+) -> dict[str, Any]:
+    """Upgrade a projection-safe V2 item artifact to the V6 grading policy."""
+
+    if result.get("schema_version") != "subject-index-item-assessments-v2":
+        fail(
+            "v6_item_evidence_identity_required",
+            "V6 diagnostic grading requires a projection-safe V2 evidence identity before upgrade.",
+        )
+    judgment_by_id = collect_unique(
+        (judgment for batch in locator_batches for judgment in batch.get("judgments", [])),
+        "locator_id",
+        "locator judgment",
+    )
+    defects = structure.get("defects", [])
+    if not isinstance(defects, list):
+        fail("structure_shape", "structure-audit defects must be an array.")
+
+    locator_by_id: dict[str, dict[str, Any]] = {}
+    credit_tiers: dict[str, int] = {}
+    for assessment in result["locator_assessments"]:
+        locator_id = assessment["locator_id"]
+        judgment = judgment_by_id.get(locator_id)
+        if judgment is None:
+            score = 0.0 if assessment.get("mapping_status") == "unresolved" else None
+            credit = "0" if score == 0 else None
+            tier = "other_unsupported" if score == 0 else "uninspectable"
+            rationale = assessment.get("summary", "Locator was not measured.")
+            disqualifying_codes: list[str] = []
+            disqualifying_defect_ids: list[str] = []
+        else:
+            try:
+                assignment = assign_locator_credit(judgment, defects)
+            except ValueError as exc:
+                fail(
+                    "inconsistent_locator_evidence_state",
+                    f"Locator {locator_id} cannot receive a V6 diagnostic grade.",
+                    str(exc).split(";"),
+                )
+            score = assignment.diagnostic_grade
+            credit = (
+                None
+                if assignment.reliability_credit is None
+                else format(assignment.reliability_credit.normalize(), "f")
+            )
+            tier = assignment.credit_tier
+            rationale = assignment.rationale
+            disqualifying_codes = list(assignment.disqualifying_codes)
+            disqualifying_defect_ids = list(assignment.disqualifying_defect_ids)
+            assessment["source_scope_status"] = assignment.source_scope_status
+        assessment["grade"] = grade(score)
+        assessment["dimension_reliability_credit"] = credit
+        assessment["credit_tier"] = tier
+        assessment["disqualifying_codes"] = disqualifying_codes
+        assessment["disqualifying_defect_ids"] = disqualifying_defect_ids
+        assessment["summary"] = rationale
+        assessment["popover"]["summary"] = rationale
+        assessment["popover"]["grade"] = assessment["grade"]
+        for factor in assessment["popover"].get("factors", []):
+            if factor.get("factor_id") == "locator_support":
+                factor["score"] = score
+                factor["explanation"] = rationale
+        locator_by_id[locator_id] = assessment
+        credit_tiers[tier] = credit_tiers.get(tier, 0) + 1
+
+    for path in result["path_assessments"]:
+        locator_scores = [
+            locator_by_id[locator_id]["grade"]["score"]
+            for locator_id in path.get("locator_ids", [])
+            if locator_id in locator_by_id
+        ]
+        raw_locator_score = mean(locator_scores)
+        page_component = next(
+            (
+                item
+                for item in path.get("component_results", [])
+                if item.get("dimension_id") == "page_reference_reliability"
+            ),
+            None,
+        )
+        if page_component is not None:
+            applied_cap = page_component.get("applied_cap")
+            adjusted = raw_locator_score
+            if adjusted is not None and applied_cap is not None:
+                adjusted = min(adjusted, applied_cap)
+            page_component["score"] = None if adjusted is None else round(adjusted, 2)
+            page_component["measurement_status"] = (
+                "measured" if adjusted is not None else "not_measured"
+            )
+            page_component["summary"] = (
+                "Mean V6 diagnostic locator grade (100/70/25/0) for this path. "
+                "This presentation value does not replace weighted locator precision in the dimension formula."
+            )
+        path_score = weighted_mean(
+            (item.get("score"), item.get("weight", 0))
+            for item in path.get("component_results", [])
+        )
+        path["grade"] = grade(path_score)
+        path["popover"]["grade"] = path["grade"]
+        for factor in path["popover"].get("factors", []):
+            if factor.get("factor_id") == "page_reference_reliability" and page_component:
+                factor["score"] = page_component["score"]
+                factor["status"] = page_component["measurement_status"]
+                factor["explanation"] = page_component["summary"]
+
+    result["schema_version"] = "subject-index-item-assessments-v3"
+    result["grading_policy"] = V6_GRADING_POLICY
+    result["grade_disclosure"] = (
+        "V6 item grades are non-additive diagnostic presentation values. Locator grades are "
+        "100, 70, 25, 0, or neutral; they are never averaged to reconstruct the 100-point score. "
+        "A grade of 25 remains editorially unjustified and receives zero selectivity credit."
+    )
+    result["locator_grading_provenance"] = {
+        "dimension_credit_mapping": {
+            "supported": "1",
+            "partially_supported": "0.5",
+            "eligible_weak_presence": "0.25",
+            "other_unsupported": "0",
+            "uninspectable": None,
+        },
+        "diagnostic_grade_mapping": {
+            "supported": 100,
+            "partially_supported": 70,
+            "eligible_weak_presence": 25,
+            "other_unsupported": 0,
+            "uninspectable": None,
+        },
+        "selectivity_mapping_unchanged": True,
+        "weak_presence_selectivity_credit": 0,
+        "counts_by_credit_tier": dict(sorted(credit_tiers.items())),
+    }
+    rebuild_summary(result)
+    return result
+
+
 def command_build_inventory(args: argparse.Namespace) -> None:
     candidate = load_json(Path(args.candidate))
     result = build_inventory(candidate)
@@ -996,8 +1159,48 @@ def command_build_assessments(args: argparse.Namespace) -> None:
         v5_evidence_identity,
         inventory_artifact_path if v5_evidence_identity is not None else None,
     )
+    if args.grading_policy == V6_GRADING_POLICY:
+        result = build_v6_assessments(result, locator_batches, structure)
     if args.output:
         save_json(output_path, result)
+    emit({"ok": True, **result, "artifact_written": args.output})
+
+
+def command_upgrade_v6_assessments(args: argparse.Namespace) -> None:
+    """Upgrade an exact projection-safe V5 item artifact for score-only migration."""
+
+    from dimension_score_cli import validate_schema_document
+
+    item_path = Path(args.item_assessments).resolve()
+    locator_paths = [Path(path).resolve() for path in args.locator_audit]
+    structure_path = Path(args.structure_audit).resolve()
+    output_path = Path(args.output).resolve()
+    result = load_json(item_path)
+    locator_batches = [load_json(path) for path in locator_paths]
+    structure = load_json(structure_path)
+    validate_schema_document(result, "item-assessments-v2.schema.json", "V5 item assessments")
+    identity = result["evidence_identity"]
+    expected_locator_set = canonical_audit_set_hash(
+        locator_batches,
+        locator_paths,
+        (("judgments", "locator_id", "locator_ids"),),
+    )
+    if identity.get("locator_audit_set_sha256") != expected_locator_set:
+        fail(
+            "v6_item_evidence_identity_mismatch",
+            "The supplied locator-audit set is not the exact set bound by V5 item assessments.",
+        )
+    if identity.get("structure_audit_file_sha256") != sha256_file(structure_path):
+        fail(
+            "v6_item_evidence_identity_mismatch",
+            "The supplied structure audit is not the exact file bound by V5 item assessments.",
+        )
+    result = build_v6_assessments(result, locator_batches, structure)
+    validate_schema_document(result, "item-assessments-v3.schema.json", "V6 item assessments")
+    protected = {item_path, structure_path, *locator_paths}
+    if output_path in protected or (output_path.exists() and any(os.path.samefile(output_path, path) for path in protected if path.exists())):
+        fail("output_aliases_frozen_input", "V6 item output must not overwrite a frozen V5 artifact.")
+    save_json(output_path, result)
     emit({"ok": True, **result, "artifact_written": args.output})
 
 
@@ -1018,8 +1221,24 @@ def build_parser() -> argparse.ArgumentParser:
     assessments.add_argument("--structure-audit", required=True)
     assessments.add_argument("--audit-mode", choices=["full", "pilot"], required=True)
     assessments.add_argument("--evaluation-id")
+    assessments.add_argument(
+        "--grading-policy",
+        choices=[GRADING_POLICY, V6_GRADING_POLICY],
+        default=GRADING_POLICY,
+        help="Select the historical V5 diagnostic mapping or the V6 100/70/25/0 mapping.",
+    )
     assessments.add_argument("--output", required=True)
     assessments.set_defaults(func=command_build_assessments)
+
+    upgrade = subparsers.add_parser(
+        "upgrade-v6-assessments",
+        help="Upgrade exact projection-safe V5 item assessments to the V6 diagnostic policy.",
+    )
+    upgrade.add_argument("--item-assessments", required=True)
+    upgrade.add_argument("--locator-audit", nargs="+", required=True)
+    upgrade.add_argument("--structure-audit", required=True)
+    upgrade.add_argument("--output", required=True)
+    upgrade.set_defaults(func=command_upgrade_v6_assessments)
     return parser
 
 

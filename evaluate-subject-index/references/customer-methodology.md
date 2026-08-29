@@ -80,7 +80,7 @@ The evaluation produces six dimension scores totaling 100 points.
 | Can readers find things efficiently? | Findability and navigation | 20 |
 | Is it professionally consistent? | Mechanics and consistency | 5 |
 
-The total is a weighted quality summary, not “percent correct.” Under rubric V5, raw audit statuses—not evaluator-selected headline ratings and not diagnostic item grades—enter six published formulas. The report exposes each denominator, status-to-credit mapping, component value, cap test, uncertainty bound, rounding step, rating, and weighted-points calculation.
+The total is a weighted quality summary, not “percent correct.” Under rubric V6, raw audit statuses—not evaluator-selected headline ratings and not diagnostic item grades—enter six published formulas. The report exposes each denominator, status-to-credit mapping, component value, cap test, uncertainty bound, rounding step, rating, and weighted-points calculation.
 
 The calculation uses decimal half-up arithmetic. Five dimensions publish half-step ratings; Editorial Selectivity retains its 10-point substantive plus 5-point density calculation and may display a non-half-step equivalent. A cap is a safeguard against a consequential defect being diluted by many easy items. Caps never stack or subtract points; only the most restrictive applicable cap is used.
 
@@ -112,7 +112,18 @@ Measures whether headings say what the source actually says. It tests meaning, s
 
 ### 4. Page-reference reliability — 25 points
 
-Measures whether locators point to pages that substantively support the complete heading path and whether expected treatment units are found. It combines strict supported-locator precision and unique expected-treatment recall with their harmonic mean, then checks pooled principal plus synthesis/conclusion recall. Each page in a displayed range is tested individually.
+Measures whether locators point to pages that support the complete heading path and whether expected treatment units are found. Each page in a displayed range is tested individually.
+
+V6 reports two precision measures. **Strict substantive precision** counts only fully supported locators and answers whether a cited page provides valid substantive index treatment. **Weighted locator precision** also distinguishes partially supported pages and pages where the subject is genuinely present only as a passing mention, attribution, citation, or incidental example. The reliability score combines weighted precision with unique expected-treatment recall using their harmonic mean, then applies the same recall and critical-error safeguards as before.
+
+| Destination | Weighted reliability credit | Strict precision credit |
+| --- | ---: | ---: |
+| Substantively supports the complete path | 1.00 | 1 |
+| Materially treats the subject but supports only part of the path | 0.50 | 0 |
+| Contains only a genuine passing mention, attribution, citation, or incidental example | 0.25 | 0 |
+| Subject is absent, wrong, out of scope, fabricated, or otherwise invalid | 0.00 | 0 |
+
+A weakly relevant page is still not a valid substantive locator. The limited credit recognizes only that it misdirects a reader less severely than a wholly false destination; it does not endorse concordance-like indexing. If the page uses the terms in the wrong sense, asserts the wrong relationship or stance, fails compound scope, or is out of scope, the locator receives zero even when some matching words occur.
 
 ### 5. Findability and navigation — 20 points
 
@@ -131,7 +142,7 @@ The framework uses two standardized chapter-level calibration targets:
 
 The normal target bands are 6–10 paths and 15–25 locator occurrences. Broad tolerance bands of 4–12 paths and 10–30 locator occurrences allow substantial variation before density is treated as a serious defect.
 
-These figures are calibration points, not quotas, minimums, hard ceilings, or universal professional requirements. A source may justify natural variation. Valid access is not removed to reach a number, and weak access is not retained to fill one. A density metric value of zero receives zero under V5 rather than the one point produced by the historical distance edge case.
+These figures are calibration points, not quotas, minimums, hard ceilings, or universal professional requirements. A source may justify natural variation. Valid access is not removed to reach a number, and weak access is not retained to fill one. A density metric value of zero receives zero under V5 and V6 rather than the one point produced by the historical distance edge case.
 
 Density is measured by chapter because a whole-book average can hide overindexed and underindexed sections. Chapter results are weighted by indexable source words. Density can contribute no more than five points to the 100-point score; specific omissions, clutter, or navigation failures must still be demonstrated from source evidence.
 
@@ -156,6 +167,8 @@ Critical checks are evaluated separately from the score. An applicable failed ch
 - structurally invalid or incomplete output.
 
 A failed check does not secretly change the arithmetic score. The report shows the check, its status, and its supporting evidence.
+
+The V6 quarter-credit distinction never clears one of these checks. A weak mention remains an unsupported and editorially unjustified locator, continues to receive zero selectivity credit, and still contributes to any applicable incidental/clutter pattern and gate.
 
 ## Why the method is fair and auditable
 
@@ -300,6 +313,7 @@ A completed web report should include:
 - publication-readiness check results;
 - the six dimension scores and plain-language explanations;
 - measured precision, recall, coverage, navigation, and mechanics results with denominators;
+- both strict substantive precision and V6 weighted locator precision, with the credit-tier counts behind them;
 - a density card showing the framework targets, chapter distribution, fit, and limited score contribution;
 - representative strengths and the most consequential defects;
 - expandable evidence examples tied to exact audit records;
@@ -319,7 +333,7 @@ The grades answer different questions:
 - A cross-reference grade asks whether one `see` or `see also` reference is valid and useful.
 - A source-subject grade identifies complete, partial, or missing access to a subject discovered independently from the source.
 
-Each popover shows the element’s grade, the factors that affected it, applicable weights or severity caps, confidence, a concise explanation, and links to evidence IDs. Public popovers use short paraphrases rather than long source quotations. “Not measured” and “uninspectable” are shown neutrally rather than colored as failures.
+Each popover shows the element’s grade, the factors that affected it, applicable weights or severity caps, confidence, a concise explanation, and links to evidence IDs. Locator grades are 100 for support, 70 for partial support, 25 for eligible weak presence, 0 for other unsupported evidence, and neutral for uninspectable evidence. A grade of 25 says explicitly that the destination is not substantive treatment and remains editorially unjustified; its only purpose is to distinguish the page from a wholly false destination. Public popovers use short paraphrases rather than long source quotations. “Not measured” and “uninspectable” are shown neutrally rather than colored as failures.
 
 Individual grades are diagnostic. They are not added together to calculate the overall 100-point score, and chapter density is never assigned to a particular heading. See the [item-grading specification](item-grading.md) for the exact rules.
 
@@ -328,7 +342,7 @@ Full audits inspect all in-scope source pages, delivered index records, expanded
 ## Limits and interpretation
 
 - The score applies only to the identified source edition and candidate version.
-- Editorial judgments are evidence-based but are not perfectly deterministic; another qualified evaluation may differ at the margins. Given the same validated ledgers and V5 calculation profile, however, the published numerical ratings are reproducible.
+- Editorial judgments are evidence-based but are not perfectly deterministic; another qualified evaluation may differ at the margins. Given the same validated ledgers and V6 calculation profile, however, the published numerical ratings are reproducible.
 - The frozen policy, benchmark, denominators, and item-level evidence make disagreements inspectable and reruns meaningfully comparable.
 - Density targets belong to this framework and are not claimed as universal indexing standards.
 - A comparison is valid only when candidates were evaluated under compatible frozen inputs and the same audit mode.

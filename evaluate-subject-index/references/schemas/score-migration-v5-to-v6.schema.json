@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "score-migration-v5-to-v6.schema.json",
+  "title": "V5-to-V6 subject-index score-only migration",
+  "type": "object",
+  "required": ["schema_version", "evaluation_id", "migration_timestamp", "tool", "methodology", "from", "to", "total_delta", "dimension_comparison", "precision_comparison", "frozen_evidence", "historical_artifacts", "invalidation", "gate_preservation", "selectivity_preservation", "comparability", "migration_sha256"],
+  "properties": {
+    "schema_version": {"const": "subject-index-score-migration-v5-to-v6-v1"},
+    "evaluation_id": {"type": "string", "minLength": 1},
+    "migration_timestamp": {"type": "string", "pattern": "Z$"},
+    "tool": {"type": "object", "required": ["name", "version"], "properties": {"name": {"const": "dimension_score_v6_cli.py"}, "version": {"const": "dimension-score-cli-v6.0.0"}}, "additionalProperties": false},
+    "methodology": {
+      "type": "object",
+      "required": ["repository", "commit_sha", "previous_rubric_version", "migrated_rubric_version", "calculation_profile", "credit_values_frozen_not_candidate_fitted"],
+      "properties": {
+        "repository": {"const": "https://github.com/jcamden/evaluate-subject-index"},
+        "commit_sha": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+        "previous_rubric_version": {"const": "subject-index-rubric-v5"},
+        "migrated_rubric_version": {"const": "subject-index-rubric-v6"},
+        "calculation_profile": {"const": "subject-index-dimension-calculation-v2"},
+        "credit_values_frozen_not_candidate_fitted": {"const": true}
+      },
+      "additionalProperties": false
+    },
+    "from": {
+      "type": "object",
+      "required": ["rubric_version", "calculation_profile", "calculation", "evaluation_result", "item_assessments", "web_report", "total_score", "scorecard"],
+      "properties": {
+        "rubric_version": {"const": "subject-index-rubric-v5"},
+        "calculation_profile": {"const": "subject-index-dimension-calculation-v1"},
+        "calculation": {"$ref": "#/$defs/calculationRef"},
+        "evaluation_result": {"$ref": "#/$defs/fileRef"},
+        "item_assessments": {"type": "object", "required": ["path", "sha256", "schema_version", "grading_policy"], "properties": {"path": {"$ref": "#/$defs/portablePath"}, "sha256": {"$ref": "#/$defs/sha256"}, "schema_version": {"const": "subject-index-item-assessments-v2"}, "grading_policy": {"const": "subject-index-item-grading-v1"}}, "additionalProperties": false},
+        "web_report": {"$ref": "#/$defs/fileRef"},
+        "total_score": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+        "scorecard": {"$ref": "#/$defs/scorecard"}
+      },
+      "additionalProperties": false
+    },
+    "to": {
+      "type": "object",
+      "required": ["rubric_version", "calculation_profile", "calculation_schema_version", "target_result_schema_version", "target_item_assessment_schema_version", "target_web_report_schema_version", "calculation", "total_score", "scorecard"],
+      "properties": {
+        "rubric_version": {"const": "subject-index-rubric-v6"},
+        "calculation_profile": {"const": "subject-index-dimension-calculation-v2"},
+        "calculation_schema_version": {"const": "subject-index-dimension-calculations-v2"},
+        "target_result_schema_version": {"const": "subject-index-evaluation-result-v7"},
+        "target_item_assessment_schema_version": {"const": "subject-index-item-assessments-v3"},
+        "target_web_report_schema_version": {"const": "subject-index-web-report-v5"},
+        "calculation": {"$ref": "#/$defs/calculationRef"},
+        "total_score": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+        "scorecard": {"$ref": "#/$defs/scorecard"}
+      },
+      "additionalProperties": false
+    },
+    "total_delta": {"type": ["number", "null"]},
+    "dimension_comparison": {"type": "array", "minItems": 6, "maxItems": 6, "items": {"type": "object"}},
+    "precision_comparison": {
+      "type": "object",
+      "required": ["historical_strict_substantive_precision", "migrated_strict_substantive_precision", "strict_precision_unchanged", "weighted_locator_precision"],
+      "properties": {"historical_strict_substantive_precision": {"$ref": "#/$defs/decimal"}, "migrated_strict_substantive_precision": {"$ref": "#/$defs/decimal"}, "strict_precision_unchanged": {"const": true}, "weighted_locator_precision": {"$ref": "#/$defs/decimal"}},
+      "additionalProperties": false
+    },
+    "frozen_evidence": {
+      "type": "object",
+      "required": ["input_lineage", "evidence_identity", "source_reopened", "prose_inference_used", "locator_judgments_changed", "missing_access_judgments_changed", "structure_judgments_changed", "candidate_normalization_changed", "representation_correction_provenance_preserved_via_immutable_v5_projections"],
+      "properties": {
+        "input_lineage": {"type": "array", "minItems": 3, "items": {"type": "object", "required": ["role", "path", "sha256", "schema_version", "disposition"], "properties": {"role": {"type": "string"}, "path": {"type": "string"}, "sha256": {"$ref": "#/$defs/sha256"}, "schema_version": {"type": "string"}, "disposition": {"const": "unchanged"}}, "additionalProperties": false}},
+        "evidence_identity": {"$ref": "dimension-calculations.schema.json#/properties/evidence_identity"},
+        "source_reopened": {"const": false},
+        "prose_inference_used": {"const": false},
+        "locator_judgments_changed": {"const": false},
+        "missing_access_judgments_changed": {"const": false},
+        "structure_judgments_changed": {"const": false},
+        "candidate_normalization_changed": {"const": false},
+        "representation_correction_provenance_preserved_via_immutable_v5_projections": {"const": true}
+      },
+      "additionalProperties": false
+    },
+    "historical_artifacts": {"type": "object", "required": ["preserved_immutable", "historical_v5_calculation_preserved", "historical_v5_result_preserved", "historical_v5_item_assessments_preserved", "historical_v5_web_report_preserved"], "properties": {"preserved_immutable": {"const": true}, "historical_v5_calculation_preserved": {"const": true}, "historical_v5_result_preserved": {"const": true}, "historical_v5_item_assessments_preserved": {"const": true}, "historical_v5_web_report_preserved": {"const": true}}, "additionalProperties": false},
+    "invalidation": {"type": "object", "required": ["scope", "invalidated_active_roles", "upstream_evidence_invalidated"], "properties": {"scope": {"const": "calculation_derived_and_projection_artifacts_only"}, "invalidated_active_roles": {"const": ["dimension_calculations", "evaluation_result", "item_assessments", "web_report"]}, "upstream_evidence_invalidated": {"const": false}}, "additionalProperties": false},
+    "gate_preservation": {"type": "object", "required": ["policy_or_evidence_changed", "historical_gate_outcomes_sha256", "preserved_gate_outcomes_sha256", "historical_outcomes", "preserved_outcomes", "outcomes_equal", "outcomes_action", "score_based_override_allowed"], "properties": {"policy_or_evidence_changed": {"const": false}, "historical_gate_outcomes_sha256": {"$ref": "#/$defs/sha256"}, "preserved_gate_outcomes_sha256": {"$ref": "#/$defs/sha256"}, "historical_outcomes": {"type": "array", "items": {"type": "object"}}, "preserved_outcomes": {"type": "array", "items": {"type": "object"}}, "outcomes_equal": {"const": true}, "outcomes_action": {"const": "preserve_identically"}, "score_based_override_allowed": {"const": false}}, "additionalProperties": false},
+    "selectivity_preservation": {"type": "object", "required": ["credit_mapping_changed", "weak_presence_credit"], "properties": {"credit_mapping_changed": {"const": false}, "weak_presence_credit": {"const": "0"}}, "additionalProperties": false},
+    "comparability": {"const": "v5_and_v6_totals_are_not_directly_comparable"},
+    "migration_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "decimal": {"type": "string", "pattern": "^-?[0-9]+(?:\\.[0-9]+)?$"},
+    "portablePath": {"type": "string", "minLength": 1, "not": {"pattern": "^(?:/|\\\\|[A-Za-z]:|.*\\\\|(?:^|/)\\.\\.(?:/|$))"}},
+    "fileRef": {"type": "object", "required": ["path", "sha256"], "properties": {"path": {"$ref": "#/$defs/portablePath"}, "sha256": {"$ref": "#/$defs/sha256"}}, "additionalProperties": false},
+    "calculationRef": {"type": "object", "required": ["path", "sha256", "calculation_sha256"], "properties": {"path": {"$ref": "#/$defs/portablePath"}, "sha256": {"$ref": "#/$defs/sha256"}, "calculation_sha256": {"$ref": "#/$defs/sha256"}}, "additionalProperties": false},
+    "scorecard": {"type": "array", "minItems": 6, "maxItems": 6, "items": {"type": "object", "required": ["dimension_id", "rating", "points"], "properties": {"dimension_id": {"enum": ["meaningful_coverage", "editorial_selectivity", "conceptual_stance_fidelity", "page_reference_reliability", "findability_navigation", "mechanics_consistency"]}, "rating": {"type": ["number", "null"]}, "points": {"type": ["number", "null"]}}, "additionalProperties": false}}
+  },
+  "additionalProperties": false
+}

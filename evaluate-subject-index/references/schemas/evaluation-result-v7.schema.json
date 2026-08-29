@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "evaluation-result-v7.schema.json",
+  "title": "V6 scored subject-index evaluation result",
+  "type": "object",
+  "required": ["schema_version", "evaluation_id", "candidate", "provenance", "audit_scope", "dimension_calculations", "scorecard", "total_score", "interpretation", "metrics", "item_assessments", "critical_gates", "defect_counts", "comparison_key", "limitations"],
+  "properties": {
+    "schema_version": {"const": "subject-index-evaluation-result-v7"},
+    "evaluation_id": {"type": "string", "minLength": 1},
+    "candidate": {"$ref": "evaluation-result-v6.schema.json#/properties/candidate"},
+    "provenance": {
+      "type": "object",
+      "required": ["source_sha256", "judgment_policy_sha256", "benchmark_sha256", "rubric_version", "dimension_calculation_profile"],
+      "properties": {
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "judgment_policy_sha256": {"$ref": "#/$defs/sha256"},
+        "benchmark_sha256": {"$ref": "#/$defs/sha256"},
+        "rubric_version": {"const": "subject-index-rubric-v6"},
+        "dimension_calculation_profile": {"const": "subject-index-dimension-calculation-v2"}
+      },
+      "additionalProperties": true
+    },
+    "audit_scope": {"$ref": "evaluation-result-v6.schema.json#/properties/audit_scope"},
+    "dimension_calculations": {
+      "type": "object",
+      "required": ["schema_version", "artifact_path", "sha256", "calculation_profile"],
+      "properties": {
+        "schema_version": {"const": "subject-index-dimension-calculations-v2"},
+        "artifact_path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "calculation_profile": {"const": "subject-index-dimension-calculation-v2"}
+      },
+      "additionalProperties": false
+    },
+    "scorecard": {"$ref": "evaluation-result-v6.schema.json#/properties/scorecard"},
+    "total_score": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+    "interpretation": {"type": "string"},
+    "metrics": {
+      "type": "object",
+      "required": ["locator_precision"],
+      "properties": {"locator_precision": {"$ref": "#/$defs/precisionDiagnostics"}},
+      "additionalProperties": true
+    },
+    "item_assessments": {
+      "type": "object",
+      "required": ["schema_version", "grading_policy", "artifact_path", "sha256", "summary"],
+      "properties": {
+        "schema_version": {"const": "subject-index-item-assessments-v3"},
+        "grading_policy": {"const": "subject-index-item-grading-v2"},
+        "artifact_path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "summary": {"type": "object"}
+      },
+      "additionalProperties": false
+    },
+    "score_migration": {
+      "type": "object",
+      "required": ["schema_version", "artifact_path", "sha256", "migration_sha256"],
+      "properties": {
+        "schema_version": {"const": "subject-index-score-migration-v5-to-v6-v1"},
+        "artifact_path": {"$ref": "score-migration.schema.json#/$defs/portablePath"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "migration_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "critical_gates": {"type": "array", "items": {"type": "object"}},
+    "defect_counts": {"type": "object"},
+    "comparison_key": {
+      "type": "object",
+      "required": ["source_sha256", "benchmark_sha256", "judgment_policy_sha256", "page_map_sha256", "chunk_manifest_sha256", "inclusion_policy", "audit_mode", "uncertainty_policy", "rubric_version", "dimension_calculation_profile"],
+      "properties": {
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "benchmark_sha256": {"$ref": "#/$defs/sha256"},
+        "judgment_policy_sha256": {"$ref": "#/$defs/sha256"},
+        "page_map_sha256": {"$ref": "#/$defs/sha256"},
+        "chunk_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "inclusion_policy": {"type": "string", "minLength": 1},
+        "audit_mode": {"enum": ["full", "pilot"]},
+        "uncertainty_policy": {"type": "string", "minLength": 1},
+        "rubric_version": {"const": "subject-index-rubric-v6"},
+        "dimension_calculation_profile": {"const": "subject-index-dimension-calculation-v2"}
+      },
+      "additionalProperties": true
+    },
+    "limitations": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "decimal": {"type": "string", "pattern": "^-?[0-9]+(?:\\.[0-9]+)?$"},
+    "precisionDiagnostics": {
+      "type": "object",
+      "required": ["weighted_locator_precision", "weighted_precision_numerator", "weighted_precision_denominator", "strict_substantive_precision", "strict_precision_numerator", "strict_precision_denominator", "treatment_recall", "treatment_recall_numerator", "treatment_recall_denominator", "weighted_f1", "weighted_role", "strict_role", "weak_presence_is_substantive"],
+      "properties": {
+        "weighted_locator_precision": {"$ref": "#/$defs/decimal"},
+        "weighted_precision_numerator": {"$ref": "#/$defs/decimal"},
+        "weighted_precision_denominator": {"type": "integer", "minimum": 0},
+        "strict_substantive_precision": {"$ref": "#/$defs/decimal"},
+        "strict_precision_numerator": {"type": "integer", "minimum": 0},
+        "strict_precision_denominator": {"type": "integer", "minimum": 0},
+        "treatment_recall": {"$ref": "#/$defs/decimal"},
+        "treatment_recall_numerator": {"type": "integer", "minimum": 0},
+        "treatment_recall_denominator": {"type": "integer", "minimum": 0},
+        "weighted_f1": {"$ref": "#/$defs/decimal"},
+        "weighted_role": {"const": "severity_sensitive_input_to_page_reference_reliability"},
+        "strict_role": {"const": "substantive_validity_diagnostic_not_used_in_v6_dimension_arithmetic"},
+        "weak_presence_is_substantive": {"const": false}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

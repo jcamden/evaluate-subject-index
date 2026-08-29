@@ -50,7 +50,21 @@ Do not mark a child locator supported because only its parent appears. Do not ma
 
 For compound or enumerated paths, require every named component on every assigned page. When components are supported only on different pages, use `unsupported` with `CMP`; do not average the components into partial support. Use `partially_supported` when the page materially supports the asserted subject but the path is genuinely too broad, narrow, vague, or qualified—not as a compromise for an improper union.
 
-For a binary precision measure, count `supported` as correct, `unsupported` as incorrect, and publish `partially_supported` separately. If a project elects fractional credit, freeze the fraction before candidate review and disclose it.
+Retain the four judgments as editorial facts; V6 does not create a new favorable judgment. The scored reliability layer deterministically combines judgment, treatment class, source-scope status, error codes, and structured defects:
+
+| Combined state | V6 reliability credit | Strict substantive credit |
+| --- | ---: | ---: |
+| `supported` with substantive or mixed treatment | 1.00 | 1 |
+| `partially_supported` with substantive or mixed treatment | 0.50 | 0 |
+| indexable, inspectable `unsupported` plus `passing_mention`, `attribution_only`, `citation_only`, or `incidental_example` | 0.25 | 0 |
+| all other `unsupported` | 0.00 | 0 |
+| `uninspectable` | neutral bounds | excluded centrally |
+
+The 0.25 tier distinguishes a weakly relevant destination from a wholly false one; it does not make the locator substantively valid. A validated `SCP`, `CMP`, `CON`, or `STA` failure reduces otherwise eligible weak presence to zero. Known out-of-scope, fabricated, nonexistent, or nonindexable assignments also receive zero by precedence. Preserve every applicable defect and gate consequence.
+
+Reject contradictory combined states rather than choosing a favorable credit. A positive judgment requires indexable scope and substantive or mixed treatment. An excluded destination is known adverse evidence, not `uninspectable`. An unavailable or ambiguous destination is `uninspectable`, not a measured failure. An `unsupported` assignment whose page materially treats the subject must carry the structured scope, compound, conceptual, stance, or locator-position reason that makes the asserted path fail.
+
+V6 continues to publish strict substantive precision separately. Historical V5 calculations retain their original strict-only dimension arithmetic and must never be reinterpreted as V6.
 
 For chunked locator work, the frozen locator packet is the complete denominator. Preserve each packet's full heading path and judge every owned expanded assignment exactly once. Reject duplicate, missing, foreign-chunk, or path-altered assignments rather than repairing the packet. An unavailable or genuinely uninspectable owned page may receive `uninspectable`; an unresolved locator excluded during packet preparation is not silently reassigned to a worker. Parallel and sequential audits use the same four statuses and judgment meaning.
 
@@ -102,7 +116,7 @@ Use: `SCP`, `COV`, `SEL`, `CON`, `STA`, `LOC_POS`, `LOC_NEG`, `CMP`, `HED`, `SUB
 
 Count one underlying defect once and attach multiple consequences rather than inflating totals.
 
-For V5 scoring provenance, a defect is not valid unless structured fields identify its one dimension owner and compatible code, severity and basis, retrieval consequence, defect kind, affected item IDs, affected source and/or structural sections, root-cause family, affected and applicable counts and reconstructable rates, source/structural section denominators and rates, and whether essential/major access was destroyed. All affected IDs in one defect must use one item family, and its applicable count must equal that family's frozen original denominator; a caller-declared denominator is never trusted. Bind major/failed conceptual or mechanics nodes to a same-dimension major/critical defect that names that node. Mechanical invariant defects attach to `NODE-*` IDs or the explicit `GLOBAL-STRUCTURE` item. A free-text summary cannot trigger a cap.
+For V5 and V6 scoring provenance, a defect is not valid unless structured fields identify its one dimension owner and compatible code, severity and basis, retrieval consequence, defect kind, affected item IDs, affected source and/or structural sections, root-cause family, affected and applicable counts and reconstructable rates, source/structural section denominators and rates, and whether essential/major access was destroyed. All affected IDs in one defect must use one item family, and its applicable count must equal that family's frozen original denominator; a caller-declared denominator is never trusted. Bind major/failed conceptual or mechanics nodes to a same-dimension major/critical defect that names that node. Mechanical invariant defects attach to `NODE-*` IDs or the explicit `GLOBAL-STRUCTURE` item. A free-text summary cannot trigger a cap. V6 also records a locator-bound disqualifying code or structured fabricated/nonexistent/out-of-scope defect whenever it prevents weak-presence credit.
 
 For mechanics, aggregate defects by identical `root_cause_family`. A recurrent major pattern affects at least three nodes and either at least 1% of nodes or at least two structural sections. A systematic major pattern affects at least three nodes and either at least 10% of nodes or at least 50% of relevant structural sections. Store exact counts and denominators, compare the exact integer ratios at every threshold, and retain rounded rate fields only for display/reconstruction; never select recurrence from prose.
 
@@ -110,4 +124,4 @@ For mechanics, aggregate defects by identical `root_cause_family`. A recurrent m
 
 Every uncertain item records alternatives, evidence needed, and confidence. Adjudicate all critical, major, and uncertain items plus a frozen quality-control sample. Do not silently force an uncertain judgment to a favorable category. Preserve original and adjudicated values with timestamps and reasons.
 
-`uninspectable` is neutral, never a zero. `not_applicable` requires a frozen genuine-inapplicability basis; candidate absence does not qualify. Full mode cannot score a required `not_measured` item. The V5 calculator assigns minimum and maximum permitted credit to uninspectable evidence, reevaluates every cap at both endpoints, and publishes a numeric rating only when the rounded rating and applied-cap identity are stable.
+`uninspectable` is neutral, never a zero. `not_applicable` requires a frozen genuine-inapplicability basis; candidate absence does not qualify. Full mode cannot score a required `not_measured` item. V5 and V6 assign minimum and maximum permitted credit to uninspectable evidence, reevaluate every cap at both endpoints, and publish a numeric rating only when the rounded rating and applied-cap identity are stable. V6 uses 0 and 1 as the locator-credit endpoints without placing unknown assignments in the central weighted-precision denominator.
