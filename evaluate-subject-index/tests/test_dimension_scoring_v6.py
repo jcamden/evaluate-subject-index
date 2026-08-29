@@ -595,6 +595,145 @@ class DiagnosticProjectionMigrationAndCompatibilityTests(unittest.TestCase):
             self.assertEqual(gates, web["gate_status"]["critical_gates"])
             self.assertEqual(0, items["locator_grading_provenance"]["weak_presence_selectivity_credit"])
 
+    def test_counterfactual_score_view_is_built_and_fully_validated(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            canonical_root = root / "canonical"
+            adjusted_root = root / "adjusted"
+            canonical_root.mkdir()
+            adjusted_root.mkdir()
+            locator, missing, structure = base_documents()
+            calculation = calculate(canonical_root, locator, missing, structure)
+            calculation_path = canonical_root / "dimension-calculations.v2.json"
+            v6.write_json(calculation_path, calculation)
+            items = v6_items(calculation, canonical_root, locator, structure)
+            items_path = canonical_root / "item-assessments.v3.json"
+            v6.write_json(items_path, items)
+
+            adjusted_locator = copy.deepcopy(locator)
+            adjusted_locator["judgments"][0].update(
+                judgment="unsupported",
+                treatment_class="passing_mention",
+                error_codes=[],
+                severity="minor",
+            )
+            adjusted = calculate(
+                adjusted_root,
+                adjusted_locator,
+                copy.deepcopy(missing),
+                copy.deepcopy(structure),
+            )
+            adjusted_path = adjusted_root / "dimension-calculations.v2.json"
+            v6.write_json(adjusted_path, adjusted)
+            provenance_path = root / "representation-correction-ledger.json"
+            write_json(
+                provenance_path,
+                {
+                    "schema_version": "synthetic-representation-correction-v1",
+                    "status": "frozen",
+                },
+            )
+            metadata_path = root / "metadata.json"
+            v6.write_json(
+                metadata_path,
+                {
+                    "schema_version": "subject-index-v6-projection-metadata-v1",
+                    "candidate_label": "Synthetic",
+                    "inclusion_policy": "standard",
+                    "uncertainty_policy": "v6_bounds",
+                    "critical_gates": [],
+                    "counterfactual_score_views": [
+                        {
+                            "view_id": "representation_adjusted",
+                            "label": "Representation adjusted",
+                            "calculation": {
+                                "schema_version": "subject-index-dimension-calculations-v2",
+                                "artifact_path": v5.portable_relative_reference(
+                                    adjusted_path,
+                                    metadata_path,
+                                    label="adjusted calculation",
+                                ),
+                                "sha256": digest(adjusted_path),
+                                "calculation_sha256": adjusted["calculation_sha256"],
+                                "rubric_version": "subject-index-rubric-v6",
+                                "calculation_profile": "subject-index-dimension-calculation-v2",
+                            },
+                            "provenance_artifacts": [
+                                {
+                                    "role": "character_fidelity_correction_ledger",
+                                    "schema_version": "synthetic-representation-correction-v1",
+                                    "artifact_path": v5.portable_relative_reference(
+                                        provenance_path,
+                                        metadata_path,
+                                        label="representation provenance",
+                                    ),
+                                    "sha256": digest(provenance_path),
+                                }
+                            ],
+                        }
+                    ],
+                },
+            )
+            result_path = root / "evaluation-result.v7.json"
+            web_path = root / "web-report.v5.json"
+            result, web = v6.build_projections(
+                calculation_path,
+                items_path,
+                metadata_path,
+                result_path,
+                web_path,
+            )
+            self.assertEqual(
+                "separate_evidentiary_correction",
+                web["score_views"]["adjustment_status"],
+            )
+            self.assertEqual(
+                ["canonical_as_delivered", "representation_adjusted"],
+                [view["view_id"] for view in web["score_views"]["views"]],
+            )
+            adjusted_view = web["score_views"]["views"][1]
+            self.assertEqual(adjusted["total_score"], adjusted_view["score"])
+            self.assertEqual(
+                "separate_evidentiary_correction_not_methodology_effect",
+                adjusted_view["causal_attribution"],
+            )
+            v6.write_json(result_path, result)
+            v6.write_json(web_path, web)
+            validation = v6.validate_projection_artifacts(
+                calculation_path, result_path, web_path
+            )
+            self.assertEqual(2, validation["score_views_validated"])
+            self.assertEqual(
+                ["representation_adjusted"],
+                validation["counterfactual_score_views_validated"],
+            )
+
+            missing_calculation = copy.deepcopy(web)
+            missing_reference = missing_calculation["score_views"]["views"][1][
+                "calculation"
+            ]
+            missing_reference["artifact_path"] = "missing-adjusted-calculation.json"
+            missing_reference["sha256"] = "1" * 64
+            v6.write_json(web_path, missing_calculation)
+            with self.assertRaises(v5.CalculationError) as missing_error:
+                v6.validate_projection_artifacts(
+                    calculation_path, result_path, web_path
+                )
+            self.assertEqual("projection_binding_mismatch", missing_error.exception.code)
+
+            missing_provenance = copy.deepcopy(web)
+            provenance_reference = missing_provenance["score_views"]["views"][1][
+                "provenance_artifacts"
+            ][0]
+            provenance_reference["artifact_path"] = "missing-provenance.json"
+            provenance_reference["sha256"] = "2" * 64
+            v6.write_json(web_path, missing_provenance)
+            with self.assertRaises(v5.CalculationError) as provenance_error:
+                v6.validate_projection_artifacts(
+                    calculation_path, result_path, web_path
+                )
+            self.assertEqual("projection_binding_mismatch", provenance_error.exception.code)
+
     def test_v4_and_v5_historical_contracts_remain_valid(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -729,6 +868,225 @@ class DiagnosticProjectionMigrationAndCompatibilityTests(unittest.TestCase):
                 result["metrics"]["locator_precision"], web["precision_diagnostics"]
             )
             self.assertEqual("v5_to_v6", web["migration_comparison"]["status"])
+
+    def test_migration_requires_and_preserves_historical_counterfactual_view(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            canonical_root = root / "canonical"
+            adjusted_root = root / "adjusted"
+            canonical_root.mkdir()
+            adjusted_root.mkdir()
+            locator, missing, structure = base_documents()
+            config = calculation_files(canonical_root, locator, missing, structure)
+            old_calculation = v5.calculate_loaded(v5.load_inputs(config))
+            old_calculation_path = canonical_root / "dimension-calculations.v1.json"
+            v6.write_json(old_calculation_path, old_calculation)
+            old_items = minimal_item_assessments(
+                old_calculation, canonical_root / "item-inventory.json"
+            )
+            old_items_path = canonical_root / "item-assessments.v2.json"
+            v6.write_json(old_items_path, old_items)
+            gates = [{"gate_id": "representation_test", "status": "failed"}]
+            old_result = evaluation_projection(
+                old_calculation, old_calculation_path, old_items_path, gates
+            )
+            old_result_path = canonical_root / "evaluation-result.v6.json"
+            v6.write_json(old_result_path, old_result)
+
+            adjusted_locator = copy.deepcopy(locator)
+            adjusted_locator["judgments"][0].update(
+                judgment="unsupported",
+                treatment_class="passing_mention",
+                error_codes=[],
+                severity="minor",
+            )
+            adjusted_config = calculation_files(
+                adjusted_root,
+                adjusted_locator,
+                copy.deepcopy(missing),
+                copy.deepcopy(structure),
+            )
+            old_adjusted = v5.calculate_loaded(v5.load_inputs(adjusted_config))
+            old_adjusted_path = adjusted_root / "dimension-calculations.v1.json"
+            v6.write_json(old_adjusted_path, old_adjusted)
+            provenance_path = root / "representation-correction-ledger.json"
+            write_json(
+                provenance_path,
+                {
+                    "schema_version": "synthetic-representation-correction-v1",
+                    "status": "frozen",
+                },
+            )
+            old_web_path = canonical_root / "web-report.v4.json"
+            old_web = web_projection(
+                old_calculation, old_calculation_path, old_items_path, gates
+            )
+            old_web["score_views"]["adjustment_status"] = (
+                "separate_evidentiary_correction"
+            )
+            old_web["score_views"]["views"].append(
+                {
+                    "view_id": "representation_adjusted",
+                    "label": "Representation adjusted",
+                    "view_kind": "counterfactual",
+                    "score": old_adjusted["total_score"],
+                    "maximum": 100,
+                    "calculation": {
+                        "schema_version": "subject-index-dimension-calculations-v1",
+                        "artifact_path": v5.portable_relative_reference(
+                            old_adjusted_path,
+                            old_web_path,
+                            label="historical adjusted calculation",
+                        ),
+                        "sha256": digest(old_adjusted_path),
+                        "calculation_sha256": old_adjusted["calculation_sha256"],
+                        "rubric_version": "subject-index-rubric-v5",
+                        "calculation_profile": "subject-index-dimension-calculation-v1",
+                    },
+                    "causal_attribution": (
+                        "separate_evidentiary_correction_not_methodology_effect"
+                    ),
+                    "provenance_artifacts": [
+                        {
+                            "role": "character_fidelity_correction_ledger",
+                            "schema_version": "synthetic-representation-correction-v1",
+                            "artifact_path": v5.portable_relative_reference(
+                                provenance_path,
+                                old_web_path,
+                                label="historical representation provenance",
+                            ),
+                            "sha256": digest(provenance_path),
+                        }
+                    ],
+                }
+            )
+            v6.write_json(old_web_path, old_web)
+
+            new_calculation_path = canonical_root / "dimension-calculations.v2.json"
+            migration_path = canonical_root / "score-migration.v5-to-v6.json"
+            run_cli(
+                "dimension_score_v6_cli.py",
+                "score-only-migration",
+                "--input",
+                config,
+                "--historical-calculation",
+                old_calculation_path,
+                "--historical-result",
+                old_result_path,
+                "--historical-web-report",
+                old_web_path,
+                "--calculations-output",
+                new_calculation_path,
+                "--migration-record-output",
+                migration_path,
+                "--methodology-commit",
+                "1" * 40,
+                "--migration-timestamp",
+                "2026-08-29T12:00:00Z",
+            )
+            new_calculation = json.loads(new_calculation_path.read_text())
+            new_items_path = canonical_root / "item-assessments.v3.json"
+            run_cli(
+                "item_grade_cli.py",
+                "upgrade-v6-assessments",
+                "--item-assessments",
+                old_items_path,
+                "--locator-audit",
+                canonical_root / "locator.json",
+                "--structure-audit",
+                canonical_root / "structure.json",
+                "--output",
+                new_items_path,
+            )
+            adjusted_v6 = v6.calculate_loaded(v5.load_inputs(adjusted_config))
+            adjusted_v6_path = adjusted_root / "dimension-calculations.v2.json"
+            v6.write_json(adjusted_v6_path, adjusted_v6)
+
+            metadata_path = canonical_root / "projection-metadata.json"
+            base_metadata = {
+                "schema_version": "subject-index-v6-projection-metadata-v1",
+                "candidate_label": "Synthetic",
+                "inclusion_policy": "standard",
+                "uncertainty_policy": "v6_bounds",
+                "critical_gates": gates,
+            }
+            v6.write_json(metadata_path, base_metadata)
+            result_path = canonical_root / "evaluation-result.v7.json"
+            web_path = canonical_root / "web-report.v5.json"
+            result, web = v6.build_projections(
+                new_calculation_path,
+                new_items_path,
+                metadata_path,
+                result_path,
+                web_path,
+                migration_path,
+            )
+            v6.write_json(result_path, result)
+            v6.write_json(web_path, web)
+            with self.assertRaises(v5.CalculationError) as omitted_error:
+                v6.validate_projection_artifacts(
+                    new_calculation_path, result_path, web_path
+                )
+            self.assertEqual(
+                "migration_score_view_mismatch", omitted_error.exception.code
+            )
+
+            metadata = copy.deepcopy(base_metadata)
+            metadata["counterfactual_score_views"] = [
+                {
+                    "view_id": "representation_adjusted",
+                    "label": "Representation adjusted",
+                    "calculation": {
+                        "schema_version": "subject-index-dimension-calculations-v2",
+                        "artifact_path": v5.portable_relative_reference(
+                            adjusted_v6_path,
+                            metadata_path,
+                            label="V6 adjusted calculation",
+                        ),
+                        "sha256": digest(adjusted_v6_path),
+                        "calculation_sha256": adjusted_v6["calculation_sha256"],
+                        "rubric_version": "subject-index-rubric-v6",
+                        "calculation_profile": "subject-index-dimension-calculation-v2",
+                    },
+                    "provenance_artifacts": [
+                        {
+                            "role": "character_fidelity_correction_ledger",
+                            "schema_version": "synthetic-representation-correction-v1",
+                            "artifact_path": v5.portable_relative_reference(
+                                provenance_path,
+                                metadata_path,
+                                label="V6 representation provenance",
+                            ),
+                            "sha256": digest(provenance_path),
+                        }
+                    ],
+                }
+            ]
+            v6.write_json(metadata_path, metadata)
+            result, web = v6.build_projections(
+                new_calculation_path,
+                new_items_path,
+                metadata_path,
+                result_path,
+                web_path,
+                migration_path,
+            )
+            v6.write_json(result_path, result)
+            v6.write_json(web_path, web)
+            validation = v6.validate_projection_artifacts(
+                new_calculation_path, result_path, web_path
+            )
+            self.assertTrue(validation["migration_validated"])
+            self.assertEqual(
+                ["representation_adjusted"],
+                validation["counterfactual_score_views_validated"],
+            )
+            self.assertEqual(
+                digest(provenance_path),
+                web["score_views"]["views"][1]["provenance_artifacts"][0][
+                    "sha256"
+                ],
+            )
 
     def test_migration_preflight_reports_missing_or_inconsistent_fields_without_inference(self) -> None:
         ledgers = reliability_ledgers(

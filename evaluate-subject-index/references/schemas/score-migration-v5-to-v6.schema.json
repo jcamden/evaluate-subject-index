@@ -8,7 +8,7 @@
     "schema_version": {"const": "subject-index-score-migration-v5-to-v6-v1"},
     "evaluation_id": {"type": "string", "minLength": 1},
     "migration_timestamp": {"type": "string", "pattern": "Z$"},
-    "tool": {"type": "object", "required": ["name", "version"], "properties": {"name": {"const": "dimension_score_v6_cli.py"}, "version": {"const": "dimension-score-cli-v6.0.0"}}, "additionalProperties": false},
+    "tool": {"type": "object", "required": ["name", "version"], "properties": {"name": {"const": "dimension_score_v6_cli.py"}, "version": {"enum": ["dimension-score-cli-v6.0.0", "dimension-score-cli-v6.0.1"]}}, "additionalProperties": false},
     "methodology": {
       "type": "object",
       "required": ["repository", "commit_sha", "previous_rubric_version", "migrated_rubric_version", "calculation_profile", "credit_values_frozen_not_candidate_fitted"],

@@ -18,7 +18,55 @@
     "strengths": {"type": "array", "items": {"type": "object"}},
     "defects": {"type": "array", "items": {"type": "object"}},
     "examples": {"type": "array", "items": {"type": "object"}},
-    "limitations": {"type": "array", "items": {"type": "string"}}
+    "limitations": {"type": "array", "items": {"type": "string"}},
+    "counterfactual_score_views": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": ["view_id", "label", "calculation", "provenance_artifacts"],
+        "properties": {
+          "view_id": {"type": "string", "minLength": 1, "not": {"const": "canonical_as_delivered"}},
+          "label": {"type": "string", "minLength": 1},
+          "calculation": {"$ref": "#/$defs/calculationReference"},
+          "provenance_artifacts": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"$ref": "#/$defs/artifactReference"}
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "artifactReference": {
+      "type": "object",
+      "required": ["role", "schema_version", "artifact_path", "sha256"],
+      "properties": {
+        "role": {"type": "string", "minLength": 1},
+        "schema_version": {"type": "string", "minLength": 1},
+        "artifact_path": {"$ref": "score-migration.schema.json#/$defs/portablePath"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "calculationReference": {
+      "type": "object",
+      "required": ["schema_version", "artifact_path", "sha256", "calculation_sha256", "rubric_version", "calculation_profile"],
+      "properties": {
+        "schema_version": {"const": "subject-index-dimension-calculations-v2"},
+        "artifact_path": {"$ref": "score-migration.schema.json#/$defs/portablePath"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "calculation_sha256": {"$ref": "#/$defs/sha256"},
+        "rubric_version": {"const": "subject-index-rubric-v6"},
+        "calculation_profile": {"const": "subject-index-dimension-calculation-v2"}
+      },
+      "additionalProperties": false
+    }
   },
   "additionalProperties": false
 }

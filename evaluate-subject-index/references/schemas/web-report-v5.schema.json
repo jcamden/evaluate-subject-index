@@ -73,6 +73,17 @@
   },
   "$defs": {
     "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "artifactReference": {
+      "type": "object",
+      "required": ["role", "schema_version", "artifact_path", "sha256"],
+      "properties": {
+        "role": {"type": "string", "minLength": 1},
+        "schema_version": {"type": "string", "minLength": 1},
+        "artifact_path": {"$ref": "score-migration.schema.json#/$defs/portablePath"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
     "scorecardItem": {
       "type": "object",
       "required": ["dimension_id", "label", "rating", "unrounded_rating", "weight", "awarded_points", "status", "formula_id", "input_artifacts", "denominators", "raw_status_counts", "credit_mappings", "components", "base_rating", "pre_cap_rating", "post_cap_rating", "cap_evaluations", "applied_cap", "rounding", "missing_data_bounds"],
@@ -108,14 +119,49 @@
       "properties": {"schema_version": {"const": "subject-index-dimension-calculations-v2"}, "artifact_path": {"$ref": "score-migration.schema.json#/$defs/portablePath"}, "sha256": {"$ref": "#/$defs/sha256"}, "calculation_sha256": {"$ref": "#/$defs/sha256"}, "rubric_version": {"const": "subject-index-rubric-v6"}, "calculation_profile": {"const": "subject-index-dimension-calculation-v2"}},
       "additionalProperties": false
     },
+    "scoreView": {
+      "type": "object",
+      "required": ["view_id", "label", "view_kind", "score", "maximum", "calculation", "causal_attribution", "provenance_artifacts"],
+      "properties": {
+        "view_id": {"type": "string", "minLength": 1},
+        "label": {"type": "string", "minLength": 1},
+        "view_kind": {"enum": ["observed", "counterfactual"]},
+        "score": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+        "maximum": {"const": 100},
+        "calculation": {"$ref": "#/$defs/calculationReference"},
+        "causal_attribution": {"enum": ["primary_observed_result", "separate_evidentiary_correction_not_methodology_effect"]},
+        "provenance_artifacts": {"type": "array", "items": {"$ref": "#/$defs/artifactReference"}, "uniqueItems": true}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"view_kind": {"const": "observed"}}, "required": ["view_kind"]},
+          "then": {"properties": {"causal_attribution": {"const": "primary_observed_result"}, "provenance_artifacts": {"maxItems": 0}}}
+        },
+        {
+          "if": {"properties": {"view_kind": {"const": "counterfactual"}}, "required": ["view_kind"]},
+          "then": {"properties": {"causal_attribution": {"const": "separate_evidentiary_correction_not_methodology_effect"}, "provenance_artifacts": {"minItems": 1}}}
+        }
+      ],
+      "additionalProperties": false
+    },
     "scoreViews": {
       "type": "object",
       "required": ["primary_view_id", "adjustment_status", "views"],
       "properties": {
         "primary_view_id": {"const": "canonical_as_delivered"},
         "adjustment_status": {"enum": ["none", "separate_evidentiary_correction"]},
-        "views": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["view_id", "label", "view_kind", "score", "maximum", "calculation", "causal_attribution", "provenance_artifacts"], "properties": {"view_id": {"type": "string"}, "label": {"type": "string"}, "view_kind": {"enum": ["observed", "counterfactual"]}, "score": {"type": ["number", "null"], "minimum": 0, "maximum": 100}, "maximum": {"const": 100}, "calculation": {"$ref": "#/$defs/calculationReference"}, "causal_attribution": {"enum": ["primary_observed_result", "separate_evidentiary_correction_not_methodology_effect"]}, "provenance_artifacts": {"type": "array"}}, "additionalProperties": false}}
+        "views": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/scoreView"}, "uniqueItems": true}
       },
+      "allOf": [
+        {
+          "if": {"properties": {"adjustment_status": {"const": "none"}}, "required": ["adjustment_status"]},
+          "then": {"properties": {"views": {"not": {"contains": {"properties": {"view_kind": {"const": "counterfactual"}}, "required": ["view_kind"]}}}}}
+        },
+        {
+          "if": {"properties": {"adjustment_status": {"const": "separate_evidentiary_correction"}}, "required": ["adjustment_status"]},
+          "then": {"properties": {"views": {"contains": {"properties": {"view_kind": {"const": "counterfactual"}}, "required": ["view_kind"]}, "minContains": 1}}}
+        }
+      ],
       "additionalProperties": false
     },
     "migrationComparison": {
