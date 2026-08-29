@@ -44,7 +44,12 @@
           "input_sha256": {
             "type": "array",
             "items": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
-          }
+          },
+          "active_for_scoring_identity": {"type": "boolean"},
+          "scoring_identity": {"type": ["object", "null"]},
+          "stage_completion_eligible": {"type": "boolean"},
+          "invalidated_at": {"type": "string"},
+          "invalidation_reason": {"const": "score_calculation_profile_changed"}
         },
         "additionalProperties": true
       }

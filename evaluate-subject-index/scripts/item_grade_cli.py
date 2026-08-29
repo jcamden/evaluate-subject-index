@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any, Iterable
@@ -32,7 +33,7 @@ DEFECT_COMPONENTS = {
     "CON": "conceptual_stance_fidelity",
     "STA": "conceptual_stance_fidelity",
     "LOC_POS": "page_reference_reliability",
-    "LOC_NEG": "meaningful_coverage",
+    "LOC_NEG": "page_reference_reliability",
     "CMP": "conceptual_stance_fidelity",
     "HED": "findability_navigation",
     "SUB": "findability_navigation",
@@ -42,6 +43,7 @@ DEFECT_COMPONENTS = {
 SEVERITY_CAP = {"cosmetic": 95.0, "minor": 85.0, "major": 55.0, "critical": 0.0}
 STRUCTURE_STATUS_SCORE = {
     "passes": 100.0,
+    "cosmetic_issues": 95.0,
     "minor_issues": 85.0,
     "major_issues": 55.0,
     "fails": 0.0,
@@ -68,6 +70,57 @@ COVERAGE_SCORE = {"complete": 100.0, "partial": 70.0, "missing": 0.0, "uninspect
 REFERENCE_SCORE = {"supported": 100.0, "partially_supported": 70.0, "unsupported": 0.0, "uninspectable": None}
 PRIORITY_WEIGHT = {"essential": 3.0, "major": 2.0, "optional": 1.0}
 CONFIDENCE_RANK = {"low": 0, "medium": 1, "high": 2}
+V5_IDENTITY_FIELDS = (
+    "source_sha256",
+    "benchmark_lock_sha256",
+    "policy_sha256",
+    "page_map_sha256",
+    "chunk_manifest_sha256",
+    "normalized_candidate_file_sha256",
+    "item_inventory_file_sha256",
+)
+
+
+def canonical_hash(value: Any) -> str:
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def canonical_id_set_hash(ids: Iterable[str]) -> str:
+    return canonical_hash({"ids": sorted(ids)})
+
+
+def canonical_audit_set_hash(
+    documents: list[dict[str, Any]],
+    paths: list[Path],
+    collections: tuple[tuple[str, str, str], ...],
+) -> str:
+    triples = sorted(zip(documents, paths, strict=True), key=lambda item: item[0].get("chunk_id", ""))
+    records: list[dict[str, Any]] = []
+    for document, path in triples:
+        record: dict[str, Any] = {
+            "chunk_id": document["chunk_id"],
+            "file_sha256": sha256_file(path),
+            "byte_length": path.stat().st_size,
+        }
+        for collection, id_field, output_key in collections:
+            record[output_key] = sorted(item[id_field] for item in document.get(collection, []))
+        records.append(record)
+    return canonical_hash(records)
+
+
+def defect_dimension(defect: dict[str, Any]) -> str | None:
+    """Prefer the validated V5 owner; retain code routing for historical defects."""
+    owner = defect.get("dimension_owner")
+    return owner if owner in COMPONENT_WEIGHTS else DEFECT_COMPONENTS.get(defect.get("code"))
+
+
+def defect_affected_ids(defect: dict[str, Any]) -> list[str]:
+    """Normalize V5 affected_item_ids and historical affected_ids without dropping either."""
+    values = defect.get("affected_item_ids")
+    if values is None:
+        values = defect.get("affected_ids", [])
+    return values if isinstance(values, list) else []
 
 
 def emit(value: Any) -> None:
@@ -351,6 +404,63 @@ def collect_unique(records: Iterable[dict[str, Any]], key: str, label: str) -> d
     return result
 
 
+def build_v5_evidence_identity(
+    candidate: dict[str, Any],
+    inventory_sha256: str,
+    locator_batches: list[dict[str, Any]],
+    locator_paths: list[Path],
+    missing_batches: list[dict[str, Any]],
+    missing_paths: list[Path],
+    structure: dict[str, Any],
+    structure_path: Path,
+) -> dict[str, str] | None:
+    """Return exact V5 projection identity, or None for legacy provenance-poor inputs."""
+    audit_documents = [*locator_batches, *missing_batches]
+    audit_provenances = [item.get("provenance") for item in audit_documents]
+    if not all(isinstance(item, dict) for item in audit_provenances):
+        return None
+    structure_provenance = structure.get("provenance") if isinstance(structure.get("provenance"), dict) else {}
+    identity: dict[str, str] = {"candidate_sha256": candidate["candidate_sha256"]}
+    for field in V5_IDENTITY_FIELDS:
+        values = {item.get(field) for item in audit_provenances if isinstance(item, dict)}
+        if len(values) != 1 or None in values:
+            fail("v5_item_assessment_identity_mismatch", f"V5 item-assessment inputs do not bind one exact {field}.", sorted(str(item) for item in values))
+        identity[field] = next(iter(values))
+        historical_value = structure_provenance.get(field)
+        if structure.get("schema_version") == "structure-audit-v4" or historical_value is not None:
+            if historical_value != identity[field]:
+                fail("v5_item_assessment_identity_mismatch", f"Structure audit {field} differs from the exact chunk-audit identity.", {"structure": historical_value, "audit_set": identity[field]})
+    if identity["item_inventory_file_sha256"] != inventory_sha256:
+        fail("item_inventory_mismatch", "V5 audit provenance does not bind the exact item inventory supplied for diagnostic grading.")
+    benchmark_values = {item.get("provenance", {}).get("benchmark_sha256") for item in locator_batches}
+    benchmark_values.update(item.get("benchmark_sha256") for item in missing_batches)
+    historical_benchmark = structure_provenance.get("benchmark_sha256")
+    if structure.get("schema_version") == "structure-audit-v4" or historical_benchmark is not None:
+        benchmark_values.add(historical_benchmark)
+    if len(benchmark_values) != 1 or None in benchmark_values:
+        fail("v5_item_assessment_identity_mismatch", "V5 item-assessment inputs do not bind one exact benchmark_sha256.", sorted(str(item) for item in benchmark_values))
+    identity["benchmark_sha256"] = next(iter(benchmark_values))
+    identity["structure_audit_file_sha256"] = sha256_file(structure_path)
+    identity["locator_audit_set_sha256"] = canonical_audit_set_hash(
+        locator_batches,
+        locator_paths,
+        (("judgments", "locator_id", "locator_ids"),),
+    )
+    identity["missing_access_audit_set_sha256"] = canonical_audit_set_hash(
+        missing_batches,
+        missing_paths,
+        (
+            ("subject_judgments", "subject_id", "subject_ids"),
+            ("reader_task_results", "task_id", "reader_task_ids"),
+            ("treatment_judgments", "treatment_id", "treatment_ids"),
+        ),
+    )
+    for document in missing_batches:
+        if document["provenance"].get("locator_audit_set_sha256") != identity["locator_audit_set_sha256"]:
+            fail("v5_item_assessment_identity_mismatch", "A missing-access audit does not bind the exact locator-audit set used for item grading.", {"chunk_id": document.get("chunk_id")})
+    return identity
+
+
 def apply_caps(score: float | None, defect_records: Iterable[dict[str, Any]]) -> float | None:
     if score is None:
         return None
@@ -367,6 +477,8 @@ def build_assessments(
     audit_mode: str,
     evaluation_id: str | None,
     inventory_sha256: str,
+    v5_evidence_identity: dict[str, str] | None = None,
+    inventory_artifact_path: str | None = None,
 ) -> dict[str, Any]:
     candidate_sha = candidate.get("candidate_sha256")
     if inventory.get("candidate_sha256") != candidate_sha or structure.get("candidate_sha256") != candidate_sha:
@@ -399,6 +511,19 @@ def build_assessments(
         "subject_id",
         "subject judgment",
     )
+    expected_subject_ids: list[str] = []
+    for batch in missing_batches:
+        expected_here = batch.get("expected_subject_ids", [])
+        if not isinstance(expected_here, list) or not all(isinstance(item, str) and item for item in expected_here):
+            fail("missing_subject_denominator", "Every missing-access audit must declare valid expected_subject_ids.")
+        expected_subject_ids.extend(expected_here)
+    if len(expected_subject_ids) != len(set(expected_subject_ids)):
+        fail("duplicate_identity", "Expected source-subject IDs must be unique across missing-access audits.")
+    unexpected_subjects = set(subject_judgments) - set(expected_subject_ids)
+    if unexpected_subjects:
+        fail("subject_denominator_mismatch", "Source-subject judgments fall outside the frozen expected set.", sorted(unexpected_subjects))
+    if audit_mode == "full" and set(subject_judgments) != set(expected_subject_ids):
+        fail("incomplete_subject_audit", "Full item grading requires every expected source subject to have a judgment.", sorted(set(expected_subject_ids) - set(subject_judgments)))
     node_judgments = collect_unique(structure.get("node_judgments", []), "node_id", "node judgment")
     reference_judgments = collect_unique(structure.get("cross_reference_judgments", []), "reference_id", "cross-reference judgment")
     defects = structure.get("defects", [])
@@ -468,18 +593,19 @@ def build_assessments(
 
     subjects_by_path: dict[str, list[dict[str, Any]]] = {}
     source_subject_assessments: list[dict[str, Any]] = []
-    for subject_id, judgment in sorted(subject_judgments.items()):
-        score = COVERAGE_SCORE.get(judgment.get("coverage"))
+    for subject_id in sorted(expected_subject_ids):
+        judgment = subject_judgments.get(subject_id)
+        score = COVERAGE_SCORE.get(judgment.get("coverage")) if judgment else None
         record = {
             "subject_id": subject_id,
-            "priority": judgment.get("priority"),
-            "coverage": judgment.get("coverage"),
-            "matched_path_ids": judgment.get("matched_path_ids", []),
-            "missed_document_pages": judgment.get("missed_document_pages", []),
+            "priority": judgment.get("priority") if judgment else None,
+            "coverage": judgment.get("coverage") if judgment else "not_measured",
+            "matched_path_ids": judgment.get("matched_path_ids", []) if judgment else [],
+            "missed_document_pages": judgment.get("missed_document_pages", []) if judgment else [],
             "grade_scope": "access_to_one_frozen_source_subject",
             "grade": grade(score),
-            "severity": judgment.get("severity"),
-            "confidence": judgment.get("confidence"),
+            "severity": judgment.get("severity") if judgment else None,
+            "confidence": judgment.get("confidence") if judgment else None,
             "evidence_ids": [subject_id],
         }
         record["popover"] = popover(
@@ -488,17 +614,18 @@ def build_assessments(
             record["grade"],
             record["grade_scope"],
             record["confidence"],
-            [{"factor_id": "concept_coverage", "label": "Meaningful coverage", "status": judgment.get("coverage"), "score": score, "explanation": "Coverage is judged from the frozen source benchmark, not discovered from the candidate.", "evidence_ids": [subject_id]}],
+            [{"factor_id": "concept_coverage", "label": "Meaningful coverage", "status": judgment.get("coverage") if judgment else "not_measured", "score": score, "explanation": "Coverage is judged from the frozen source benchmark, not discovered from the candidate.", "evidence_ids": [subject_id]}],
             [subject_id],
             navigation={"matched_path_ids": record["matched_path_ids"]},
         )
         source_subject_assessments.append(record)
-        for path_id in judgment.get("matched_path_ids", []):
-            subjects_by_path.setdefault(path_id, []).append(judgment)
+        if judgment:
+            for path_id in judgment.get("matched_path_ids", []):
+                subjects_by_path.setdefault(path_id, []).append(judgment)
 
     defects_by_affected_id: dict[str, list[dict[str, Any]]] = {}
     for defect in defects:
-        for affected_id in defect.get("affected_ids", []):
+        for affected_id in defect_affected_ids(defect):
             defects_by_affected_id.setdefault(affected_id, []).append(defect)
 
     node_assessments: list[dict[str, Any]] = []
@@ -520,7 +647,7 @@ def build_assessments(
             source = judgment.get("component_judgments", {}).get(source_name, {}) if judgment else {}
             status = source.get("status", "uninspectable") if audit_mode == "full" else source.get("status", "not_applicable")
             score = STRUCTURE_STATUS_SCORE.get(status)
-            relevant = [item for item in defects_by_affected_id.get(node_id, []) if DEFECT_COMPONENTS.get(item.get("code")) == dimension]
+            relevant = [item for item in defects_by_affected_id.get(node_id, []) if defect_dimension(item) == dimension]
             score = apply_caps(score, relevant)
             cap_records = severity_cap_records(relevant)
             scores[dimension] = score
@@ -635,7 +762,7 @@ def build_assessments(
         }
         component_results: list[dict[str, Any]] = []
         for dimension, value in component_values.items():
-            relevant = [item for item in path_defects if DEFECT_COMPONENTS.get(item.get("code")) == dimension]
+            relevant = [item for item in path_defects if defect_dimension(item) == dimension]
             adjusted = apply_caps(value, relevant)
             cap_records = severity_cap_records(relevant)
             component_results.append({
@@ -712,7 +839,7 @@ def build_assessments(
         reference_id = reference["reference_id"]
         judgment = reference_judgments.get(reference_id)
         score = REFERENCE_SCORE.get(judgment.get("judgment")) if judgment else None
-        relevant = defects_by_affected_id.get(reference_id, [])
+        relevant = [item for item in defects_by_affected_id.get(reference_id, []) if defect_dimension(item) == "findability_navigation"]
         score = apply_caps(score, relevant)
         cap_records = severity_cap_records(relevant)
         reference_record = {
@@ -758,7 +885,7 @@ def build_assessments(
         }
         for name, items in collections.items()
     }
-    return {
+    result = {
         "schema_version": "subject-index-item-assessments-v1",
         "grading_policy": GRADING_POLICY,
         "evaluation_id": effective_evaluation_id,
@@ -783,6 +910,47 @@ def build_assessments(
         "source_subject_assessments": source_subject_assessments,
         "summary": summary,
     }
+    if v5_evidence_identity is not None:
+        if not isinstance(inventory_artifact_path, str) or not inventory_artifact_path:
+            fail("item_inventory_reference_required", "Projection-safe V5 item assessments require a resolvable item-inventory artifact path.")
+        assessment_sets = {
+            "locators": (inventory.get("locators", []), "locator_id"),
+            "paths": (inventory.get("paths", []), "path_id"),
+            "heading_nodes": (inventory.get("heading_nodes", []), "node_id"),
+            "cross_references": (inventory.get("cross_references", []), "reference_id"),
+            "source_subjects": (source_subject_assessments, "subject_id"),
+        }
+        assessed_collections = {
+            "locators": locator_assessments,
+            "paths": path_assessments,
+            "heading_nodes": node_assessments,
+            "cross_references": cross_reference_assessments,
+            "source_subjects": source_subject_assessments,
+        }
+        completeness: dict[str, dict[str, Any]] = {}
+        for family, (expected_records, id_field) in assessment_sets.items():
+            expected_ids = [item[id_field] for item in expected_records]
+            assessed_ids = [item[id_field] for item in assessed_collections[family]]
+            if len(expected_ids) != len(set(expected_ids)) or set(expected_ids) != set(assessed_ids) or len(assessed_ids) != len(set(assessed_ids)):
+                fail("item_assessment_set_mismatch", f"V5 {family} assessments do not exactly cover their frozen denominator.", {"expected": sorted(expected_ids), "assessed": sorted(assessed_ids)})
+            completeness[family] = {
+                "expected": len(expected_ids),
+                "assessed": len(assessed_ids),
+                "unique": True,
+                "complete": True,
+                "id_set_sha256": canonical_id_set_hash(expected_ids),
+            }
+        result.update({
+            "schema_version": "subject-index-item-assessments-v2",
+            "item_inventory_artifact": {
+                "schema_version": inventory.get("schema_version"),
+                "artifact_path": inventory_artifact_path,
+                "sha256": inventory_sha256,
+            },
+            "evidence_identity": v5_evidence_identity,
+            "assessment_completeness": completeness,
+        })
+    return result
 
 
 def command_build_inventory(args: argparse.Namespace) -> None:
@@ -795,11 +963,27 @@ def command_build_inventory(args: argparse.Namespace) -> None:
 
 def command_build_assessments(args: argparse.Namespace) -> None:
     candidate = load_json(Path(args.candidate))
-    inventory = load_json(Path(args.inventory))
-    inventory_sha256 = sha256_file(Path(args.inventory))
-    locator_batches = [load_json(Path(path)) for path in args.locator_audit]
-    missing_batches = [load_json(Path(path)) for path in args.missing_access_audit]
-    structure = load_json(Path(args.structure_audit))
+    inventory_path = Path(args.inventory).resolve()
+    inventory = load_json(inventory_path)
+    inventory_sha256 = sha256_file(inventory_path)
+    locator_paths = [Path(path).resolve() for path in args.locator_audit]
+    missing_paths = [Path(path).resolve() for path in args.missing_access_audit]
+    structure_path = Path(args.structure_audit).resolve()
+    locator_batches = [load_json(path) for path in locator_paths]
+    missing_batches = [load_json(path) for path in missing_paths]
+    structure = load_json(structure_path)
+    output_path = Path(args.output).resolve()
+    v5_evidence_identity = build_v5_evidence_identity(
+        candidate,
+        inventory_sha256,
+        locator_batches,
+        locator_paths,
+        missing_batches,
+        missing_paths,
+        structure,
+        structure_path,
+    )
+    inventory_artifact_path = os.path.relpath(inventory_path, output_path.parent).replace(os.sep, "/")
     result = build_assessments(
         candidate,
         inventory,
@@ -809,9 +993,11 @@ def command_build_assessments(args: argparse.Namespace) -> None:
         args.audit_mode,
         args.evaluation_id,
         inventory_sha256,
+        v5_evidence_identity,
+        inventory_artifact_path if v5_evidence_identity is not None else None,
     )
     if args.output:
-        save_json(Path(args.output), result)
+        save_json(output_path, result)
     emit({"ok": True, **result, "artifact_written": args.output})
 
 

@@ -8,6 +8,7 @@ import fcntl
 import hashlib
 import json
 import mimetypes
+from copy import deepcopy
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -67,7 +68,7 @@ REQUIRED_INPUTS = {
     "locator_audit": ["source chunk PDF", "candidate locator chunk packet", "page sidecar"],
     "missing_access_audit": ["frozen benchmark", "normalized candidate", "locator judgments"],
     "structure_audit": ["complete locator and missing-access audits", "normalized whole index", "item inventory"],
-    "scoring": ["all complete audit ledgers", "item inventory", "item grading v1", "rubric v4", "standard critical gates"],
+    "scoring": ["all complete audit ledgers", "strict V5 scoring context or migration supplement", "dimension calculation profile v1", "item grading v1 kept non-additive", "standard critical gates kept outside arithmetic"],
     "web_report": ["validated evaluation result", "item assessments", "balanced representative examples"],
 }
 
@@ -86,7 +87,7 @@ COMPLETION_TESTS = {
     "locator_audit": "Every expected expanded locator assignment has exactly one judgment.",
     "missing_access_audit": "Every scored benchmark subject and expected treatment has a coverage judgment.",
     "structure_audit": "The full hierarchy, every heading node and cross-reference, terminology, mechanics, density, and distribution are audited.",
-    "scoring": "Diagnostic item grades, popover factors, overall score arithmetic, gates, denominators, hashes, and limitations validate.",
+    "scoring": "V5 dimension calculations derive from validated ledgers, expose complete formula provenance and stable uncertainty bounds, and keep item grades and gates outside arithmetic.",
     "web_report": "The display payload validates and references frozen evidence IDs plus the exact item-assessment artifact and color/popover contract.",
 }
 
@@ -98,6 +99,188 @@ MANIFEST_FILENAME = "artifact-manifest.json"
 VALID_VISIBILITY = {"public", "private", "restricted"}
 VALID_RETENTION = {"required", "cache"}
 PUBLICATION_PROFILES = {"aggregate_only", "public_evaluation_artifacts"}
+SCORE_RUBRIC_VERSION = "subject-index-rubric-v5"
+DIMENSION_CALCULATION_PROFILE = "subject-index-dimension-calculation-v1"
+
+
+def artifact_matches_active_scoring_identity(state: dict[str, Any], artifact: dict[str, Any], stage: str) -> bool:
+    if artifact.get("stage") != stage:
+        return False
+    if stage not in {"scoring", "web_report"}:
+        return True
+    # Pre-Phase-2 states have no activation marker. They remain readable as
+    # history, but the first explicit profile change records an epoch and
+    # deactivates them before either stage can be completed again.
+    if state.get("configuration", {}).get("scoring_identity") is None:
+        return artifact.get("active_for_scoring_identity") is not False
+    return (
+        artifact.get("active_for_scoring_identity") is True
+        and artifact.get("scoring_identity") == state.get("configuration", {}).get("scoring_identity")
+    )
+
+
+def artifact_is_active_for_stage(state: dict[str, Any], artifact: dict[str, Any], stage: str) -> bool:
+    return artifact_matches_active_scoring_identity(state, artifact, stage) and (
+        stage not in {"scoring", "web_report"}
+        or state.get("configuration", {}).get("scoring_identity") is None
+        or artifact.get("stage_completion_eligible") is True
+    )
+
+
+def require_calculation_matches_state(calculation: dict[str, Any], calculation_path: Path, state: dict[str, Any], state_path: Path) -> None:
+    from dimension_score_cli import calculate_loaded, load_inputs, validate_migration_record_for_calculation
+
+    identity = calculation.get("evidence_identity") if isinstance(calculation.get("evidence_identity"), dict) else {}
+    candidate = state.get("candidate") if isinstance(state.get("candidate"), dict) else {}
+    checks = (
+        ("evaluation_id", calculation.get("evaluation_id"), state.get("evaluation_id")),
+        ("audit_mode", calculation.get("audit_mode"), state.get("configuration", {}).get("audit_mode")),
+        ("source_sha256", identity.get("source_sha256"), state.get("source", {}).get("sha256")),
+        ("candidate_sha256", identity.get("candidate_sha256"), candidate.get("sha256")),
+    )
+    mismatches = [
+        {"field": field, "calculation": actual, "state": expected}
+        for field, actual, expected in checks
+        if not isinstance(expected, str) or not expected or actual != expected
+    ]
+    if mismatches:
+        fail("scoring_artifact_state_identity_mismatch", "The V5 calculation does not belong to canonical state.", mismatches)
+    history = state.get("configuration", {}).get("score_profile_history")
+    if not isinstance(history, list) or not history:
+        fail("score_profile_history_required", "Active V5 scoring requires the authoritative profile-adoption preflight history.")
+    adoption = history[-1]
+    preflight_path = resolve_artifact_path(state_path, adoption["preflight_path"])
+    if sha256_file(preflight_path) != adoption.get("preflight_sha256"):
+        fail("score_profile_preflight_changed", "The adopted V5 preflight bytes no longer match state history.")
+    try:
+        preflight = json.loads(preflight_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        fail("score_profile_preflight_invalid", "The adopted V5 preflight is unavailable or invalid.", str(exc))
+    if preflight.get("sufficient") is not True or calculation.get("input_artifacts") != preflight.get("input_artifacts"):
+        fail("scoring_artifact_preflight_mismatch", "The V5 calculation inputs do not exactly match the authoritative adopted preflight.")
+    calculation_input_path = resolve_artifact_path(state_path, adoption["calculation_input_path"])
+    if sha256_file(calculation_input_path) != adoption.get("calculation_input_sha256"):
+        fail("score_profile_calculation_input_changed", "The adopted V5 calculation-input bytes no longer match state history.")
+    loaded = load_inputs(calculation_input_path)
+    historical_structure = loaded.get("structure", {}).get("schema_version") == "structure-audit-v3"
+    authoritative = calculate_loaded(loaded, allow_historical_migration=historical_structure)
+    migration_context = calculation.get("migration_context")
+    if historical_structure and not isinstance(migration_context, dict):
+        fail("score_only_migration_required", "Historical structure-audit-v3 inputs require an exact V4 score-only migration and preserved gate outcomes.")
+    if migration_context is not None:
+        validate_migration_record_for_calculation(calculation, calculation_path, loaded=loaded)
+    submitted_comparable = deepcopy(calculation)
+    authoritative_comparable = deepcopy(authoritative)
+    submitted_comparable.pop("calculation_sha256", None)
+    submitted_comparable.pop("migration_context", None)
+    authoritative_comparable.pop("calculation_sha256", None)
+    if submitted_comparable != authoritative_comparable:
+        fail("scoring_artifact_reconstruction_mismatch", "The submitted V5 calculation does not exactly reconstruct from the adopted frozen inputs.")
+
+
+def require_profile_bound_stage_artifact(
+    document: dict[str, Any],
+    artifact_path: Path,
+    stage: str,
+    scoring_identity: dict[str, Any],
+    state: dict[str, Any],
+    state_path: Path,
+) -> bool:
+    """Authoritatively validate a V5 output and return completion eligibility."""
+    from dimension_score_cli import (  # Imported lazily to keep basic state commands lightweight.
+        CalculationError,
+        canonical_hash,
+        validate_projection_artifacts,
+        validate_schema_document,
+    )
+
+    schema_version = document.get("schema_version")
+    try:
+        if stage == "scoring" and schema_version == "subject-index-dimension-calculations-v1":
+            validate_schema_document(document, "dimension-calculations.schema.json", "Active V5 dimension calculation")
+            if document.get("calculation_sha256") != canonical_hash(document, "calculation_sha256"):
+                raise CalculationError("calculation_self_hash_mismatch", "The active V5 calculation self-hash does not reconstruct.")
+            require_calculation_matches_state(document, artifact_path, state, state_path)
+            rubric_version = document.get("rubric_version")
+            profile = document.get("calculation_profile")
+            completion_eligible = False
+        elif stage == "scoring" and schema_version == "subject-index-evaluation-result-v6":
+            validate_schema_document(document, "evaluation-result-v6.schema.json", "Active V5 evaluation result")
+            provenance = document.get("provenance") if isinstance(document.get("provenance"), dict) else {}
+            rubric_version = provenance.get("rubric_version")
+            profile = provenance.get("dimension_calculation_profile")
+            calculation_reference = document["dimension_calculations"]["artifact_path"]
+            calculation_path = (Path(calculation_reference) if Path(calculation_reference).is_absolute() else artifact_path.parent / calculation_reference).resolve()
+            calculation_hash = sha256_file(calculation_path)
+            registered_calculations = [
+                record
+                for record in state.get("artifacts", [])
+                if isinstance(record, dict)
+                and artifact_matches_active_scoring_identity(state, record, "scoring")
+                and resolve_artifact_path(state_path, record["path"]) == calculation_path
+                and record.get("sha256") == calculation_hash
+            ]
+            if len(registered_calculations) != 1:
+                raise CalculationError("active_v5_calculation_required", "The result's exact calculation path and hash must already be registered for the active score identity.", registered_calculations)
+            validate_projection_artifacts(calculation_path, artifact_path)
+            calculation_document = json.loads(calculation_path.read_text(encoding="utf-8"))
+            require_calculation_matches_state(calculation_document, calculation_path, state, state_path)
+            completion_eligible = True
+        elif stage == "scoring":
+            fail("active_v5_scoring_artifact_required", "Scoring requires a schema-valid V5 dimension calculation or V5 evaluation result; only a validated result can complete the stage.", {"schema_version": schema_version})
+        elif stage == "web_report" and schema_version == "subject-index-web-report-v4":
+            validate_schema_document(document, "web-report-v4.schema.json", "Active V5 web report")
+            explainer = document.get("calculation_explainer") if isinstance(document.get("calculation_explainer"), dict) else {}
+            rubric_version = explainer.get("rubric_version")
+            profile = explainer.get("calculation_profile")
+            calculation_reference = explainer["artifact_path"]
+            calculation_path = (Path(calculation_reference) if Path(calculation_reference).is_absolute() else artifact_path.parent / calculation_reference).resolve()
+            calculation_document = json.loads(calculation_path.read_text(encoding="utf-8"))
+            require_calculation_matches_state(calculation_document, calculation_path, state, state_path)
+            result_candidates: list[Path] = []
+            for record in state.get("artifacts", []):
+                if not isinstance(record, dict) or not artifact_is_active_for_stage(state, record, "scoring"):
+                    continue
+                candidate_path = resolve_artifact_path(state_path, record["path"])
+                try:
+                    candidate_document = json.loads(candidate_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                if candidate_document.get("schema_version") != "subject-index-evaluation-result-v6":
+                    continue
+                bound = candidate_document.get("dimension_calculations", {}).get("artifact_path")
+                if not isinstance(bound, str):
+                    continue
+                bound_path = (Path(bound) if Path(bound).is_absolute() else candidate_path.parent / bound).resolve()
+                if bound_path == calculation_path:
+                    result_candidates.append(candidate_path)
+            if len(result_candidates) != 1:
+                raise CalculationError("active_v5_evaluation_result_required", "Web-report validation requires exactly one active V5 evaluation result bound to the same calculation.", [str(item) for item in result_candidates])
+            validate_projection_artifacts(calculation_path, result_candidates[0], artifact_path)
+            completion_eligible = True
+        elif stage == "web_report":
+            fail("active_v5_web_report_required", "Web-report completion requires a schema-valid V5 web report whose projections validate against the active result.", {"schema_version": schema_version})
+        else:
+            return True
+    except (CalculationError, OSError, KeyError) as exc:
+        if isinstance(exc, CalculationError):
+            details = {"code": exc.code, "message": exc.message, "details": exc.details}
+        else:
+            details = {"message": str(exc)}
+        fail("invalid_profile_bound_artifact", f"The {stage} artifact failed authoritative V5 validation.", details)
+
+    expected_rubric = scoring_identity.get("rubric_version")
+    expected_profile = scoring_identity.get("dimension_calculation_profile")
+    if rubric_version != expected_rubric or profile != expected_profile:
+        fail(
+            "scoring_artifact_identity_mismatch",
+            f"The {stage} artifact does not bind the active score identity.",
+            {
+                "expected": scoring_identity,
+                "actual": {"rubric_version": rubric_version, "dimension_calculation_profile": profile},
+            },
+        )
+    return completion_eligible
 
 
 @contextmanager
@@ -242,6 +425,16 @@ def validate_state(
         errors.append("configuration.readership_provenance.basis must be inferred or user_supplied.")
     elif readership.get("confidence") not in {"high", "medium", "low"}:
         errors.append("configuration.readership_provenance.confidence must be high, medium, or low.")
+    scoring_identity = state.get("configuration", {}).get("scoring_identity")
+    if scoring_identity is None:
+        warnings.append("Legacy state has no decoupled scoring identity; run the V5 sufficiency preflight before score-only migration.")
+    elif not isinstance(scoring_identity, dict):
+        errors.append("configuration.scoring_identity must be an object.")
+    else:
+        if scoring_identity.get("rubric_version") != SCORE_RUBRIC_VERSION:
+            errors.append(f"configuration.scoring_identity.rubric_version must be {SCORE_RUBRIC_VERSION}.")
+        if scoring_identity.get("dimension_calculation_profile") != DIMENSION_CALCULATION_PROFILE:
+            errors.append(f"configuration.scoring_identity.dimension_calculation_profile must be {DIMENSION_CALCULATION_PROFILE}.")
 
     stages = state.get("stages", {})
     if not isinstance(stages, dict):
@@ -285,6 +478,11 @@ def validate_state(
             errors.append(f"Invalid artifact visibility: {stored_path}")
         if artifact.get("retention") not in VALID_RETENTION:
             errors.append(f"Invalid artifact retention: {stored_path}")
+        if artifact.get("active_for_scoring_identity") is True:
+            if artifact.get("stage") not in {"scoring", "web_report"}:
+                errors.append(f"Only scoring/web-report artifacts may be active for score identity: {stored_path}")
+            elif artifact.get("scoring_identity") != scoring_identity:
+                errors.append(f"Active artifact score identity mismatch: {stored_path}")
         try:
             artifact_path = resolve_artifact_path(state_path, stored_path) if state_path else Path(stored_path)
         except ValueError as exc:
@@ -309,20 +507,35 @@ def validate_state(
                 errors.append("Unsupported artifact manifest schema_version.")
             if manifest.get("evaluation_id") != state.get("evaluation_id"):
                 errors.append("Artifact manifest evaluation_id does not match state.")
-            state_artifacts = {(item.get("path"), item.get("sha256")) for item in artifacts if isinstance(item, dict)}
+            binding_keys = (
+                "path", "sha256", "stage", "artifact_type", "frozen", "retention",
+                "active_for_scoring_identity", "scoring_identity", "stage_completion_eligible",
+            )
+            state_artifacts = {
+                tuple(json.dumps(item.get(key), sort_keys=True) for key in binding_keys)
+                for item in artifacts
+                if isinstance(item, dict)
+            }
             manifest_artifacts = {
-                (item.get("path"), item.get("sha256"))
+                tuple(json.dumps(item.get(key), sort_keys=True) for key in binding_keys)
                 for item in manifest.get("artifacts", [])
                 if isinstance(item, dict)
             }
             if state_artifacts != manifest_artifacts:
                 errors.append("State and artifact manifest inventories do not match.")
 
-    artifact_stages = {item.get("stage") for item in artifacts if isinstance(item, dict)}
     for name in stage_order[1:]:
-        artifact_present = name in artifact_stages
+        artifact_present = any(
+            artifact_is_active_for_stage(state, item, name)
+            for item in artifacts
+            if isinstance(item, dict)
+        )
         if name == "benchmark_synthesis":
-            artifact_present = artifact_present or "benchmark_freeze" in artifact_stages
+            artifact_present = artifact_present or any(
+                artifact_is_active_for_stage(state, item, "benchmark_freeze")
+                for item in artifacts
+                if isinstance(item, dict)
+            )
         if stages.get(name, {}).get("status") == "completed" and not artifact_present:
             errors.append(f"Completed stage has no registered artifact: {name}")
 
@@ -444,6 +657,7 @@ def state_summary(state: dict[str, Any], state_path: Path | None = None) -> dict
         "evaluation_id": state.get("evaluation_id"),
         "storage_mode": state.get("configuration", {}).get("storage_mode"),
         "publication_profile": state.get("configuration", {}).get("publication_profile", "aggregate_only"),
+        "scoring_identity": state.get("configuration", {}).get("scoring_identity"),
         "state": current,
         "completed_stages": [name for name in stage_order if stages.get(name, {}).get("status") == "completed"],
         "blocked_stages": [name for name in stage_order if stages.get(name, {}).get("status") == "blocked"],
@@ -503,7 +717,13 @@ def command_init(args: argparse.Namespace) -> None:
             "publication_profile": args.publication_profile,
             "chunking": {"primary": "chapter", "maximum_pages": 60, "context_overlap_pages": 2},
             "policy_profile": "subject-index-standard-policy-v1",
+            # Kept only as the legacy judgment-policy/preparation identity.  V5
+            # score identity is deliberately separate below.
             "rubric_version": "subject-index-rubric-v4",
+            "scoring_identity": {
+                "rubric_version": SCORE_RUBRIC_VERSION,
+                "dimension_calculation_profile": DIMENSION_CALCULATION_PROFILE,
+            },
         },
         "stages": stages,
         "artifacts": [],
@@ -565,9 +785,14 @@ def command_set_stage(args: argparse.Namespace) -> None:
         if active:
             fail("another_stage_active", "Only one stage may be in progress.", active)
     if args.status == "completed" and not args.artifact_path:
-        has_registered = any(item.get("stage") == args.stage for item in state.get("artifacts", []))
+        has_registered = any(
+            artifact_is_active_for_stage(state, item, args.stage)
+            for item in state.get("artifacts", [])
+            if isinstance(item, dict)
+        )
         if args.stage != "initialize" and not has_registered:
-            fail("completion_artifact_required", f"Cannot complete {args.stage} without a registered artifact.")
+            code = "active_profile_artifact_required" if args.stage in {"scoring", "web_report"} else "completion_artifact_required"
+            fail(code, f"Cannot complete {args.stage} without a registered artifact active for the current score identity.")
     stamp = now()
     record = state["stages"][args.stage]
     record["status"] = args.status
@@ -581,11 +806,26 @@ def command_set_stage(args: argparse.Namespace) -> None:
         artifact_hash = sha256_file(artifact_path)
         if artifact_hash is None:
             fail("artifact_not_found", f"Artifact file does not exist: {artifact_path}")
+        artifact_document: dict[str, Any] | None = None
         if artifact_path.suffix.lower() == ".json":
             try:
-                json.loads(artifact_path.read_text(encoding="utf-8"))
+                artifact_document = json.loads(artifact_path.read_text(encoding="utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                 fail("invalid_artifact_json", f"JSON artifact is invalid: {exc}")
+        stage_completion_eligible: bool | None = None
+        if args.stage in {"scoring", "web_report"}:
+            if not isinstance(artifact_document, dict):
+                fail("active_v5_json_artifact_required", f"{args.stage} requires a JSON artifact bound to the active score identity.")
+            stage_completion_eligible = require_profile_bound_stage_artifact(
+                artifact_document,
+                artifact_path,
+                args.stage,
+                state.get("configuration", {}).get("scoring_identity", {}),
+                state,
+                state_path,
+            )
+            if args.status == "completed" and stage_completion_eligible is not True:
+                fail("active_v5_evaluation_result_required", "Only an authoritatively validated V5 evaluation result can complete scoring.")
         manifest_path = manifest_path_for_state(state_path, state)
         manifest = load_manifest(manifest_path)
         previous = next((item for item in manifest.get("artifacts", []) if item.get("path") == relative_path), None)
@@ -608,12 +848,16 @@ def command_set_stage(args: argparse.Namespace) -> None:
             "frozen": args.frozen,
             "recorded_at": stamp,
         }
+        if args.stage in {"scoring", "web_report"}:
+            record["active_for_scoring_identity"] = True
+            record["scoring_identity"] = deepcopy(state.get("configuration", {}).get("scoring_identity"))
+            record["stage_completion_eligible"] = stage_completion_eligible
         if previous and previous.get("sha256") != artifact_hash:
             record["supersedes"] = previous.get("artifact_id")
-        artifact = {
-            key: record[key]
-            for key in ("artifact_id", "stage", "artifact_type", "path", "sha256", "visibility", "retention", "frozen", "recorded_at")
-        }
+        state_record_keys = ["artifact_id", "stage", "artifact_type", "path", "sha256", "visibility", "retention", "frozen", "recorded_at"]
+        if args.stage in {"scoring", "web_report"}:
+            state_record_keys.extend(["active_for_scoring_identity", "scoring_identity", "stage_completion_eligible"])
+        artifact = {key: record[key] for key in state_record_keys}
         state["artifacts"] = [
             item for item in state.get("artifacts", [])
             if item.get("path") != relative_path
@@ -670,6 +914,10 @@ def command_adopt_standard_policy(args: argparse.Namespace) -> None:
     }
     configuration["policy_profile"] = "subject-index-standard-policy-v1"
     configuration["rubric_version"] = "subject-index-rubric-v4"
+    configuration.setdefault("scoring_identity", {
+        "rubric_version": SCORE_RUBRIC_VERSION,
+        "dimension_calculation_profile": DIMENSION_CALCULATION_PROFILE,
+    })
     state["updated_at"] = now()
     save_state(state_path, state)
     payload = state_summary(state, state_path)
@@ -677,7 +925,204 @@ def command_adopt_standard_policy(args: argparse.Namespace) -> None:
         "command": "adopt-standard-policy",
         "policy_profile": configuration["policy_profile"],
         "rubric_version": configuration["rubric_version"],
+        "scoring_identity": configuration["scoring_identity"],
         "state_path": str(state_path.resolve()),
+    })
+    emit(payload, 0 if payload["ok"] else 1)
+
+
+def normalized_artifact_type(value: Any) -> str:
+    return str(value or "").replace("-", "_")
+
+
+def verify_v5_inputs_registered(
+    state: dict[str, Any],
+    state_path: Path,
+    manifest: dict[str, Any],
+    loaded: dict[str, Any],
+) -> None:
+    """Require score-profile evidence to be the state's exact frozen audit inventory."""
+    role_contracts = {
+        "chunk_manifest": ("chunk_definition", {"chunk_manifest"}),
+        "locator_audit": ("locator_audit", {"locator_audit", "locator_audit_v1"}),
+        "missing_access_audit": ("missing_access_audit", {"missing_access_audit", "missing_access_audit_v1"}),
+        "structure_audit": ("structure_audit", {"structure_audit", "structure_audit_v3", "structure_audit_v4"}),
+        "migration_supplement": ("structure_audit", {"migration_supplement", "v5_migration_supplement", "subject_index_v5_migration_supplement_v1"}),
+    }
+    state_records = [item for item in state.get("artifacts", []) if isinstance(item, dict)]
+    manifest_by_path = {item.get("path"): item for item in manifest.get("artifacts", []) if isinstance(item, dict)}
+    for artifact, resolved_input_path in zip(loaded["input_artifacts"], loaded["input_paths"], strict=True):
+        role = artifact["role"].split("[", 1)[0]
+        expected_stage, accepted_types = role_contracts[role]
+        same_path: list[dict[str, Any]] = []
+        for record in state_records:
+            try:
+                registered_path = resolve_artifact_path(state_path, str(record.get("path", ""))).resolve()
+            except ValueError:
+                continue
+            if registered_path == resolved_input_path.resolve():
+                same_path.append(record)
+        if not same_path:
+            fail(
+                "v5_input_artifact_not_registered",
+                f"V5 input {artifact['role']} is not registered in the canonical evaluation state.",
+                {"role": artifact["role"], "path": str(resolved_input_path)},
+            )
+        matching = [item for item in same_path if item.get("sha256") == artifact["sha256"]]
+        if not matching:
+            fail(
+                "v5_input_artifact_hash_mismatch",
+                f"V5 input {artifact['role']} does not match the hash registered in canonical state.",
+                {"role": artifact["role"], "path": str(resolved_input_path), "input_sha256": artifact["sha256"], "registered_sha256": [item.get("sha256") for item in same_path]},
+            )
+        record = matching[0]
+        if record.get("frozen") is not True or record.get("retention") != "required":
+            fail(
+                "v5_input_artifact_not_frozen",
+                f"V5 input {artifact['role']} must be a frozen, required canonical artifact.",
+                {"role": artifact["role"], "path": record.get("path"), "frozen": record.get("frozen"), "retention": record.get("retention")},
+            )
+        if record.get("stage") != expected_stage or normalized_artifact_type(record.get("artifact_type")) not in accepted_types:
+            fail(
+                "v5_input_artifact_role_mismatch",
+                f"V5 input {artifact['role']} is not registered under its required canonical stage and artifact type.",
+                {
+                    "role": artifact["role"],
+                    "path": record.get("path"),
+                    "expected_stage": expected_stage,
+                    "actual_stage": record.get("stage"),
+                    "accepted_artifact_types": sorted(accepted_types),
+                    "actual_artifact_type": record.get("artifact_type"),
+                },
+            )
+        if state.get("stages", {}).get(expected_stage, {}).get("status") != "completed":
+            fail(
+                "v5_input_artifact_stage_incomplete",
+                f"V5 input {artifact['role']} belongs to a canonical stage that is not completed.",
+                {"role": artifact["role"], "stage": expected_stage, "status": state.get("stages", {}).get(expected_stage, {}).get("status")},
+            )
+        manifest_record = manifest_by_path.get(record["path"])
+        binding_keys = ("path", "sha256", "stage", "artifact_type", "frozen", "retention")
+        if manifest_record is None or any(manifest_record.get(key) != record.get(key) for key in binding_keys):
+            fail(
+                "v5_input_manifest_binding_mismatch",
+                f"V5 input {artifact['role']} is not identically bound in state and artifact manifest.",
+                {"role": artifact["role"], "state_record": {key: record.get(key) for key in binding_keys}, "manifest_record": None if manifest_record is None else {key: manifest_record.get(key) for key in binding_keys}},
+            )
+
+
+def command_set_score_calculation_profile(args: argparse.Namespace) -> None:
+    """Adopt V5 score identity while invalidating scoring outputs only."""
+    state_path = Path(args.state)
+    state = load_state(state_path)
+    preflight_path = Path(args.preflight).resolve()
+    calculation_input_path = Path(args.calculation_input).resolve()
+    try:
+        preflight = json.loads(preflight_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError) as exc:
+        fail("invalid_preflight", f"Could not read the deterministic V5 preflight: {exc}")
+    try:
+        import dimension_score_cli as v5_score
+    except ImportError as exc:
+        fail("v5_preflight_unavailable", f"Could not load the authoritative V5 scorer: {exc}")
+    try:
+        loaded = v5_score.load_inputs(calculation_input_path)
+        ledgers, missing_requirements = v5_score.preflight_loaded(loaded)
+    except (OSError, v5_score.CalculationError) as exc:
+        details = exc.details if isinstance(exc, v5_score.CalculationError) else None
+        fail("v5_inputs_insufficient", f"The authoritative V5 preflight could not be reproduced: {exc}", details)
+    expected_preflight = {
+        "command": "migration-sufficiency-preflight",
+        "ok": True,
+        "evaluation_id": loaded["config"]["evaluation_id"],
+        "target_rubric_version": SCORE_RUBRIC_VERSION,
+        "target_calculation_profile": DIMENSION_CALCULATION_PROFILE,
+        "sufficient": not missing_requirements,
+        "input_artifacts": loaded["input_artifacts"],
+        "missing_requirements": missing_requirements,
+        "mutated_inputs": False,
+    }
+    if missing_requirements:
+        fail("v5_inputs_insufficient", "The authoritative V5 preflight is not sufficient to change score identity.", missing_requirements)
+    if preflight != expected_preflight:
+        fail("preflight_verification_mismatch", "The supplied preflight is not the exact result reproduced from the supplied frozen calculation input.", {"expected": expected_preflight, "actual": preflight})
+    if loaded["config"]["evaluation_id"] != state.get("evaluation_id"):
+        fail("preflight_identity_mismatch", "The calculation input and preflight belong to a different evaluation.")
+    if loaded["config"]["audit_mode"] != state.get("configuration", {}).get("audit_mode"):
+        fail("preflight_identity_mismatch", "The calculation input audit mode differs from canonical state.")
+    if ledgers is None:
+        fail("v5_inputs_insufficient", "The authoritative V5 preflight did not return validated ledgers.")
+    if state.get("source", {}).get("sha256") != ledgers["identity"]["source_sha256"]:
+        fail("preflight_identity_mismatch", "The calculation inputs bind a different source than canonical state.")
+    state_candidate = state.get("candidate")
+    if isinstance(state_candidate, dict) and state_candidate.get("sha256") != ledgers["identity"]["candidate_sha256"]:
+        fail("preflight_identity_mismatch", "The calculation inputs bind a different candidate than canonical state.")
+    manifest_path = manifest_path_for_state(state_path, state)
+    manifest = load_manifest(manifest_path)
+    state_errors, _ = validate_state(state, state_path=state_path, check_files=True, manifest_document=manifest)
+    if state_errors:
+        fail("invalid_state_for_score_profile_change", "Canonical state must validate before score identity can change.", state_errors)
+    verify_v5_inputs_registered(state, state_path, manifest, loaded)
+    before_stages = deepcopy(state.get("stages", {}))
+    configuration = state.setdefault("configuration", {})
+    previous = deepcopy(configuration.get("scoring_identity"))
+    target = {
+        "rubric_version": SCORE_RUBRIC_VERSION,
+        "dimension_calculation_profile": DIMENSION_CALCULATION_PROFILE,
+    }
+    configuration["scoring_identity"] = target
+    stamp = now()
+    deactivated_artifacts: list[str] = []
+    manifest_by_path = {
+        item.get("path"): item
+        for item in manifest.get("artifacts", [])
+        if isinstance(item, dict)
+    }
+    for artifact in state.get("artifacts", []):
+        if not isinstance(artifact, dict) or artifact.get("stage") not in {"scoring", "web_report"}:
+            continue
+        artifact["active_for_scoring_identity"] = False
+        artifact["scoring_identity"] = previous
+        artifact["invalidated_at"] = stamp
+        artifact["invalidation_reason"] = "score_calculation_profile_changed"
+        manifest_record = manifest_by_path.get(artifact.get("path"))
+        if not isinstance(manifest_record, dict) or manifest_record.get("sha256") != artifact.get("sha256"):
+            fail("artifact_manifest_binding_mismatch", "A scoring output cannot be deactivated because its manifest binding differs from state.", {"path": artifact.get("path")})
+        manifest_record["active_for_scoring_identity"] = False
+        manifest_record["scoring_identity"] = previous
+        manifest_record["invalidated_at"] = stamp
+        manifest_record["invalidation_reason"] = "score_calculation_profile_changed"
+        deactivated_artifacts.append(str(artifact.get("path")))
+    for stage in ("scoring", "web_report"):
+        record = state["stages"][stage]
+        record["status"] = "not_started"
+        record["updated_at"] = stamp
+        record.setdefault("notes", []).append("Invalidated by an explicit score-calculation-profile change; benchmark and audit stages remain frozen.")
+    configuration.setdefault("score_profile_history", []).append({
+        "changed_at": stamp,
+        "previous": previous,
+        "current": target,
+        "preflight_path": portable_relative_path(preflight_path, state_path.resolve().parent),
+        "preflight_sha256": sha256_file(preflight_path),
+        "calculation_input_path": portable_relative_path(calculation_input_path, state_path.resolve().parent),
+        "calculation_input_sha256": sha256_file(calculation_input_path),
+        "invalidated_stages": ["scoring", "web_report"],
+    })
+    for stage in STAGES[:STAGES.index("scoring")]:
+        if state["stages"][stage] != before_stages[stage]:
+            fail("upstream_stage_changed", f"Score-profile migration attempted to change protected stage {stage}.")
+    state["updated_at"] = stamp
+    manifest["updated_at"] = stamp
+    save_manifest(manifest_path, manifest)
+    save_state(state_path, state)
+    payload = state_summary(state, state_path)
+    payload.update({
+        "command": "set-score-calculation-profile",
+        "score_identity": target,
+        "invalidated_stages": ["scoring", "web_report"],
+        "preserved_stages": STAGES[:STAGES.index("scoring")],
+        "artifacts_deleted": [],
+        "artifacts_deactivated": sorted(deactivated_artifacts),
     })
     emit(payload, 0 if payload["ok"] else 1)
 
@@ -743,6 +1188,15 @@ def build_parser() -> argparse.ArgumentParser:
     adopt_parser.add_argument("--readership-rationale", required=True)
     adopt_parser.set_defaults(func=command_adopt_standard_policy)
 
+    score_profile_parser = subparsers.add_parser(
+        "set-score-calculation-profile",
+        help="Adopt the approved V5 score profile after a sufficient deterministic preflight.",
+    )
+    score_profile_parser.add_argument("--state", required=True)
+    score_profile_parser.add_argument("--preflight", required=True)
+    score_profile_parser.add_argument("--calculation-input", required=True)
+    score_profile_parser.set_defaults(func=command_set_score_calculation_profile)
+
     return parser
 
 
@@ -751,7 +1205,7 @@ def main() -> None:
     args = parser.parse_args()
     if getattr(args, "document_page_start", 0) and args.document_page_end < args.document_page_start:
         fail("invalid_page_span", "document-page-end must be greater than or equal to document-page-start.")
-    if args.command in {"init", "set-stage", "adopt-standard-policy"}:
+    if args.command in {"init", "set-stage", "adopt-standard-policy", "set-score-calculation-profile"}:
         state_path = Path(args.output if args.command == "init" else args.state)
         with evaluation_mutation_lock(state_path):
             args.func(args)

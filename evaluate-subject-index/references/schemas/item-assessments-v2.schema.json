@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "item-assessments-v2.schema.json",
+  "title": "Projection-safe display-ready diagnostic grades for V5 subject-index items",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "grading_policy",
+    "evaluation_id",
+    "candidate_id",
+    "candidate_sha256",
+    "item_inventory_sha256",
+    "item_inventory_artifact",
+    "evidence_identity",
+    "assessment_completeness",
+    "audit_mode",
+    "scope_complete",
+    "grade_disclosure",
+    "color_legend",
+    "locator_assessments",
+    "path_assessments",
+    "heading_node_assessments",
+    "cross_reference_assessments",
+    "source_subject_assessments",
+    "summary"
+  ],
+  "properties": {
+    "schema_version": {"const": "subject-index-item-assessments-v2"},
+    "grading_policy": {"const": "subject-index-item-grading-v1"},
+    "evaluation_id": {"type": "string", "minLength": 1},
+    "candidate_id": {"type": "string", "minLength": 1},
+    "candidate_sha256": {"$ref": "#/$defs/sha256"},
+    "item_inventory_sha256": {"$ref": "#/$defs/sha256"},
+    "item_inventory_artifact": {
+      "type": "object",
+      "required": ["schema_version", "artifact_path", "sha256"],
+      "properties": {
+        "schema_version": {"const": "subject-index-item-inventory-v2"},
+        "artifact_path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "evidence_identity": {
+      "type": "object",
+      "required": ["candidate_sha256", "source_sha256", "benchmark_sha256", "benchmark_lock_sha256", "policy_sha256", "page_map_sha256", "chunk_manifest_sha256", "normalized_candidate_file_sha256", "item_inventory_file_sha256", "structure_audit_file_sha256", "locator_audit_set_sha256", "missing_access_audit_set_sha256"],
+      "properties": {
+        "candidate_sha256": {"$ref": "#/$defs/sha256"},
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "benchmark_sha256": {"$ref": "#/$defs/sha256"},
+        "benchmark_lock_sha256": {"$ref": "#/$defs/sha256"},
+        "policy_sha256": {"$ref": "#/$defs/sha256"},
+        "page_map_sha256": {"$ref": "#/$defs/sha256"},
+        "chunk_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "normalized_candidate_file_sha256": {"$ref": "#/$defs/sha256"},
+        "item_inventory_file_sha256": {"$ref": "#/$defs/sha256"},
+        "structure_audit_file_sha256": {"$ref": "#/$defs/sha256"},
+        "locator_audit_set_sha256": {"$ref": "#/$defs/sha256"},
+        "missing_access_audit_set_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "assessment_completeness": {
+      "type": "object",
+      "required": ["locators", "paths", "heading_nodes", "cross_references", "source_subjects"],
+      "properties": {
+        "locators": {"$ref": "#/$defs/completeness"},
+        "paths": {"$ref": "#/$defs/completeness"},
+        "heading_nodes": {"$ref": "#/$defs/completeness"},
+        "cross_references": {"$ref": "#/$defs/completeness"},
+        "source_subjects": {"$ref": "#/$defs/completeness"}
+      },
+      "additionalProperties": false
+    },
+    "audit_mode": {"enum": ["full", "pilot"]},
+    "scope_complete": {"type": "boolean"},
+    "grade_disclosure": {"type": "string"},
+    "color_legend": {"$ref": "item-assessments.schema.json#/properties/color_legend"},
+    "locator_assessments": {"$ref": "item-assessments.schema.json#/properties/locator_assessments"},
+    "path_assessments": {"$ref": "item-assessments.schema.json#/properties/path_assessments"},
+    "heading_node_assessments": {"$ref": "item-assessments.schema.json#/properties/heading_node_assessments"},
+    "cross_reference_assessments": {"$ref": "item-assessments.schema.json#/properties/cross_reference_assessments"},
+    "source_subject_assessments": {"$ref": "item-assessments.schema.json#/properties/source_subject_assessments"},
+    "summary": {"type": "object"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "completeness": {
+      "type": "object",
+      "required": ["expected", "assessed", "unique", "complete", "id_set_sha256"],
+      "properties": {
+        "expected": {"type": "integer", "minimum": 0},
+        "assessed": {"type": "integer", "minimum": 0},
+        "unique": {"const": true},
+        "complete": {"const": true},
+        "id_set_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

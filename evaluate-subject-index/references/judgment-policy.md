@@ -95,13 +95,19 @@ Audit every `see` and `see also` record. Verify source semantics, source locator
 
 Use: `SCP`, `COV`, `SEL`, `CON`, `STA`, `LOC_POS`, `LOC_NEG`, `CMP`, `HED`, `SUB`, `XRF`, `DEN`, and `MEC`.
 
-- `critical`: fabrication, central reversal, broken scope, or systemic failure preventing reliable use;
-- `major`: materially harms retrieval or misrepresents important treatment;
-- `minor`: localized, repairable retrieval defect;
-- `cosmetic`: no meaningful retrieval impact.
+- `critical`: frozen `severity_basis` is `fabrication`, `central_reversal`, `broken_scope`, or `systemic_nonuse`, and the realistic lookup consequence is `blocks` or `misleads`;
+- `major`: frozen basis is `materially_misleading` or `blocked_retrieval`, and the lookup consequence is `blocks` or `misleads`;
+- `minor`: basis is `localized_repairable_friction`, a usable route remains, and the consequence is `slows`; and
+- `cosmetic`: basis is `no_retrieval_consequence` and the consequence is `none`.
 
 Count one underlying defect once and attach multiple consequences rather than inflating totals.
+
+For V5 scoring provenance, a defect is not valid unless structured fields identify its one dimension owner and compatible code, severity and basis, retrieval consequence, defect kind, affected item IDs, affected source and/or structural sections, root-cause family, affected and applicable counts and reconstructable rates, source/structural section denominators and rates, and whether essential/major access was destroyed. All affected IDs in one defect must use one item family, and its applicable count must equal that family's frozen original denominator; a caller-declared denominator is never trusted. Bind major/failed conceptual or mechanics nodes to a same-dimension major/critical defect that names that node. Mechanical invariant defects attach to `NODE-*` IDs or the explicit `GLOBAL-STRUCTURE` item. A free-text summary cannot trigger a cap.
+
+For mechanics, aggregate defects by identical `root_cause_family`. A recurrent major pattern affects at least three nodes and either at least 1% of nodes or at least two structural sections. A systematic major pattern affects at least three nodes and either at least 10% of nodes or at least 50% of relevant structural sections. Store exact counts and denominators, compare the exact integer ratios at every threshold, and retain rounded rate fields only for display/reconstruction; never select recurrence from prose.
 
 ## Uncertainty and adjudication
 
 Every uncertain item records alternatives, evidence needed, and confidence. Adjudicate all critical, major, and uncertain items plus a frozen quality-control sample. Do not silently force an uncertain judgment to a favorable category. Preserve original and adjudicated values with timestamps and reasons.
+
+`uninspectable` is neutral, never a zero. `not_applicable` requires a frozen genuine-inapplicability basis; candidate absence does not qualify. Full mode cannot score a required `not_measured` item. The V5 calculator assigns minimum and maximum permitted credit to uninspectable evidence, reevaluates every cap at both endpoints, and publishes a numeric rating only when the rounded rating and applied-cap identity are stable.

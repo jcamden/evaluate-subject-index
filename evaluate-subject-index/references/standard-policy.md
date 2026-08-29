@@ -1,6 +1,6 @@
 # Standard subject-index evaluation policy v1
 
-Apply this policy by default. Freeze a run-specific `evaluation-policy.json` before opening a candidate. Do not ask the user to design policy. Ask only about a material source ambiguity, an explicit publisher specification, or a requested deviation; record every deviation with its rationale and provenance.
+Apply this policy by default. Freeze a run-specific `subject-index-evaluation-policy-v3` before opening a candidate. It binds source scope, judgment rules, uncertainty, density measurement, and publication gates; it deliberately does not bind a score rubric or dimension-calculation profile. Do not ask the user to design policy. Ask only about a material source ambiguity, an explicit publisher specification, or a requested deviation; record every deviation with its rationale and provenance.
 
 ## Policy application by stage
 
@@ -186,3 +186,5 @@ A failed gate limits the publication-readiness claim; it does not silently rewri
 ## Defect ownership
 
 Record one underlying defect once. Attach its consequences to every affected metric without duplicating the defect count. Use `SCP` for scope, `COV` for coverage, `SEL` for selectivity, `CON` for conceptual fidelity, `STA` for stance, `LOC_POS` and `LOC_NEG` for locator precision and recall, `CMP` for compound scope, `HED` and `SUB` for heading architecture, `XRF` for references, `DEN` for density, and `MEC` for mechanics.
+
+V5 scoring defects must also freeze a compatible dimension owner, operational severity basis, realistic retrieval consequence, defect kind, affected item and source/structural section IDs, root-cause family, affected/applicable counts and rates, source/structure section denominators and rates, and high-priority-route destruction flag. Validate every rate from its count and denominator, require one affected item family per defect, and bind its applicable count to that family's frozen original denominator. Free text may explain a defect but cannot create a cap trigger.

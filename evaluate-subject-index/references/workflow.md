@@ -18,12 +18,12 @@
 | 12 | `audit-locators` | all `locator-audit.*.json` files |
 | 13 | `audit-missing-access` | all `missing-access-audit.*.json` files |
 | 14 | `audit-index-structure` | `structure-audit.json` |
-| 15 | `score-index` | `item-assessments.json` and `evaluation-result.json` |
+| 15 | `score-index` | `item-assessments.json`, `dimension-calculations.json`, and `evaluation-result.json` |
 | 16 | `build-web-report` | `web-report.json` |
 
 Each stage status is `not_started`, `in_progress`, `completed`, or `blocked`. A stage may start only when every earlier required stage is complete. `validate` may run at any time.
 
-Candidate preparation is a parallel worker lane, not a numbered state stage. It may begin after source identity, edition, page map, chunks, policy, rubric, and audit mode are frozen, while source discovery or benchmark synthesis/review continues in candidate-blind contexts. `integrate-candidate-preparation` is blocked until final benchmark freeze; successful integration fulfills stage 10 (`candidate_normalization`) without changing the state schema or weakening the linear candidate-audit dependencies.
+Candidate preparation is a parallel worker lane, not a numbered state stage. It may begin after source identity, edition, page map, chunks, judgment policy, and audit mode are frozen, while source discovery or benchmark synthesis/review continues in candidate-blind contexts. Its version-one receipt retains a `subject-index-rubric-v4` compatibility marker for the historical preparation contract, but that marker is not the active score identity. `integrate-candidate-preparation` is blocked until final benchmark freeze; successful integration fulfills stage 10 (`candidate_normalization`) without changing the state schema or weakening the linear candidate-audit dependencies.
 
 Parallel locator and missing-access workers are also auxiliary lanes, not numbered stages. Coordinator integration fulfills the existing stage 12 (`locator_audit`) or stage 13 (`missing_access_audit`). A partial accepted batch keeps that stage `in_progress`; only exact coverage of every required frozen chunk and denominator completes it. The canonical sequential commands remain valid and `next` continues to name them, while `help`, `status`, and `next` may report dependency-satisfied parallel alternatives separately.
 
@@ -121,7 +121,7 @@ The global structure audit remains coordinated and single because its judgment u
 
 The benchmark is not frozen when synthesis ends. Synthesis creates a draft; a fresh, candidate-blind reviewer then checks the draft against the exact source and complete deterministic review inventory. Full review requires exact ID coverage for every subject, relationship, reader task, cross-chapter subject, unresolved relationship, and fallback reader task, plus an independent omission pass. Only an approving full review can authorize the final freeze. Read [benchmark-review.md](benchmark-review.md).
 
-The workflow uses state schema v4 only. An isolated preparation receipt does not alter canonical state and can be integrated only into the same compatible v4 evaluation after final benchmark freeze.
+The workflow retains state schema v4 for storage compatibility and adds `configuration.scoring_identity` for `subject-index-rubric-v5` plus `subject-index-dimension-calculation-v1`. `configuration.rubric_version` remains the legacy preparation/judgment compatibility field and is not used as the V5 score identity. An isolated preparation receipt does not alter canonical state and can be integrated only into the same compatible evaluation after final benchmark freeze.
 
 ## Resume behavior
 
@@ -138,10 +138,11 @@ When resuming in another chat or environment, materialize the active Library fol
 - Changing owned chunk ranges invalidates source chunk files, discovery, and every later stage.
 - Changing context-only ranges invalidates source chunk files and any judgments that used them.
 - Changing scope, audit mode, or uncertainty policy invalidates policy and every later stage.
-- Changing the standard-policy or rubric version invalidates policy and every later stage.
+- Changing the standard judgment policy or an operative judgment rule invalidates policy and every later stage.
+- Changing only `configuration.scoring_identity` after a sufficient deterministic preflight invalidates `scoring` and `web_report` only. The adoption command must independently reproduce preflight and resolve every manifest/audit/structure input to the same path, hash, stage, type, frozen flag, and required retention recorded in both canonical state and its artifact manifest; a foreign same-evaluation ledger set cannot authorize the change. It preserves discovery, benchmark synthesis/review/freeze, candidate preparation, locator audits, missing-access audits, and structure judgments. Preserve prior score/result/report artifacts as history rather than deleting or overwriting them, but mark their state and manifest registrations inactive for the new score identity. A calculation may mark scoring in progress only after authoritative reconstruction from the adopted inputs; only its projection-valid V6 result may complete scoring, and only a V4 web report validated against that active result may complete web reporting.
 - Correcting only the recorded readership rationale without changing its label or any operative rule does not invalidate judgments; changing the readership label invalidates reader tasks, benchmark synthesis, and every candidate stage.
 - Changing the synthesis draft invalidates benchmark review, final freeze, and every candidate stage. Changing review dispositions invalidates final freeze and every candidate stage. Changing final benchmark meaning, priority, evidence, or reader tasks creates a new version and invalidates every candidate stage.
-- Changing source edition identity, page mapping, chunk identity, policy, rubric, or audit mode invalidates any pending candidate-preparation receipt. A preparation worker may survive benchmark-content revisions only when every receipt-bound source-level identity remains exact.
+- Changing source edition identity, page mapping, chunk identity, judgment policy, or audit mode invalidates any pending candidate-preparation receipt. A score-calculation-profile change alone does not. A preparation worker may survive benchmark-content revisions only when every receipt-bound source-level identity remains exact.
 - Changing prepared candidate bytes, layout extraction, normalization, inventory, exception ledger, or QA invalidates the worker receipt, public projection, recovery bundle, and any pending integration. Never edit accepted normalization during integration.
 - Changing candidate normalization or item inventory invalidates locator packets, locator audit, missing-access, structure, item assessments, score, and web report stages.
 - Changing a locator packet invalidates its locator worker receipt, public report, recovery bundle, integrated audit, and every dependent missing-access artifact. Changing the accepted canonical locator-audit set invalidates all pending missing-access worker receipts, reports, and integrations.
@@ -151,10 +152,12 @@ When resuming in another chat or environment, materialize the active Library fol
 
 Never overwrite a frozen artifact in place. Increment its version, compute a new hash, and retain provenance.
 
+For score-only V4-to-V5 migration, first run the no-mutation sufficiency preflight against exact ledger hashes. If a historical structure audit lacks V5 scoring context, stop and report the required hash-bound supplement fields. After sufficiency, set the score profile, write a distinct calculation and migration record, then rebuild the active evaluation result and web report. Do not reopen benchmark or audit stages, reinterpret evidence, replace historical V4 artifacts, or change gate states when gate rules and evidence are unchanged.
+
 ## Checkpoints
 
 Create portable checkpoints after policy freeze, final benchmark freeze, each candidate score, the final web report, and before a conversation/environment handoff. Portable bundles exclude restricted source/candidate files. A private-complete export may include them only at the user's request. Bundle creation does not publish anything.
 
 ## Comparison
 
-The evaluation itself remains candidate-independent. A separate web layer may place completed results side by side only when their `comparison_key` fields match. If they do not match, the page must display `not_directly_comparable` and the mismatched fields.
+The evaluation itself remains candidate-independent. A separate web layer may place completed results side by side only when the complete `comparison_key` matches: source SHA-256, benchmark SHA-256, judgment-policy SHA-256, page-map SHA-256, chunk-manifest SHA-256, inclusion policy, audit mode, uncertainty policy, rubric version, and dimension-calculation profile. If any field differs, including V4 versus V5 score identity, display `not_directly_comparable` and name the mismatches.

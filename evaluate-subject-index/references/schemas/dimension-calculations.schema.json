@@ -1,0 +1,234 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dimension-calculations.schema.json",
+  "title": "Deterministic V5 subject-index dimension calculations",
+  "type": "object",
+  "required": ["schema_version", "calculation_id", "evaluation_id", "rubric_version", "calculation_profile", "audit_mode", "status", "evidence_identity", "input_artifacts", "diagnostic_item_grades", "publication_readiness_gates", "dimensions", "total_score", "maximum_score", "arithmetic_check", "calculation_sha256"],
+  "properties": {
+    "schema_version": {"const": "subject-index-dimension-calculations-v1"},
+    "calculation_id": {"type": "string", "pattern": "^CALC-[A-F0-9]{12}$"},
+    "evaluation_id": {"type": "string", "minLength": 1},
+    "rubric_version": {"const": "subject-index-rubric-v5"},
+    "calculation_profile": {"const": "subject-index-dimension-calculation-v1"},
+    "audit_mode": {"enum": ["full", "pilot"]},
+    "status": {"enum": ["scored", "not_scored_insufficient_evidence"]},
+    "evidence_identity": {
+      "type": "object",
+      "required": ["candidate_sha256", "source_sha256", "benchmark_sha256", "benchmark_lock_sha256", "policy_sha256", "page_map_sha256", "chunk_manifest_sha256", "normalized_candidate_file_sha256", "item_inventory_file_sha256", "structure_audit_file_sha256", "locator_audit_set_sha256", "missing_access_audit_set_sha256"],
+      "properties": {
+        "candidate_sha256": {"$ref": "#/$defs/sha256"},
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "benchmark_sha256": {"$ref": "#/$defs/sha256"},
+        "benchmark_lock_sha256": {"$ref": "#/$defs/sha256"},
+        "policy_sha256": {"$ref": "#/$defs/sha256"},
+        "page_map_sha256": {"$ref": "#/$defs/sha256"},
+        "chunk_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "normalized_candidate_file_sha256": {"$ref": "#/$defs/sha256"},
+        "item_inventory_file_sha256": {"$ref": "#/$defs/sha256"},
+        "structure_audit_file_sha256": {"$ref": "#/$defs/sha256"},
+        "locator_audit_set_sha256": {"$ref": "#/$defs/sha256"},
+        "missing_access_audit_set_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "migration_context": {
+      "type": "object",
+      "required": ["from_rubric_version", "migration_record_path", "historical_result_sha256", "historical_gate_outcomes_sha256", "gate_outcomes_action"],
+      "properties": {
+        "from_rubric_version": {"const": "subject-index-rubric-v4"},
+        "migration_record_path": {"type": "string", "minLength": 1},
+        "historical_result_sha256": {"$ref": "#/$defs/sha256"},
+        "historical_gate_outcomes_sha256": {"$ref": "#/$defs/sha256"},
+        "gate_outcomes_action": {"const": "preserve_identically"}
+      },
+      "additionalProperties": false
+    },
+    "input_artifacts": {"type": "array", "minItems": 3, "items": {"$ref": "#/$defs/inputArtifact"}, "uniqueItems": true},
+    "diagnostic_item_grades": {
+      "type": "object",
+      "required": ["used_in_dimension_arithmetic", "policy", "expected_source_subjects"],
+      "properties": {
+        "used_in_dimension_arithmetic": {"const": false},
+        "policy": {"const": "separate_non_additive_display_layer"},
+        "expected_source_subjects": {
+          "type": "object",
+          "required": ["count", "id_set_sha256"],
+          "properties": {
+            "count": {"type": "integer", "minimum": 0},
+            "id_set_sha256": {"$ref": "#/$defs/sha256"}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "publication_readiness_gates": {
+      "type": "object",
+      "required": ["used_in_score_arithmetic", "policy"],
+      "properties": {
+        "used_in_score_arithmetic": {"const": false},
+        "policy": {"const": "separate_claim_restrictions"}
+      },
+      "additionalProperties": false
+    },
+    "dimensions": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {"$ref": "#/$defs/dimension"},
+      "allOf": [
+        {"contains": {"type": "object", "required": ["dimension_id"], "properties": {"dimension_id": {"const": "meaningful_coverage"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"type": "object", "required": ["dimension_id"], "properties": {"dimension_id": {"const": "editorial_selectivity"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"type": "object", "required": ["dimension_id"], "properties": {"dimension_id": {"const": "conceptual_stance_fidelity"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"type": "object", "required": ["dimension_id"], "properties": {"dimension_id": {"const": "page_reference_reliability"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"type": "object", "required": ["dimension_id"], "properties": {"dimension_id": {"const": "findability_navigation"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"type": "object", "required": ["dimension_id"], "properties": {"dimension_id": {"const": "mechanics_consistency"}}}, "minContains": 1, "maxContains": 1}
+      ]
+    },
+    "total_score": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+    "maximum_score": {"const": 100},
+    "arithmetic_check": {"type": "boolean"},
+    "calculation_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "decimal": {"type": ["string", "null"], "pattern": "^-?[0-9]+(?:\\.[0-9]+)?$"},
+    "inputArtifact": {
+      "type": "object",
+      "required": ["role", "path", "sha256", "schema_version"],
+      "properties": {
+        "role": {"type": "string", "minLength": 1},
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "schema_version": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "denominator": {
+      "type": "object",
+      "required": ["component_id", "original", "applicable", "measured", "excluded", "uninspectable", "not_measured", "exclusion_reasons", "measurement_coverage", "small_denominator_exception", "genuinely_inapplicable", "zero_due_to_non_attempt", "defined_zero_rule", "provisionally_scoreable"],
+      "properties": {
+        "component_id": {"type": "string", "minLength": 1},
+        "original": {"type": "integer", "minimum": 0},
+        "applicable": {"type": "integer", "minimum": 0},
+        "measured": {"type": "integer", "minimum": 0},
+        "excluded": {"type": "integer", "minimum": 0},
+        "uninspectable": {"type": "integer", "minimum": 0},
+        "not_measured": {"type": "integer", "minimum": 0},
+        "exclusion_reasons": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+        "measurement_coverage": {"type": "string", "pattern": "^[0-9]+(?:\\.[0-9]+)?$"},
+        "small_denominator_exception": {"type": "boolean"},
+        "genuinely_inapplicable": {"type": "boolean"},
+        "zero_due_to_non_attempt": {"type": "boolean"},
+        "defined_zero_rule": {"type": ["string", "null"]},
+        "provisionally_scoreable": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "component": {
+      "type": "object",
+      "required": ["component_id", "normalized_value", "weight", "effective_weight", "weight_renormalized"],
+      "properties": {
+        "component_id": {"type": "string", "minLength": 1},
+        "normalized_value": {"$ref": "#/$defs/decimal"},
+        "weight": {"type": "string", "minLength": 1},
+        "effective_weight": {"type": "string", "minLength": 1},
+        "weight_renormalized": {"type": "boolean"},
+        "label": {"type": "string"},
+        "rounded_rating": {"type": "number", "minimum": 0, "maximum": 5},
+        "details": {"type": "object"}
+      },
+      "additionalProperties": false
+    },
+    "cap": {
+      "type": "object",
+      "required": ["cap_id", "maximum_rating", "triggered", "threshold", "observed", "affected_evidence_ids"],
+      "properties": {
+        "cap_id": {"type": "string", "minLength": 1},
+        "maximum_rating": {"type": "number", "minimum": 0, "maximum": 5},
+        "triggered": {"type": "boolean"},
+        "threshold": {"type": "object", "minProperties": 1},
+        "observed": {"type": "object", "minProperties": 1},
+        "affected_evidence_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      },
+      "additionalProperties": false
+    },
+    "appliedCap": {
+      "type": ["object", "null"],
+      "required": ["cap_id", "maximum_rating", "affected_evidence_ids"],
+      "properties": {
+        "cap_id": {"type": "string"},
+        "maximum_rating": {"type": "number", "minimum": 0, "maximum": 5},
+        "affected_evidence_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      },
+      "additionalProperties": false
+    },
+    "bound": {
+      "type": "object",
+      "required": ["pre_cap_rating", "post_cap_rating", "rounded_rating", "cap_evaluations", "applied_cap_id", "awarded_points"],
+      "properties": {
+        "pre_cap_rating": {"$ref": "#/$defs/decimal"},
+        "post_cap_rating": {"$ref": "#/$defs/decimal"},
+        "rounded_rating": {"type": "number", "minimum": 0, "maximum": 5},
+        "cap_evaluations": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/cap"}},
+        "applied_cap_id": {"type": ["string", "null"]},
+        "awarded_points": {"type": "number", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "dimension": {
+      "type": "object",
+      "required": ["dimension_id", "status", "formula_id", "input_roles", "input_artifacts", "denominators", "raw_status_counts", "credit_mappings", "components", "base_rating", "unrounded_rating", "cap_evaluations", "applied_cap", "pre_cap_rating", "post_cap_rating", "missing_data_bounds", "rounding", "final_rating", "dimension_weight", "awarded_points", "warnings"],
+      "properties": {
+        "dimension_id": {"enum": ["meaningful_coverage", "editorial_selectivity", "conceptual_stance_fidelity", "page_reference_reliability", "findability_navigation", "mechanics_consistency"]},
+        "status": {"enum": ["scored", "not_scored_incomplete_full_audit", "not_scored_insufficient_evidence"]},
+        "formula_id": {"type": "string", "minLength": 1},
+        "input_roles": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "input_artifacts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/inputArtifact"}, "uniqueItems": true},
+        "denominators": {
+          "type": "object",
+          "required": ["components"],
+          "properties": {"components": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/denominator"}}},
+          "additionalProperties": false
+        },
+        "raw_status_counts": {"type": "object"},
+        "credit_mappings": {"type": "object"},
+        "components": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/component"}},
+        "base_rating": {"$ref": "#/$defs/decimal"},
+        "unrounded_rating": {"$ref": "#/$defs/decimal"},
+        "cap_evaluations": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/cap"}},
+        "applied_cap": {"$ref": "#/$defs/appliedCap"},
+        "pre_cap_rating": {"$ref": "#/$defs/decimal"},
+        "post_cap_rating": {"$ref": "#/$defs/decimal"},
+        "missing_data_bounds": {
+          "type": "object",
+          "required": ["lower", "upper", "stable_rating", "stable_cap_outcome"],
+          "properties": {
+            "lower": {"$ref": "#/$defs/bound"},
+            "upper": {"$ref": "#/$defs/bound"},
+            "stable_rating": {"type": "boolean"},
+            "stable_cap_outcome": {"type": "boolean"}
+          },
+          "additionalProperties": false
+        },
+        "rounding": {
+          "type": "object",
+          "required": ["mode", "quantum", "input", "output"],
+          "properties": {
+            "mode": {"const": "ROUND_HALF_UP"},
+            "quantum": {"type": "string"},
+            "input": {"$ref": "#/$defs/decimal"},
+            "output": {"type": ["number", "null"], "minimum": 0, "maximum": 5}
+          },
+          "additionalProperties": false
+        },
+        "final_rating": {"type": ["number", "null"], "minimum": 0, "maximum": 5},
+        "dimension_weight": {"enum": [5, 15, 20, 25]},
+        "awarded_points": {"type": ["number", "null"], "minimum": 0},
+        "warnings": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

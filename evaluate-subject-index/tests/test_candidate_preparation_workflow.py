@@ -78,6 +78,98 @@ class CurrentFormatRegressionTests(unittest.TestCase):
             self.assertEqual(3, payload["summary"]["locators"]["total"])
             self.assertEqual(1, payload["summary"]["cross_references"]["total"])
 
+    def test_v4_structure_diagnostics_use_v5_defect_owner_ids_and_cosmetic_status(self) -> None:
+        candidate_path = SKILL_ROOT / "tests" / "candidate-index.valid.json"
+        candidate = read_json(candidate_path)
+        inventory = build_inventory(candidate)
+        structure = read_json(SKILL_ROOT / "tests" / "structure-audit.item-grading.valid.json")
+        first_path_id = inventory["paths"][0]["path_id"]
+        first_node_id = inventory["heading_nodes"][0]["node_id"]
+        structure["schema_version"] = "structure-audit-v4"
+        structure["audit_mode"] = "full"
+        structure["node_judgments"][0]["component_judgments"]["mechanics_consistency"]["status"] = "cosmetic_issues"
+        v5_defect = {
+            "defect_id": "DEFECT-V5-LOC-NEG",
+            "code": "LOC_NEG",
+            "dimension_owner": "page_reference_reliability",
+            "severity": "major",
+            "severity_basis": "blocked_retrieval",
+            "retrieval_consequence": "blocks",
+            "defect_kind": "generic",
+            "affected_item_ids": [first_path_id],
+            "affected_source_sections": ["CHUNK-001"],
+            "affected_structural_sections": [first_node_id],
+            "root_cause_family": "synthetic-recall-gap",
+            "affected_count": 1,
+            "applicable_count": len(inventory["paths"]),
+            "affected_rate": "0.333333",
+            "source_section_denominator": 2,
+            "source_section_rate": "0.5",
+            "structural_section_denominator": len(inventory["heading_nodes"]),
+            "structural_section_rate": "0.333333",
+            "high_priority_access_destroyed": False,
+        }
+        structure["defects"] = [v5_defect]
+        structure["v5_scoring_context"] = {
+            "candidate_attempt": {"status": "meaningful_attempt", "evidence_ids": []},
+            "cross_reference_applicability": {
+                "status": "applicable",
+                "basis_code": "delivered_references",
+                "delivered_reference_count": len(structure["expected_cross_reference_ids"]),
+                "warranted_reference_obligation_count": 0,
+                "warranted_reference_obligation_ids": [],
+                "reference_defect_ids": [],
+            },
+            "optional_subject_scoring": [],
+            "node_component_applicability": [],
+            "defects": [v5_defect],
+        }
+        structure["provenance"] = {
+            "source_sha256": "d" * 64,
+            "benchmark_sha256": "b" * 64,
+            "benchmark_lock_sha256": "e" * 64,
+            "policy_sha256": "f" * 64,
+            "page_map_sha256": "1" * 64,
+            "chunk_manifest_sha256": "2" * 64,
+            "normalized_candidate_file_sha256": "3" * 64,
+            "item_inventory_file_sha256": structure["item_inventory_sha256"],
+            "locator_audit_set_sha256": "4" * 64,
+            "missing_access_audit_set_sha256": "5" * 64,
+        }
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inventory_path = root / "item-inventory.json"
+            structure_path = root / "structure-audit.v4.json"
+            output = root / "item-assessments.json"
+            write_json(inventory_path, inventory)
+            write_json(structure_path, structure)
+            command = [
+                sys.executable,
+                str(SCRIPTS / "item_grade_cli.py"),
+                "build-assessments",
+                "--candidate", str(candidate_path),
+                "--inventory", str(inventory_path),
+                "--locator-audit", str(SKILL_ROOT / "tests" / "locator-audit.item-grading.valid.json"),
+                "--missing-access-audit", str(SKILL_ROOT / "tests" / "missing-access-audit.item-grading.valid.json"),
+                "--structure-audit", str(structure_path),
+                "--audit-mode", "full",
+                "--output", str(output),
+            ]
+            completed = subprocess.run(command, text=True, capture_output=True, check=False)
+            self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+            assessments = read_json(output)
+
+        path_record = next(item for item in assessments["path_assessments"] if item["path_id"] == first_path_id)
+        components = {item["dimension_id"]: item for item in path_record["component_results"]}
+        self.assertEqual(55.0, components["page_reference_reliability"]["applied_cap"])
+        self.assertIn("DEFECT-V5-LOC-NEG", components["page_reference_reliability"]["evidence_ids"])
+        self.assertIsNone(components["meaningful_coverage"]["applied_cap"])
+        self.assertNotIn("DEFECT-V5-LOC-NEG", components["meaningful_coverage"]["evidence_ids"])
+        node_record = next(item for item in assessments["heading_node_assessments"] if item["node_id"] == first_node_id)
+        mechanics = next(item for item in node_record["component_results"] if item["dimension_id"] == "mechanics_consistency")
+        self.assertEqual(95.0, mechanics["score"])
+
     def test_current_v2_fixture_still_routes_through_existing_page_chunk_cli(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

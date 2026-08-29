@@ -27,6 +27,8 @@ The score uses six dimensions totaling 100 points:
 | Findability and navigation | 20 |
 | Mechanics and consistency | 5 |
 
+Canonical scoring uses `subject-index-rubric-v5` with calculation profile `subject-index-dimension-calculation-v1`. The six ratings are derived from validated audit ledgers; manually selected headline ratings are not accepted. Diagnostic item grades remain a separate non-additive display layer, and publication-readiness gates remain separate claim restrictions that never enter score arithmetic.
+
 The workflow also produces a separate diagnostic grade for every measured locator, complete heading path, displayed main heading and subheading, cross-reference, and frozen source subject. These grades use semantic color tokens and structured hover/focus/touch popovers explaining the factors, weights or caps, confidence, and evidence behind the grade. They do not replace or add up to the publication-level score. See [`item-grading.md`](evaluate-subject-index/references/item-grading.md).
 
 ## Standard policy and density calibration
@@ -79,7 +81,9 @@ prepare-locator-chunks
 audit-locators [chunk-id]
 audit-missing-access [chunk-id]
 audit-index-structure
+preflight-v5-scoring
 score-index
+migrate-score-only
 build-web-report
 checkpoint
 export-bundle
@@ -150,6 +154,7 @@ OpenAI's documentation describes a skill as a directory containing `SKILL.md` pl
 - Python 3.10 or newer
 - [`pypdf`](https://pypi.org/project/pypdf/) for physically splitting source PDFs
 - [`PyMuPDF`](https://pypi.org/project/PyMuPDF/) for geometry-aware candidate-index extraction
+- [`jsonschema`](https://pypi.org/project/jsonschema/) for strict runtime validation of V5 calculation inputs and outputs
 
 The state manager, standard-policy builder, benchmark-review gate, checkpoint/export/import tooling, page-map expansion, chunk validation, locator routing, stable item inventory, diagnostic item grading, chapter-level density calculation, and scoring arithmetic otherwise use the Python standard library.
 
@@ -186,9 +191,6 @@ python evaluate-subject-index/scripts/page_chunk_cli.py filter-candidate \
   --benchmark-lock evaluate-subject-index/tests/candidate-benchmark-lock.valid.json \
   --output-dir /tmp/locator-packets
 
-python evaluate-subject-index/scripts/score_cli.py scorecard \
-  --input evaluate-subject-index/tests/scorecard.valid.json
-
 python evaluate-subject-index/scripts/policy_cli.py build \
   --input evaluate-subject-index/tests/policy-build-input.valid.json \
   --output /tmp/evaluation-policy.json
@@ -196,6 +198,19 @@ python evaluate-subject-index/scripts/policy_cli.py build \
 python evaluate-subject-index/scripts/score_cli.py density-profile \
   --input evaluate-subject-index/tests/density-chapters.valid.json \
   --output /tmp/density-profile.json
+
+# With a hash-bound dimension-calculation-input v1 file:
+python evaluate-subject-index/scripts/dimension_score_cli.py preflight \
+  --input /path/to/dimension-calculation-input.json
+
+python evaluate-subject-index/scripts/dimension_score_cli.py calculate \
+  --input /path/to/dimension-calculation-input.json \
+  --output /path/to/dimension-calculations.json
+
+python evaluate-subject-index/scripts/dimension_score_cli.py validate-projections \
+  --calculation /path/to/dimension-calculations.json \
+  --evaluation-result /path/to/evaluation-result.json \
+  --web-report /path/to/web-report.json
 
 python evaluate-subject-index/scripts/item_grade_cli.py build-inventory \
   --candidate evaluate-subject-index/tests/candidate-index.valid.json \
@@ -217,7 +232,7 @@ python evaluate-subject-index/scripts/item_grade_cli.py build-assessments \
 - Instantiate and freeze standard policy v1, page mapping, chunk ownership, source-specific scope, density calibration, reader tasks, and uncertainty treatment before candidate scoring.
 - Use both index-to-source and source-to-index audits; locator precision alone cannot reveal omissions.
 - Preserve original candidate output and record every normalization.
-- Compare evaluations only when their source, benchmark, rubric, mapping, scope, and audit-design identifiers match.
+- Compare evaluations only when their source, benchmark, judgment-policy, mapping, scope, audit-design, rubric, and dimension-calculation identifiers match.
 - Publish denominators, gates, evidence, limitations, and representative strengths as well as defects.
 
 No copyrighted source books, candidate indexes, or evaluation results are included in this repository.

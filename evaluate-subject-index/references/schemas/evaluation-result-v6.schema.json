@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "evaluation-result-v6.schema.json",
+  "title": "V5 scored subject-index evaluation result",
+  "type": "object",
+  "required": ["schema_version", "evaluation_id", "candidate", "provenance", "audit_scope", "dimension_calculations", "scorecard", "total_score", "interpretation", "metrics", "item_assessments", "critical_gates", "defect_counts", "comparison_key", "limitations"],
+  "properties": {
+    "schema_version": {"const": "subject-index-evaluation-result-v6"},
+    "evaluation_id": {"type": "string", "minLength": 1},
+    "candidate": {"type": "object", "required": ["label", "sha256"], "properties": {"label": {"type": "string"}, "sha256": {"$ref": "#/$defs/sha256"}}, "additionalProperties": true},
+    "provenance": {
+      "type": "object",
+      "required": ["source_sha256", "judgment_policy_sha256", "benchmark_sha256", "rubric_version", "dimension_calculation_profile"],
+      "properties": {
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "judgment_policy_sha256": {"$ref": "#/$defs/sha256"},
+        "benchmark_sha256": {"$ref": "#/$defs/sha256"},
+        "rubric_version": {"const": "subject-index-rubric-v5"},
+        "dimension_calculation_profile": {"const": "subject-index-dimension-calculation-v1"}
+      },
+      "additionalProperties": true
+    },
+    "audit_scope": {"type": "object", "required": ["mode", "complete"], "properties": {"mode": {"enum": ["full", "pilot"]}, "complete": {"type": "boolean"}}, "additionalProperties": true},
+    "dimension_calculations": {
+      "type": "object",
+      "required": ["schema_version", "artifact_path", "sha256", "calculation_profile"],
+      "properties": {
+        "schema_version": {"const": "subject-index-dimension-calculations-v1"},
+        "artifact_path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "calculation_profile": {"const": "subject-index-dimension-calculation-v1"}
+      },
+      "additionalProperties": false
+    },
+    "scorecard": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "allOf": [
+        {"contains": {"properties": {"dimension_id": {"const": "meaningful_coverage"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "editorial_selectivity"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "conceptual_stance_fidelity"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "page_reference_reliability"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "findability_navigation"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "mechanics_consistency"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1}
+      ],
+      "items": {
+        "type": "object",
+        "required": ["dimension_id", "label", "weight", "rating", "unrounded_rating", "points", "calculation_status", "formula_id", "applied_cap_id", "rationale", "evidence_ids"],
+        "properties": {
+          "dimension_id": {"enum": ["meaningful_coverage", "editorial_selectivity", "conceptual_stance_fidelity", "page_reference_reliability", "findability_navigation", "mechanics_consistency"]},
+          "label": {"type": "string"},
+          "weight": {"enum": [5, 15, 20, 25]},
+          "rating": {"type": ["number", "null"], "minimum": 0, "maximum": 5},
+          "unrounded_rating": {"type": ["string", "null"], "pattern": "^[0-9]+(?:\\.[0-9]+)?$"},
+          "points": {"type": ["number", "null"], "minimum": 0},
+          "calculation_status": {"enum": ["scored", "not_scored_incomplete_full_audit", "not_scored_insufficient_evidence"]},
+          "formula_id": {"type": "string", "minLength": 1},
+          "applied_cap_id": {"type": ["string", "null"]},
+          "rationale": {"type": "string"},
+          "evidence_ids": {"type": "array", "items": {"type": "string"}},
+          "subscores": {"type": "object"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "total_score": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+    "interpretation": {"type": "string"},
+    "metrics": {"type": "object"},
+    "item_assessments": {
+      "type": "object",
+      "required": ["schema_version", "grading_policy", "artifact_path", "sha256", "summary"],
+      "properties": {
+        "schema_version": {"const": "subject-index-item-assessments-v2"},
+        "grading_policy": {"const": "subject-index-item-grading-v1"},
+        "artifact_path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "summary": {"type": "object"}
+      },
+      "additionalProperties": false
+    },
+    "score_migration": {
+      "type": "object",
+      "required": ["schema_version", "artifact_path", "sha256", "migration_sha256"],
+      "properties": {
+        "schema_version": {"const": "subject-index-score-migration-v1"},
+        "artifact_path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "migration_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "critical_gates": {"type": "array", "items": {"type": "object"}},
+    "defect_counts": {"type": "object"},
+    "comparison_key": {
+      "type": "object",
+      "required": ["source_sha256", "benchmark_sha256", "judgment_policy_sha256", "page_map_sha256", "chunk_manifest_sha256", "inclusion_policy", "audit_mode", "uncertainty_policy", "rubric_version", "dimension_calculation_profile"],
+      "properties": {
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "benchmark_sha256": {"$ref": "#/$defs/sha256"},
+        "judgment_policy_sha256": {"$ref": "#/$defs/sha256"},
+        "page_map_sha256": {"$ref": "#/$defs/sha256"},
+        "chunk_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "inclusion_policy": {"type": "string"},
+        "audit_mode": {"enum": ["full", "pilot"]},
+        "uncertainty_policy": {"type": "string"},
+        "rubric_version": {"const": "subject-index-rubric-v5"},
+        "dimension_calculation_profile": {"const": "subject-index-dimension-calculation-v1"}
+      },
+      "additionalProperties": true
+    },
+    "limitations": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {"sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}},
+  "additionalProperties": true
+}

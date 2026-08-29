@@ -23,7 +23,7 @@ The preparation worker may start when these identities are frozen:
 - expanded page-map SHA-256;
 - chunk-manifest SHA-256;
 - policy profile and policy SHA-256;
-- rubric version and audit mode; and
+- legacy preparation-compatibility marker (`subject-index-rubric-v4`) and audit mode; and
 - immutable benchmark-repository preparation base commit.
 
 The final benchmark content, commit, and canonical hash are deliberately absent. The worker records `benchmark_lock_status: pending_final_benchmark`. It may register and hash the candidate, assess provenance and internal continuity, extract layout, normalize every delivered item, expand locators through the ordered page map, build the item inventory, perform full normalization QA, create a private recovery bundle, and propose a public-safe pull request.
@@ -200,7 +200,7 @@ At coordinator preflight, query the GitHub API again and pass that current-attem
 
 - candidate ID and candidate SHA-256;
 - source SHA-256 and edition identity;
-- page-map, chunk-manifest, policy, rubric, and audit-mode identities;
+- page-map, chunk-manifest, policy, legacy preparation-marker, and audit-mode identities;
 - benchmark repository and preparation base commit;
 - adapter ID/version;
 - exact private artifact paths and hashes;
@@ -224,7 +224,7 @@ Before any merge, the coordinator must:
 3. resolve the explicitly supplied private receipt/recovery root by candidate ID and SHA-256;
 4. validate every private artifact and full QA denominator;
 5. resolve the explicit final benchmark commit, require a schema-valid `candidate-benchmark-git-proof-v1` observed from the GitHub API, verify its repository/path/commit/blob/file hashes against the selected benchmark bytes, and recompute the benchmark canonical hash;
-6. require matching source, edition, page map, chunks, policy, rubric, audit mode, and uncertainty rules;
+6. require matching source, edition, page map, chunks, policy, preparation marker, audit mode, and uncertainty rules;
 7. reject an incompatible final page map or changed candidate normalization;
 8. after validating the Git proof, validate every final-benchmark and compatibility field intended for `candidate-benchmark-lock.json`, but do not write or finalize the lock before merged-PR evidence exists; and
 9. validate the complete integration plan without mutating canonical state.

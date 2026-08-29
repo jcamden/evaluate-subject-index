@@ -11,7 +11,8 @@ The schemas in `schemas/` are machine-readable contracts. Each schema controls e
 | Expanded page map | `page-map.schema.json` | One record per original document page |
 | Chunk manifest | `chunk-manifest.schema.json` | User-approved ownership and context ranges |
 | Policy build input | `policy-build-input.schema.json` | Source-bound facts used to instantiate the standard policy |
-| Policy | `evaluation-policy.schema.json` | Run-specific instance of standard policy v1 with frozen scope, audience provenance, gates, and density rules |
+| Historical policy | `evaluation-policy.schema.json` | V2 policy with legacy V4 rubric binding, retained for historical validation |
+| Judgment policy | `evaluation-policy-v3.schema.json` | Run-specific standard policy with frozen scope, audience, gates, and density rules but no score identity |
 | Source chunk | `source-subject-chunk.schema.json` | Candidate-blind chapter/page discoveries |
 | Parallel discovery receipt | `parallel-source-discovery-receipt.schema.json` | Branch base, validation summary, publication scope, and PR handoff for one worker chunk |
 | Benchmark draft | `source-benchmark-draft.schema.json` | Unfrozen whole-source synthesis awaiting independent review |
@@ -51,11 +52,19 @@ The schemas in `schemas/` are machine-readable contracts. Each schema controls e
 | Candidate-audit coordinator reconstruction | `candidate-audit-coordinator-reconstruction.schema.json` | Self-hashed private provenance for a missing-access handoff reconstructed from complete public canonical audit bytes |
 | Candidate-audit integration binding | `candidate-audit-integration-binding.schema.json` | One-to-one coordinator-private proposal, receipt, recovery-root, report, and evidence binding |
 | Candidate-audit repository state | `candidate-audit-repository-state.schema.json` | Immutable base branch/commit and existing-branch collision evidence for worker setup |
-| Structure audit | `structure-audit.schema.json` | Global hierarchy, navigation, cross-reference, mechanics, and density evidence |
-| Item assessments | `item-assessments.schema.json` | Diagnostic grades, semantic color tokens, popover factors, and evidence joins for every display item |
+| Historical structure audit | `structure-audit.schema.json` | V3 global audit retained for V4 validation and explicit migration |
+| V5 structure audit | `structure-audit-v4.schema.json` | Global audit plus frozen audit mode, exact audit-set provenance, cosmetic mechanics status, and strict scoring context |
+| V5 migration supplement | `v5-migration-supplement.schema.json` | Structure-bound historical-to-canonical audit-set reconciliation plus severity, recurrence, optional-subject, node-applicability, non-attempt, and reference-applicability provenance missing from an immutable V3 audit |
+| Historical item assessments | `item-assessments.schema.json` | V1 diagnostic grades, semantic color tokens, popover factors, and evidence joins retained for historical results |
+| V5 item assessments | `item-assessments-v2.schema.json` | Projection-safe V2 grades bound to the exact calculation evidence identity and item-inventory bytes, with complete unique ID-set accounting for every displayed item family |
 | Density input | `density-input.schema.json` | Chapter word, path, and locator counts for deterministic density scoring |
-| Evaluation result | `evaluation-result.schema.json` | Auditable scores, metrics, gates, and comparison key |
-| Web report | `web-report.schema.json` | Display-ready narrative and evidence cards |
+| V5 calculation input | `dimension-calculation-input.schema.json` | Frozen audit mode plus exact paths and SHA-256 hashes for the canonical chunk manifest and complete raw scoring-ledger sets |
+| V5 dimension calculations | `dimension-calculations.schema.json` | Validated evidence identity plus strict denominators, mappings, components, cap evaluations, uncertainty bounds, rounding, ratings, weighted points, and score-migration context when applicable |
+| Score migration | `score-migration.schema.json` | Immutable V4 provenance, V5 output identity, ledger-byte invariance, gate preservation, and comparability warning |
+| Historical evaluation result | `evaluation-result.schema.json` | V4 scored result retained for validation and migration |
+| V5 evaluation result | `evaluation-result-v6.schema.json` | V5 calculation binding, scorecard projection, exact item-assessment reference, separate gates, optional bound migration record, and decoupled comparison key |
+| Historical web report | `web-report.schema.json` | V3 display payload retained as immutable history |
+| V5 web report | `web-report-v4.schema.json` | Display-ready inputs, formulas, components, caps, bounds, rating, points, item-assessment binding, and gate projection without prose parsing |
 
 ## Stable identifiers
 
@@ -72,13 +81,17 @@ Use opaque IDs rather than mutable labels:
 - `TASK-*` for reader tasks; and
 - `DEFECT-*` for underlying defects.
 
-Use `subject-index-rubric-v4` for newly created results. Its density payload must preserve both standardized targets, target and broad tolerance bands, chapter-level measurements, source-word-weighted aggregation, and the five-point maximum contribution.
+Use `subject-index-rubric-v5` and `subject-index-dimension-calculation-v1` for newly created results. Preserve `subject-index-rubric-v4` artifacts as versioned history only. Never feed a V4 headline rating, diagnostic item grade, or gate outcome into the V5 calculation input.
+
+The calculation artifact stores the validated candidate, source, benchmark, benchmark-lock, policy, page-map, chunk-manifest, normalized-candidate, item-inventory, structure-audit, locator-set, and missing-set identities. Its decimal base and post-cap values are strings so boundary arithmetic is exactly reconstructable; final half-step ratings and two-decimal points are JSON numbers. Every dimension carries its exact input artifact paths and hashes, including the canonical manifest, original/applicable/measured/excluded/uninspectable/not-measured denominators, defined-zero rule where applicable, exclusion reasons, raw counts, credit mappings, normalized components, declared and effective weights, renormalization, every triggered and non-triggered cap for the central and endpoint calculations, the one applied cap, lower/upper missing-data results, decimal half-up rounding, final rating, weight, and points. Density chapter details additionally disclose whether path counts were exactly reconstructed or bounded because a pilot locator record was not measured; occurrence counts always reconstruct from expected locator IDs. A migrated calculation also carries the exact migration-record path plus historical-result and historical-gate hashes in `migration_context`; its canonical calculation hash covers that context. The scorer reconstructs exact locator- and missing-access-audit set hashes, requires their sets to equal the manifest's complete approved chunk set, rejects duplicate logical treatment units, contradictory recomputable structure/density aggregates, and mixed frozen identities, and requires a benchmark-grounded basis for every `not_applicable` node component. Projection validation requires the evaluation result's candidate, provenance, and comparison identities to equal the bound calculation. It resolves and hash-verifies the diagnostic item-assessment artifact, requires its evaluation/candidate/inventory/audit identity and referenced metadata to match, and requires the web report to bind that same file and color legend. For a migrated calculation it also resolves that context-bound record and its exact historical V4 result, verifies all calculation, ledger, identity-check, and gate hashes, and requires the result's canonical critical-gate set to reproduce the historical gate hash; the web gate projection must exactly equal the result and carry its canonical hash. Cross-reference inapplicability records delivered-reference counts, warranted-obligation counts and exact frozen IDs for undelivered subject/task/treatment/node or global-structure obligations, and reference-defect IDs restricted to structured findability `XRF` defects; every warranted undelivered route is an adverse measured zero even when another route was delivered, while an unsubstantiated absence cannot renormalize the component.
+
+The judgment-policy/benchmark identity and score identity are separate. Comparison keys pin both `judgment_policy_sha256` and the scoring pair (`rubric_version`, `dimension_calculation_profile`). A scoring-only change may reuse frozen discovery, benchmark, preparation, and audit artifacts only when deterministic preflight proves the complete chunk set, exact audit-set identities, uniform upstream identities, frozen audit mode, and V5 scoring context are sufficient.
 
 Use `subject-index-item-grading-v1` for diagnostic item grades. Keep it separate from the rubric version. Every item assessment requires a semantic color token, explicit grade scope, evidence IDs, and a public-safe popover with structured factors. A null score must use `grade_neutral` and `not_measured`; never convert unknown or uninspectable evidence to zero.
 
 ## Null and missing data
 
-Use explicit measurement states such as `measured`, `not_measured`, `uninspectable`, and `not_applicable`. Do not encode unknown values as zero. Rates contain numerator, denominator, value, and excluded counts.
+Use explicit measurement states such as `measured`, `not_measured`, `uninspectable`, and `not_applicable`. Do not encode unknown values as zero. Rates contain numerator, denominator, value, and excluded counts. In full mode any required `not_measured` item blocks scoring. `uninspectable` items receive lower/upper calculations and permit a number only when both the rounded rating and cap outcome are stable. Selectivity excludes source-unavailable, out-of-scope, and ambiguous subjects from its denominator; those states are not repurposed as candidate selectivity uncertainty.
 
 ## Canonical hashes
 

@@ -79,7 +79,34 @@
           "default": "aggregate_only"
         },
         "policy_profile": {"const": "subject-index-standard-policy-v1"},
-        "rubric_version": {"const": "subject-index-rubric-v4"}
+        "rubric_version": {"const": "subject-index-rubric-v4"},
+        "scoring_identity": {
+          "type": "object",
+          "required": ["rubric_version", "dimension_calculation_profile"],
+          "properties": {
+            "rubric_version": {"const": "subject-index-rubric-v5"},
+            "dimension_calculation_profile": {"const": "subject-index-dimension-calculation-v1"}
+          },
+          "additionalProperties": false
+        },
+        "score_profile_history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["changed_at", "previous", "current", "preflight_path", "preflight_sha256", "calculation_input_path", "calculation_input_sha256", "invalidated_stages"],
+            "properties": {
+              "changed_at": {"type": "string"},
+              "previous": {"type": ["object", "null"]},
+              "current": {"type": "object"},
+              "preflight_path": {"$ref": "#/$defs/relativePath"},
+              "preflight_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+              "calculation_input_path": {"$ref": "#/$defs/relativePath"},
+              "calculation_input_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+              "invalidated_stages": {"const": ["scoring", "web_report"]}
+            },
+            "additionalProperties": false
+          }
+        }
       },
       "additionalProperties": true
     },
@@ -115,7 +142,12 @@
           "visibility": {"enum": ["public", "private", "restricted"]},
           "retention": {"enum": ["required", "cache"]},
           "frozen": {"type": "boolean"},
-          "recorded_at": {"type": "string"}
+          "recorded_at": {"type": "string"},
+          "active_for_scoring_identity": {"type": "boolean"},
+          "scoring_identity": {"type": ["object", "null"]},
+          "stage_completion_eligible": {"type": "boolean"},
+          "invalidated_at": {"type": "string"},
+          "invalidation_reason": {"const": "score_calculation_profile_changed"}
         },
         "additionalProperties": true
       }

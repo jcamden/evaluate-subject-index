@@ -22,6 +22,7 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
+          from jsonschema import Draft202012Validator
 
           schema_dir = Path("evaluate-subject-index/references/schemas")
           files = list(schema_dir.glob("*.json"))
@@ -30,6 +31,8 @@ jobs:
           for path in files:
               document = json.loads(path.read_text(encoding="utf-8"))
               identifier = document.get("$id") if path.parent == schema_dir else None
+              if path.parent == schema_dir:
+                  Draft202012Validator.check_schema(document)
               if identifier:
                   if identifier in ids:
                       raise SystemExit(f"Duplicate schema $id: {identifier}")
@@ -147,7 +150,7 @@ jobs:
             --chunks /tmp/chunk-manifest.json \
             --benchmark-lock evaluate-subject-index/tests/candidate-benchmark-lock.valid.json \
             --output-dir /tmp/locator-packets
-      - name: Exercise standard policy and score arithmetic
+      - name: Exercise standard policy and historical V4 helpers
         run: |
           python evaluate-subject-index/scripts/policy_cli.py build \
             --input evaluate-subject-index/tests/policy-build-input.valid.json \
@@ -162,8 +165,9 @@ jobs:
 
           policy = json.load(open("/tmp/evaluation-policy.json", encoding="utf-8"))
           density = json.load(open("/tmp/density-profile.json", encoding="utf-8"))
+          assert policy["schema_version"] == "subject-index-evaluation-policy-v3"
           assert policy["policy_profile"]["id"] == "subject-index-standard-policy-v1"
-          assert policy["rubric"]["version"] == "subject-index-rubric-v4"
+          assert "rubric" not in policy
           assert [item["target"] for item in policy["density_profile"]["metrics"]] == [8.0, 20.0]
           assert density["chapter_measurements"][0]["calibration_counts"] == {
               "locator_bearing_heading_paths": 80.0,

@@ -348,7 +348,7 @@ def load_source_identities(
     policy = documents.get("policy") or load_json(policy_path, "Evaluation policy")
     require(page_map.get("schema_version") == "page-map-v1", "invalid_page_map", "Expected page-map-v1.")
     require(chunks.get("schema_version") == "chunk-manifest-v1", "invalid_chunk_manifest", "Expected chunk-manifest-v1.")
-    require(policy.get("schema_version") == "subject-index-evaluation-policy-v2", "invalid_policy", "Expected subject-index-evaluation-policy-v2.")
+    require(policy.get("schema_version") in {"subject-index-evaluation-policy-v2", "subject-index-evaluation-policy-v3"}, "invalid_policy", "Expected subject-index-evaluation-policy-v2 or v3.")
     validate_self_hash(page_map, "page_map_sha256", "Page map")
     validate_self_hash(chunks, "chunk_manifest_sha256", "Chunk manifest")
     validate_self_hash(policy, "policy_sha256", "Evaluation policy")
@@ -367,10 +367,13 @@ def load_source_identities(
         require(scope.get(key) == actual, "policy_identity_mismatch", f"Evaluation policy {key} does not match the frozen source identity.")
     configuration = state.get("configuration") if isinstance(state.get("configuration"), dict) else {}
     policy_profile = policy.get("policy_profile", {}).get("id")
-    rubric_version = policy.get("rubric", {}).get("version")
+    # V3 deliberately removes score identity from the source judgment policy.
+    # Candidate-preparation v1 retains its historical contract field only for
+    # receipt compatibility; it is not the active V5 scoring identity.
+    rubric_version = policy.get("rubric", {}).get("version") or configuration.get("rubric_version", "subject-index-rubric-v4")
     audit_mode = policy.get("audit_design", {}).get("mode")
     require(configuration.get("policy_profile") in {None, policy_profile}, "policy_identity_mismatch", "State and policy profile identities differ.")
-    require(configuration.get("rubric_version") in {None, rubric_version}, "rubric_identity_mismatch", "State and policy rubric identities differ.")
+    require(configuration.get("rubric_version") in {None, rubric_version}, "rubric_identity_mismatch", "State and the legacy preparation-contract rubric identity differ.")
     require(configuration.get("audit_mode") == audit_mode, "audit_mode_mismatch", "State and policy audit modes differ.")
     return {
         "state": state,

@@ -344,9 +344,10 @@ def manifest_record_for_path(run: dict[str, Any], path: Path, required: bool = T
     return matches[0]
 
 
-def validate_json_identity_file(path: Path, label: str, schema_version: str, own_hash_field: str | None = None) -> tuple[dict[str, Any], bytes, str]:
+def validate_json_identity_file(path: Path, label: str, schema_version: str | set[str], own_hash_field: str | None = None) -> tuple[dict[str, Any], bytes, str]:
     document, payload, digest = load_json_snapshot(path.resolve(), label)
-    require(document.get("schema_version") == schema_version, "schema_mismatch", f"{label} must use {schema_version}.")
+    accepted = {schema_version} if isinstance(schema_version, str) else schema_version
+    require(document.get("schema_version") in accepted, "schema_mismatch", f"{label} must use one of {sorted(accepted)}.")
     if own_hash_field is not None:
         validate_self_hash(document, own_hash_field, label)
     return document, payload, digest
@@ -358,7 +359,7 @@ def load_frozen_inputs(args: argparse.Namespace, audit_kind: str) -> dict[str, A
     publication_profile = publication_profile_for(state)
     page_map, page_map_bytes, page_map_file_sha = validate_json_identity_file(Path(args.page_map), "Page map", "page-map-v1", "page_map_sha256")
     chunks, chunk_bytes, chunk_file_sha = validate_json_identity_file(Path(args.chunk_manifest), "Chunk manifest", "chunk-manifest-v1", "chunk_manifest_sha256")
-    policy, policy_bytes, policy_file_sha = validate_json_identity_file(Path(args.policy), "Evaluation policy", "subject-index-evaluation-policy-v2", "policy_sha256")
+    policy, policy_bytes, policy_file_sha = validate_json_identity_file(Path(args.policy), "Evaluation policy", {"subject-index-evaluation-policy-v2", "subject-index-evaluation-policy-v3"}, "policy_sha256")
     benchmark, benchmark_bytes, benchmark_file_sha = validate_json_identity_file(Path(args.benchmark), "Frozen benchmark", "source-subject-benchmark-v2", "benchmark_sha256")
     lock, lock_bytes, lock_file_sha = validate_json_identity_file(Path(args.benchmark_lock), "Candidate benchmark lock", "candidate-benchmark-lock-v1", "lock_sha256")
     candidate, candidate_bytes, candidate_file_sha = validate_json_identity_file(Path(args.normalized_candidate), "Normalized candidate", "candidate-index-v2")
@@ -3095,7 +3096,7 @@ def add_frozen_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--state", required=True, help="Canonical evaluation-state.json (v4).")
     parser.add_argument("--page-map", required=True, help="Frozen page-map-v1 JSON.")
     parser.add_argument("--chunk-manifest", required=True, help="Frozen chunk-manifest-v1 JSON.")
-    parser.add_argument("--policy", required=True, help="Frozen subject-index-evaluation-policy-v2 JSON.")
+    parser.add_argument("--policy", required=True, help="Frozen subject-index-evaluation-policy-v2 or v3 JSON.")
     parser.add_argument("--benchmark", required=True, help="Frozen source-subject-benchmark-v2 JSON.")
     parser.add_argument("--benchmark-lock", required=True, help="Candidate benchmark-lock JSON.")
     parser.add_argument("--normalized-candidate", required=True, help="Integrated candidate-index-v2 JSON.")

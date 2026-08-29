@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "structure-audit-v4.schema.json",
+  "title": "Global subject-index structure audit with V5 scoring provenance",
+  "type": "object",
+  "required": ["schema_version", "evaluation_id", "candidate_sha256", "item_inventory_sha256", "audit_mode", "scope_complete", "metrics", "density", "expected_node_ids", "node_judgments", "expected_cross_reference_ids", "cross_reference_judgments", "defects", "strengths", "completion", "provenance", "v5_scoring_context"],
+  "properties": {
+    "schema_version": {"const": "structure-audit-v4"},
+    "evaluation_id": {"type": "string", "minLength": 1},
+    "candidate_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "item_inventory_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "audit_mode": {"enum": ["full", "pilot"]},
+    "scope_complete": {"type": "boolean"},
+    "metrics": {
+      "type": "object",
+      "required": ["page_bearing_paths", "expanded_locators", "cross_references"],
+      "properties": {
+        "page_bearing_paths": {"type": "integer", "minimum": 0, "description": "Unique stable PATH-* identities reconstructed from locator judgments; exact for complete ledgers and bounded by known paths plus absent not-measured locator records in pilot mode."},
+        "expanded_locators": {"type": "integer", "minimum": 0, "description": "Exact expected stable locator-ID denominator; the V5 scorer rejects disagreement."},
+        "cross_references": {"type": "integer", "minimum": 0, "description": "Exact expected stable cross-reference-ID denominator; the V5 scorer rejects disagreement."}
+      },
+      "additionalProperties": true
+    },
+    "density": {
+      "type": "object",
+      "required": ["policy_status", "measurement_level", "targets", "chapter_measurements", "maximum_score_contribution", "distribution_findings"],
+      "properties": {
+        "policy_status": {"const": "scored"},
+        "measurement_level": {"const": "chapter_or_approved_intellectual_unit"},
+        "targets": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "object"}},
+        "chapter_measurements": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["chunk_id", "indexable_source_words", "locator_bearing_heading_paths", "locator_occurrences"],
+            "properties": {
+              "chunk_id": {"type": "string", "minLength": 1},
+              "indexable_source_words": {"type": "integer", "minimum": 1},
+              "locator_bearing_heading_paths": {"type": "integer", "minimum": 0, "description": "Unique PATH-* identities in this chunk's locator judgments; scorer-reconstructed when complete and tightly bounded only for absent pilot records."},
+              "locator_occurrences": {"type": "integer", "minimum": 0, "description": "Exact expected locator-ID count for this chunk; independently reconstructed by the scorer."}
+            },
+            "additionalProperties": true
+          }
+        },
+        "fit_rating": {"type": ["number", "null"], "minimum": 0, "maximum": 5},
+        "maximum_score_contribution": {"const": 5},
+        "distribution_findings": {"type": "array", "items": {"type": "object"}}
+      },
+      "additionalProperties": true
+    },
+    "expected_node_ids": {"type": "array", "items": {"type": "string", "pattern": "^NODE-"}, "uniqueItems": true},
+    "node_judgments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["node_id", "heading_path", "role", "component_judgments", "summary", "confidence", "evidence_ids"],
+        "properties": {
+          "node_id": {"type": "string", "pattern": "^NODE-"},
+          "heading_path": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "role": {"enum": ["main_heading", "subheading"]},
+          "component_judgments": {
+            "type": "object",
+            "required": ["conceptual_stance_fidelity", "heading_access_architecture", "mechanics_consistency"],
+            "properties": {
+              "conceptual_stance_fidelity": {"$ref": "#/$defs/standardComponent"},
+              "heading_access_architecture": {"$ref": "#/$defs/standardComponent"},
+              "mechanics_consistency": {"$ref": "#/$defs/mechanicsComponent"}
+            },
+            "additionalProperties": false
+          },
+          "summary": {"type": "string"},
+          "confidence": {"enum": ["high", "medium", "low"]},
+          "evidence_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+        },
+        "additionalProperties": true
+      }
+    },
+    "expected_cross_reference_ids": {"type": "array", "items": {"type": "string", "pattern": "^XREF-"}, "uniqueItems": true},
+    "cross_reference_judgments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["reference_id", "judgment", "summary", "severity", "confidence", "evidence_ids"],
+        "properties": {
+          "reference_id": {"type": "string", "pattern": "^XREF-"},
+          "judgment": {"enum": ["supported", "partially_supported", "unsupported", "uninspectable", "not_measured"]},
+          "summary": {"type": "string"},
+          "severity": {"enum": ["none", "cosmetic", "minor", "major", "critical"]},
+          "confidence": {"enum": ["high", "medium", "low"]},
+          "evidence_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+        },
+        "additionalProperties": true
+      }
+    },
+    "defects": {"type": "array", "items": {"$ref": "#/$defs/defect"}},
+    "strengths": {"type": "array", "items": {"type": "object"}},
+    "completion": {
+      "type": "object",
+      "required": ["expected_nodes", "judged_nodes", "expected_cross_references", "judged_cross_references", "complete"],
+      "properties": {
+        "expected_nodes": {"type": "integer", "minimum": 0},
+        "judged_nodes": {"type": "integer", "minimum": 0},
+        "expected_cross_references": {"type": "integer", "minimum": 0},
+        "judged_cross_references": {"type": "integer", "minimum": 0},
+        "complete": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["source_sha256", "benchmark_sha256", "benchmark_lock_sha256", "policy_sha256", "page_map_sha256", "chunk_manifest_sha256", "normalized_candidate_file_sha256", "item_inventory_file_sha256", "locator_audit_set_sha256", "missing_access_audit_set_sha256"],
+      "properties": {
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "benchmark_sha256": {"$ref": "#/$defs/sha256"},
+        "benchmark_lock_sha256": {"$ref": "#/$defs/sha256"},
+        "policy_sha256": {"$ref": "#/$defs/sha256"},
+        "page_map_sha256": {"$ref": "#/$defs/sha256"},
+        "chunk_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "normalized_candidate_file_sha256": {"$ref": "#/$defs/sha256"},
+        "item_inventory_file_sha256": {"$ref": "#/$defs/sha256"},
+        "locator_audit_set_sha256": {"$ref": "#/$defs/sha256"},
+        "missing_access_audit_set_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": true
+    },
+    "v5_scoring_context": {"$ref": "v5-migration-supplement.schema.json#/$defs/scoringContext"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "defect": {"$ref": "v5-migration-supplement.schema.json#/$defs/defect"},
+    "standardComponent": {
+      "type": "object",
+      "required": ["status", "summary", "evidence_ids"],
+      "properties": {
+        "status": {"enum": ["passes", "minor_issues", "major_issues", "fails", "uninspectable", "not_applicable", "not_measured"]},
+        "summary": {"type": "string"},
+        "evidence_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      },
+      "additionalProperties": false
+    },
+    "mechanicsComponent": {
+      "type": "object",
+      "required": ["status", "summary", "evidence_ids"],
+      "properties": {
+        "status": {"enum": ["passes", "cosmetic_issues", "minor_issues", "major_issues", "fails", "uninspectable", "not_applicable", "not_measured"]},
+        "summary": {"type": "string"},
+        "evidence_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

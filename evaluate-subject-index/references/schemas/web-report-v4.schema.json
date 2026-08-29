@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "web-report-v4.schema.json",
+  "title": "Display-ready V5 subject-index report",
+  "type": "object",
+  "required": ["schema_version", "report_id", "headline", "summary", "grade", "scorecard", "calculation_explainer", "key_metrics", "density", "gate_status", "strengths", "defects", "examples", "item_grade_index", "methodology", "comparability", "disclosures", "limitations", "evidence_index"],
+  "properties": {
+    "schema_version": {"const": "subject-index-web-report-v4"},
+    "report_id": {"type": "string"},
+    "headline": {"type": "string"},
+    "summary": {"type": "string"},
+    "grade": {"type": "object", "required": ["score", "maximum", "label"], "properties": {"score": {"type": ["number", "null"], "minimum": 0, "maximum": 100}, "maximum": {"const": 100}, "label": {"type": "string"}}, "additionalProperties": true},
+    "scorecard": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "allOf": [
+        {"contains": {"properties": {"dimension_id": {"const": "meaningful_coverage"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "editorial_selectivity"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "conceptual_stance_fidelity"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "page_reference_reliability"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "findability_navigation"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "mechanics_consistency"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1}
+      ],
+      "items": {
+        "type": "object",
+        "required": ["dimension_id", "label", "rating", "unrounded_rating", "weight", "awarded_points", "status", "formula_id", "input_artifacts", "denominators", "raw_status_counts", "credit_mappings", "components", "base_rating", "pre_cap_rating", "post_cap_rating", "cap_evaluations", "applied_cap", "rounding", "missing_data_bounds"],
+        "properties": {
+          "dimension_id": {"enum": ["meaningful_coverage", "editorial_selectivity", "conceptual_stance_fidelity", "page_reference_reliability", "findability_navigation", "mechanics_consistency"]},
+          "label": {"type": "string"},
+          "rating": {"type": ["number", "null"], "minimum": 0, "maximum": 5},
+          "unrounded_rating": {"$ref": "dimension-calculations.schema.json#/$defs/decimal"},
+          "weight": {"enum": [5, 15, 20, 25]},
+          "awarded_points": {"type": ["number", "null"], "minimum": 0},
+          "status": {"enum": ["scored", "not_scored_incomplete_full_audit", "not_scored_insufficient_evidence"]},
+          "formula_id": {"type": "string", "minLength": 1},
+          "input_artifacts": {"type": "array", "minItems": 1, "items": {"$ref": "dimension-calculations.schema.json#/$defs/inputArtifact"}},
+          "denominators": {
+            "type": "object",
+            "required": ["components"],
+            "properties": {"components": {"type": "array", "minItems": 1, "items": {"$ref": "dimension-calculations.schema.json#/$defs/denominator"}}},
+            "additionalProperties": false
+          },
+          "raw_status_counts": {"type": "object"},
+          "credit_mappings": {"type": "object"},
+          "components": {"type": "array", "minItems": 1, "items": {"$ref": "dimension-calculations.schema.json#/$defs/component"}},
+          "base_rating": {"$ref": "dimension-calculations.schema.json#/$defs/decimal"},
+          "pre_cap_rating": {"$ref": "dimension-calculations.schema.json#/$defs/decimal"},
+          "post_cap_rating": {"$ref": "dimension-calculations.schema.json#/$defs/decimal"},
+          "cap_evaluations": {"type": "array", "minItems": 1, "items": {"$ref": "dimension-calculations.schema.json#/$defs/cap"}},
+          "applied_cap": {"$ref": "dimension-calculations.schema.json#/$defs/appliedCap"},
+          "rounding": {
+            "type": "object",
+            "required": ["mode", "quantum", "input", "output"],
+            "properties": {
+              "mode": {"const": "ROUND_HALF_UP"},
+              "quantum": {"type": "string"},
+              "input": {"$ref": "dimension-calculations.schema.json#/$defs/decimal"},
+              "output": {"type": ["number", "null"], "minimum": 0, "maximum": 5}
+            },
+            "additionalProperties": false
+          },
+          "missing_data_bounds": {
+            "type": "object",
+            "required": ["lower", "upper", "stable_rating", "stable_cap_outcome"],
+            "properties": {
+              "lower": {"$ref": "dimension-calculations.schema.json#/$defs/bound"},
+              "upper": {"$ref": "dimension-calculations.schema.json#/$defs/bound"},
+              "stable_rating": {"type": "boolean"},
+              "stable_cap_outcome": {"type": "boolean"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "calculation_explainer": {
+      "type": "object",
+      "required": ["artifact_path", "sha256", "rubric_version", "calculation_profile", "item_grades_used", "gates_used"],
+      "properties": {
+        "artifact_path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "rubric_version": {"const": "subject-index-rubric-v5"},
+        "calculation_profile": {"const": "subject-index-dimension-calculation-v1"},
+        "item_grades_used": {"const": false},
+        "gates_used": {"const": false}
+      },
+      "additionalProperties": false
+    },
+    "key_metrics": {"type": "array", "items": {"type": "object"}},
+    "density": {"type": "object"},
+    "gate_status": {
+      "type": "object",
+      "required": ["critical_gates", "outcomes_sha256", "used_in_score_arithmetic"],
+      "properties": {
+        "critical_gates": {"type": "array", "items": {"type": "object"}},
+        "outcomes_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "used_in_score_arithmetic": {"const": false}
+      },
+      "additionalProperties": false
+    },
+    "strengths": {"type": "array", "items": {"type": "object"}},
+    "defects": {"type": "array", "items": {"type": "object"}},
+    "examples": {"type": "array", "items": {"type": "object"}},
+    "item_grade_index": {
+      "type": "object",
+      "required": ["schema_version", "artifact_path", "sha256", "grading_policy", "summary", "color_legend", "interaction"],
+      "properties": {
+        "schema_version": {"const": "subject-index-item-assessments-v2"},
+        "artifact_path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "grading_policy": {"const": "subject-index-item-grading-v1"},
+        "summary": {"type": "object"},
+        "color_legend": {"type": "array", "minItems": 6, "maxItems": 6, "items": {"type": "object"}},
+        "interaction": {
+          "type": "object",
+          "required": ["color_source", "popover_source", "not_measured_behavior"],
+          "properties": {
+            "color_source": {"const": "grade.color_token"},
+            "popover_source": {"const": "popover"},
+            "not_measured_behavior": {"const": "neutral_not_failure"}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "methodology": {"type": "object"},
+    "comparability": {"type": "object"},
+    "disclosures": {"type": "array", "items": {"type": "string"}},
+    "limitations": {"type": "array", "items": {"type": "string"}},
+    "evidence_index": {"type": "object"}
+  },
+  "additionalProperties": true
+}

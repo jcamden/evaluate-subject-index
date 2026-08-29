@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
-"""Deterministic density-fit and rubric arithmetic for subject-index evaluations."""
+"""Density fitting plus explicitly historical V4 scorecard arithmetic.
+
+Canonical V5 dimension ratings are derived from raw ledgers by
+``dimension_score_cli.py``.  The ``scorecard`` command remains only so frozen
+V4 results can be validated and migrated; it must not be used to create V5
+ratings.
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any
 
@@ -46,8 +53,13 @@ def emit(value: Any) -> None:
     print(json.dumps(value, indent=2, ensure_ascii=False))
 
 
-def half_step(value: float) -> float:
-    return int(value * 2 + 0.5) / 2
+def as_decimal(value: Any) -> Decimal:
+    return value if isinstance(value, Decimal) else Decimal(str(value))
+
+
+def half_step(value: float | Decimal) -> float:
+    rounded = (as_decimal(value) / Decimal("0.5")).quantize(Decimal(1), rounding=ROUND_HALF_UP) * Decimal("0.5")
+    return float(rounded)
 
 
 def validate_band(a_min: float, i_min: float, i_max: float, a_max: float) -> None:
@@ -59,25 +71,30 @@ def validate_band(a_min: float, i_min: float, i_max: float, a_max: float) -> Non
 
 def density_rating(value: float, acceptable_min: float, ideal_min: float, ideal_max: float, acceptable_max: float) -> tuple[float, str, float]:
     validate_band(acceptable_min, ideal_min, ideal_max, acceptable_max)
-    if ideal_min <= value <= ideal_max:
+    decimal_value = as_decimal(value)
+    a_min = as_decimal(acceptable_min)
+    i_min = as_decimal(ideal_min)
+    i_max = as_decimal(ideal_max)
+    a_max = as_decimal(acceptable_max)
+    if i_min <= decimal_value <= i_max:
         return 5.0, "ideal", 0.0
-    if acceptable_min <= value <= acceptable_max:
+    if a_min <= decimal_value <= a_max:
         return 4.0, "acceptable", 0.0
-    if value < acceptable_min:
-        distance = (acceptable_min - value) / acceptable_min if acceptable_min else float("inf")
+    if decimal_value < a_min:
+        distance_decimal = (a_min - decimal_value) / a_min if a_min else Decimal("Infinity")
         direction = "below_acceptable"
     else:
-        distance = (value - acceptable_max) / acceptable_max if acceptable_max else float("inf")
+        distance_decimal = (decimal_value - a_max) / a_max if a_max else Decimal("Infinity")
         direction = "above_acceptable"
-    if distance <= 0.25:
+    if distance_decimal <= Decimal("0.25"):
         rating = 3.0
-    elif distance <= 0.50:
+    elif distance_decimal <= Decimal("0.50"):
         rating = 2.0
-    elif distance <= 1.0:
+    elif distance_decimal <= Decimal("1.0"):
         rating = 1.0
     else:
         rating = 0.0
-    return rating, direction, distance
+    return rating, direction, float(distance_decimal)
 
 
 def command_density(args: argparse.Namespace) -> None:
@@ -219,6 +236,12 @@ def command_density_profile(args: argparse.Namespace) -> None:
 
 def command_scorecard(args: argparse.Namespace) -> None:
     payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
+    if payload.get("rubric_version") not in {None, "subject-index-rubric-v4"}:
+        emit({
+            "ok": False,
+            "errors": ["The manual-rating scorecard command is historical V4 validation only; canonical V5 scoring must use dimension_score_cli.py calculate."],
+        })
+        raise SystemExit(1)
     ratings = payload.get("ratings", {})
     errors: list[str] = []
     rows: list[dict[str, Any]] = []
@@ -261,6 +284,9 @@ def command_scorecard(args: argparse.Namespace) -> None:
         raise SystemExit(1)
     result = {
         "ok": True,
+        "rubric_version": "subject-index-rubric-v4",
+        "status": "historical_v4_arithmetic_only",
+        "canonical_v5_command": "dimension_score_cli.py calculate",
         "scorecard": rows,
         "total_score": round(total, 2),
         "maximum_score": 100,

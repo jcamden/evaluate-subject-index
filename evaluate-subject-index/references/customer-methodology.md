@@ -80,7 +80,11 @@ The evaluation produces six dimension scores totaling 100 points.
 | Can readers find things efficiently? | Findability and navigation | 20 |
 | Is it professionally consistent? | Mechanics and consistency | 5 |
 
-The total is a weighted quality summary, not “percent correct.” Each dimension is based on measured results and item-level evidence. The report publishes the component scores and supporting rates so that the total can be interpreted rather than taken on faith.
+The total is a weighted quality summary, not “percent correct.” Under rubric V5, raw audit statuses—not evaluator-selected headline ratings and not diagnostic item grades—enter six published formulas. The report exposes each denominator, status-to-credit mapping, component value, cap test, uncertainty bound, rounding step, rating, and weighted-points calculation.
+
+The calculation uses decimal half-up arithmetic. Five dimensions publish half-step ratings; Editorial Selectivity retains its 10-point substantive plus 5-point density calculation and may display a non-half-step equivalent. A cap is a safeguard against a consequential defect being diluted by many easy items. Caps never stack or subtract points; only the most restrictive applicable cap is used.
+
+Uninspectable evidence is neutral rather than a failure. The method calculates worst- and best-case outcomes for it and publishes a number only when both cases produce the same public rating and cap outcome. In a full audit, any required item left `not_measured` blocks the affected dimension and total.
 
 | Total | Interpretation |
 | ---: | --- |
@@ -96,7 +100,7 @@ A high total does not by itself mean publication-ready. A critical failure can l
 
 ### 1. Meaningful coverage — 20 points
 
-Measures whether readers can find the publication’s principal subjects, important subsidiary subjects, arguments, findings, relationships, distinctions, and conclusions. It considers both concept coverage and whether the important treatment pages are represented.
+Measures whether readers have complete, partial, or missing access to the publication’s principal subjects, important subsidiary subjects, arguments, findings, relationships, distinctions, and conclusions. Essential and major subjects receive frozen priority weights. Treatment-page recall is measured separately under Page-reference Reliability.
 
 ### 2. Editorial selectivity — 15 points
 
@@ -108,11 +112,11 @@ Measures whether headings say what the source actually says. It tests meaning, s
 
 ### 4. Page-reference reliability — 25 points
 
-Measures whether locators point to pages that substantively support the complete heading path and whether the index includes the principal pages needed for that subject. Each page in a displayed range is tested individually.
+Measures whether locators point to pages that substantively support the complete heading path and whether expected treatment units are found. It combines strict supported-locator precision and unique expected-treatment recall with their harmonic mean, then checks pooled principal plus synthesis/conclusion recall. Each page in a displayed range is tested individually.
 
 ### 5. Findability and navigation — 20 points
 
-Measures whether readers can locate subjects efficiently through clear terminology, useful direct access, meaningful subdivisions, accurate parent-child relationships, valid cross-references, and coherent organization across the entire book.
+Measures whether readers can locate subjects efficiently through clear terminology, useful direct access, meaningful subdivisions, accurate parent-child relationships, valid cross-references, and coherent organization across the entire book. Its task component is explicitly coverage-conditioned: it measures navigation among subjects having at least partial access, while tasks excluded because their subjects are missing remain visible under coverage. When every task is excluded for that reason, the framework reports navigation as not scoreable instead of treating missing coverage evidence as a navigation zero; only an actually empty or structurally incomplete navigation attempt receives the explicit zero.
 
 ### 6. Mechanics and consistency — 5 points
 
@@ -127,7 +131,7 @@ The framework uses two standardized chapter-level calibration targets:
 
 The normal target bands are 6–10 paths and 15–25 locator occurrences. Broad tolerance bands of 4–12 paths and 10–30 locator occurrences allow substantial variation before density is treated as a serious defect.
 
-These figures are calibration points, not quotas, minimums, hard ceilings, or universal professional requirements. A source may justify natural variation. Valid access is not removed to reach a number, and weak access is not retained to fill one.
+These figures are calibration points, not quotas, minimums, hard ceilings, or universal professional requirements. A source may justify natural variation. Valid access is not removed to reach a number, and weak access is not retained to fill one. A density metric value of zero receives zero under V5 rather than the one point produced by the historical distance edge case.
 
 Density is measured by chapter because a whole-book average can hide overindexed and underindexed sections. Chapter results are weighted by indexable source words. Density can contribute no more than five points to the 100-point score; specific omissions, clutter, or navigation failures must still be demonstrated from source evidence.
 
@@ -167,7 +171,7 @@ A failed check does not secretly change the arithmetic score. The report shows t
 - **Frozen inputs:** The policy, benchmark, and comparison identifiers are versioned and hashed so later changes are visible.
 - **Recorded uncertainty:** Uninspectable or uncertain material is disclosed rather than silently counted as success or failure.
 
-The workflow combines deterministic processing with editorial judgment. Page mapping, range expansion, hashing, schema validation, density arithmetic, and score arithmetic are deterministic. Decisions about substantive significance, conceptual accuracy, and navigation quality require source-grounded editorial judgment and therefore include evidence and confidence.
+The workflow combines deterministic calculation with source-grounded editorial judgment. Page mapping, range expansion, hashing, schema validation, density arithmetic, evidence-to-rating formulas, caps, rounding, and weighted arithmetic are deterministic. Decisions about substantive significance, conceptual accuracy, navigation quality, and severity still require editorial judgment, so each is frozen with evidence, confidence, operational severity basis, retrieval consequence, affected IDs and sections, recurrence family, and reconstructable counts and rates.
 
 ## Detailed evaluation criteria
 
@@ -324,7 +328,7 @@ Full audits inspect all in-scope source pages, delivered index records, expanded
 ## Limits and interpretation
 
 - The score applies only to the identified source edition and candidate version.
-- Editorial judgments are evidence-based but are not perfectly deterministic; another qualified evaluation may differ at the margins.
+- Editorial judgments are evidence-based but are not perfectly deterministic; another qualified evaluation may differ at the margins. Given the same validated ledgers and V5 calculation profile, however, the published numerical ratings are reproducible.
 - The frozen policy, benchmark, denominators, and item-level evidence make disagreements inspectable and reruns meaningfully comparable.
 - Density targets belong to this framework and are not claimed as universal indexing standards.
 - A comparison is valid only when candidates were evaluated under compatible frozen inputs and the same audit mode.

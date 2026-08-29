@@ -32,7 +32,7 @@ Generate a node from each unique heading-path prefix. All records beginning with
 
 Resolve each cross-reference target to `target_path_id` when its normalized display text uniquely matches an inventory path. Leave it null when no unique match exists; the global reference audit must then record whether the target is unresolved, ambiguous, or otherwise defective. Candidate-index-v2 and item-inventory-v2 retain `cross_references[]` and `reference_ids[]` so a record may contain locators and more than one reference without loss.
 
-At `score-index`, create `item-assessments.json` before `evaluation-result.json`. The item artifact contains locator, path, node, cross-reference, and source-subject assessments, plus a color legend and summary counts.
+At `score-index`, create `item-assessments.json` before `evaluation-result.json`. New V5 results require `subject-index-item-assessments-v2`; V1 remains valid only as historical diagnostic output. The V2 artifact contains locator, path, node, cross-reference, and source-subject assessments, plus a color legend and summary counts. It binds the exact item-inventory artifact and complete calculation evidence identity, and each family records a unique, complete ID-set hash. Projection validation resolves the inventory and rejects missing, duplicate, unexpected, or foreign-ledger assessments.
 
 Register `item-assessments.json` as public when the frozen profile is `public_evaluation_artifacts`; otherwise keep the study's existing visibility policy. Publication never changes its grading inputs or arithmetic. The public artifact must retain only its existing public-safe popover paraphrases and evidence IDs, not restricted evidence text. Read [publication-profiles.md](publication-profiles.md).
 
@@ -95,7 +95,7 @@ Derive components as follows:
 - Calculate editorial selectivity from the locator treatment classes: substantive 100, mixed 70, passing/citation/attribution/incidental/absent 0, and unavailable null.
 - Calculate meaningful coverage from source-subject judgments that explicitly name the path in `matched_path_ids`, weighted essential 3, major 2, optional 1.
 - Calculate conceptual fidelity, findability, and mechanics from the audited heading nodes in the path plus path-specific defects.
-- Apply defect severity caps only to the component owned by the defect code: cosmetic 95, minor 85, major 55, critical 0.
+- Apply defect severity caps only to the component owned by the validated V5 `dimension_owner`; historical defects without that field fall back to their code mapping. `LOC_NEG` is locator recall and therefore belongs to Page-reference Reliability, not Meaningful Coverage. Read affected identities from V5 `affected_item_ids` while retaining `affected_ids` only as the historical fallback. Caps are cosmetic 95, minor 85, major 55, and critical 0.
 - Store every applied cap with defect ID, severity, and maximum permitted component score so the interface can explain its effect.
 - Exclude not-applicable or unmeasured components from the denominator rather than converting them to zero.
 
@@ -109,7 +109,7 @@ Audit every `NODE-*` during the global structure pass. Record three component ju
 - heading/access architecture; and
 - mechanics and consistency.
 
-Use statuses `passes`, `minor_issues`, `major_issues`, `fails`, `uninspectable`, and `not_applicable`. Map them to 100, 85, 55, 0, null, and null respectively. Apply path-specific defect caps. Normalize the measured components using their rubric weights of 15, 20, and 5.
+Use statuses `passes`, `cosmetic_issues` for mechanics, `minor_issues`, `major_issues`, `fails`, `uninspectable`, and `not_applicable`. Map them to 100, 95, 85, 55, 0, null, and null respectively. Apply path-specific defect caps. Normalize the measured components using their rubric weights of 15, 20, and 5.
 
 A level-one main-heading grade evaluates that heading’s wording and organizational role. It does not conceal a weak child by averaging all descendants. Each child subheading and each complete path retains its own grade.
 
@@ -181,6 +181,7 @@ Validate that:
 - no null grade uses a failure color;
 - every assessment contains a popover and evidence index;
 - path components disclose weights and measurement states;
+- V5 defect owners and `affected_item_ids` project to the same diagnostic component used by scoring, with legacy code/`affected_ids` fallback only for historical audits;
 - chapter density is absent from path and node grades;
 - summary band counts equal collection counts; and
 - the web report references the exact item-assessment artifact hash.

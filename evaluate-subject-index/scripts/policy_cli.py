@@ -11,9 +11,8 @@ from pathlib import Path
 from typing import Any
 
 
-POLICY_SCHEMA = "subject-index-evaluation-policy-v2"
+POLICY_SCHEMA = "subject-index-evaluation-policy-v3"
 POLICY_PROFILE = "subject-index-standard-policy-v1"
-RUBRIC_VERSION = "subject-index-rubric-v4"
 
 DEFAULT_INCLUDED = [
     "preparation-approved indexable content",
@@ -257,7 +256,6 @@ def build_policy(source: dict[str, Any], standard_path: Path) -> dict[str, Any]:
             {"gate_id": gate_id, "description": description, "standard": True}
             for gate_id, description in CRITICAL_GATES
         ],
-        "rubric": {"version": RUBRIC_VERSION, "maximum_points": 100},
         "deviations": deviations,
         "freeze": {"frozen_at": stamp, "candidate_seen": False},
         "policy_sha256": None,

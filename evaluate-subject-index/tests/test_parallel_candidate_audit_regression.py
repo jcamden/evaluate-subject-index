@@ -19,7 +19,7 @@ class ProtectedCandidatePreparationContracts(unittest.TestCase):
     """Pin the authorized candidate-preparation compatibility implementation."""
 
     EXPECTED = {
-        "scripts/candidate_preparation_cli.py": "36ae4850aab620b0876f5c1804bb4cfadc0714d74cec11ad4ce3e950096fa442",
+        "scripts/candidate_preparation_cli.py": "cced0f98061e9d9c32bf17e15d00cca8c98fa5c3294157d12cd00fd1318416da",
         "scripts/candidate_layout_adapters.py": "b92c44e2a824a879f7fe34883329cfcfff3b5ac6a3121b2e92d46ebadb3c9493",
         "scripts/page_chunk_cli.py": "4375f029e46680d2d6ff2c1ff6b8b4c36978ba0469e3925fc7fa251220747e3f",
         "references/schemas/candidate-index-v2.schema.json": "6503e9754153b0ba1a6407bed7c902e7ed8f2464ac98645038544334b5ce0f2c",

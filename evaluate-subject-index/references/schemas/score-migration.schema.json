@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "score-migration.schema.json",
+  "title": "Versioned V4-to-V5 score-only migration record",
+  "type": "object",
+  "required": ["schema_version", "evaluation_id", "from", "to", "input_ledgers", "input_ledgers_mutated", "historical_result_mutated", "gate_preservation", "comparability", "migration_sha256"],
+  "properties": {
+    "schema_version": {"const": "subject-index-score-migration-v1"},
+    "evaluation_id": {"type": "string", "minLength": 1},
+    "from": {"type": "object", "required": ["rubric_version", "historical_result_path", "historical_result_sha256", "total_score"], "properties": {"rubric_version": {"const": "subject-index-rubric-v4"}, "historical_result_path": {"type": "string"}, "historical_result_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "total_score": {"type": ["number", "null"]}}, "additionalProperties": false},
+    "to": {"type": "object", "required": ["rubric_version", "calculation_profile", "calculation_path", "calculation_file_sha256", "calculation_canonical_sha256", "total_score"], "properties": {"rubric_version": {"const": "subject-index-rubric-v5"}, "calculation_profile": {"const": "subject-index-dimension-calculation-v1"}, "calculation_path": {"type": "string"}, "calculation_file_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "calculation_canonical_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "total_score": {"type": ["number", "null"]}}, "additionalProperties": false},
+    "input_ledgers": {"type": "array", "minItems": 3, "items": {"$ref": "dimension-calculations.schema.json#/$defs/inputArtifact"}, "uniqueItems": true},
+    "input_ledgers_mutated": {"const": false},
+    "historical_result_mutated": {"const": false},
+    "gate_preservation": {
+      "type": "object",
+      "required": ["policy_or_evidence_changed", "identity_checks", "frozen_gate_evidence_inputs_sha256", "historical_gate_outcomes_sha256", "preserved_gate_outcomes_sha256", "outcomes_equal", "outcomes_action"],
+      "properties": {
+        "policy_or_evidence_changed": {"const": false},
+        "identity_checks": {
+          "type": "object",
+          "required": ["candidate_sha256", "source_sha256", "benchmark_sha256", "policy_sha256", "page_map_sha256", "chunk_manifest_sha256", "normalized_candidate_file_sha256", "item_inventory_file_sha256", "structure_audit_file_sha256", "locator_audit_set_sha256", "missing_access_audit_set_sha256", "audit_mode"],
+          "properties": {
+            "candidate_sha256": {"$ref": "#/$defs/identityCheck"},
+            "source_sha256": {"$ref": "#/$defs/identityCheck"},
+            "benchmark_sha256": {"$ref": "#/$defs/identityCheck"},
+            "policy_sha256": {"$ref": "#/$defs/identityCheck"},
+            "page_map_sha256": {"$ref": "#/$defs/identityCheck"},
+            "chunk_manifest_sha256": {"$ref": "#/$defs/identityCheck"},
+            "normalized_candidate_file_sha256": {"$ref": "#/$defs/identityCheck"},
+            "item_inventory_file_sha256": {"$ref": "#/$defs/identityCheck"},
+            "structure_audit_file_sha256": {"$ref": "#/$defs/identityCheck"},
+            "locator_audit_set_sha256": {"$ref": "#/$defs/identityCheck"},
+            "missing_access_audit_set_sha256": {"$ref": "#/$defs/identityCheck"},
+            "audit_mode": {"$ref": "#/$defs/identityCheck"}
+          },
+          "additionalProperties": false
+        },
+        "frozen_gate_evidence_inputs_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "historical_gate_outcomes_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "preserved_gate_outcomes_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "outcomes_equal": {"const": true},
+        "outcomes_action": {"const": "preserve_identically"}
+      },
+      "additionalProperties": false
+    },
+    "comparability": {"const": "v4_and_v5_totals_are_not_directly_comparable"},
+    "migration_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  },
+  "$defs": {
+    "identityCheck": {
+      "type": "object",
+      "required": ["historical", "current", "equal", "evidence_equivalent", "comparison_basis"],
+      "properties": {
+        "historical": {"type": "string", "minLength": 1},
+        "current": {"type": "string", "minLength": 1},
+        "equal": {"type": "boolean"},
+        "evidence_equivalent": {"const": true},
+        "comparison_basis": {"enum": ["direct_sha256_or_value_equality", "hash_bound_migration_supplement_reconciliation"]}
+      },
+      "allOf": [
+        {"if": {"properties": {"comparison_basis": {"const": "direct_sha256_or_value_equality"}}}, "then": {"properties": {"equal": {"const": true}}}},
+        {"if": {"properties": {"comparison_basis": {"const": "hash_bound_migration_supplement_reconciliation"}}}, "then": {"properties": {"equal": {"const": false}}}}
+      ],
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
