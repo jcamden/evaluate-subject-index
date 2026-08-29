@@ -347,8 +347,19 @@ def write_json(path: Path, value: dict[str, Any]) -> None:
     path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def json_output_value(value: Any) -> Any:
+    """Convert Decimal leaves for JSON output without changing container order."""
+    if isinstance(value, Decimal):
+        return json.loads(canonical_json_text(value))
+    if isinstance(value, list):
+        return [json_output_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: json_output_value(item) for key, item in value.items()}
+    return value
+
+
 def emit(value: dict[str, Any], exit_code: int = 0) -> None:
-    print(json.dumps(value, indent=2, ensure_ascii=False))
+    print(json.dumps(json_output_value(value), indent=2, ensure_ascii=False))
     raise SystemExit(exit_code)
 
 
@@ -2876,8 +2887,8 @@ def validate_projection_artifacts(calculation_path: Path, evaluation_result_path
             expected_gate_comparison = {
                 "previous_outcomes_sha256": migration["gate_preservation"]["historical_gate_outcomes_sha256"],
                 "migrated_outcomes_sha256": result_gate_hash,
-                "previous_outcomes": json_compatible(migration["gate_preservation"]["historical_outcomes"]),
-                "migrated_outcomes": json_compatible(evaluation.get("critical_gates", [])),
+                "previous_outcomes": deepcopy(migration["gate_preservation"]["historical_outcomes"]),
+                "migrated_outcomes": deepcopy(evaluation.get("critical_gates", [])),
                 "outcomes_equal": True,
             }
             comparison_checks = (
