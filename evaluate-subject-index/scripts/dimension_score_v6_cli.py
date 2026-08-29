@@ -33,8 +33,16 @@ ITEM_ASSESSMENT_SCHEMA = "subject-index-item-assessments-v3"
 ITEM_GRADING_POLICY = "subject-index-item-grading-v2"
 MIGRATION_SCHEMA = "subject-index-score-migration-v5-to-v6-v1"
 TOOL_NAME = "dimension_score_v6_cli.py"
-TOOL_VERSION = "dimension-score-cli-v6.0.0"
+TOOL_VERSION = "dimension-score-cli-v6.0.1"
 METHODOLOGY_REPOSITORY = "https://github.com/jcamden/evaluate-subject-index"
+SCORE_VIEW_SHARED_EVIDENCE_FIELDS = (
+    "candidate_sha256",
+    "source_sha256",
+    "benchmark_sha256",
+    "policy_sha256",
+    "page_map_sha256",
+    "chunk_manifest_sha256",
+)
 
 ZERO = Decimal(0)
 ONE = Decimal(1)
@@ -1294,6 +1302,169 @@ def load_optional_migration(path: Path | None) -> dict[str, Any] | None:
     return migration
 
 
+def require_compatible_score_view_calculation(
+    canonical: dict[str, Any], candidate: dict[str, Any], *, label: str
+) -> None:
+    """Require a V6 counterfactual to remain the same evaluation and frozen source lineage."""
+
+    v5.require(
+        candidate.get("calculation_sha256")
+        == v5.canonical_hash(candidate, "calculation_sha256"),
+        "score_view_mismatch",
+        f"{label} canonical hash does not reconstruct.",
+    )
+    v5.require(
+        candidate.get("evaluation_id") == canonical.get("evaluation_id"),
+        "score_view_mismatch",
+        f"{label} belongs to another evaluation.",
+    )
+    v5.require(
+        candidate.get("rubric_version") == RUBRIC_VERSION
+        and candidate.get("calculation_profile") == CALCULATION_PROFILE
+        and candidate.get("audit_mode") == canonical.get("audit_mode"),
+        "score_view_mismatch",
+        f"{label} does not use the canonical V6 rubric, profile, and audit mode.",
+    )
+    canonical_identity = canonical.get("evidence_identity", {})
+    candidate_identity = candidate.get("evidence_identity", {})
+    for field in SCORE_VIEW_SHARED_EVIDENCE_FIELDS:
+        v5.require(
+            candidate_identity.get(field) == canonical_identity.get(field),
+            "score_view_mismatch",
+            f"{label} evidence_identity.{field} differs from the canonical view.",
+        )
+
+
+def build_score_views(
+    calculation: dict[str, Any],
+    calculation_path: Path,
+    primary_calculation_reference: dict[str, Any],
+    metadata: dict[str, Any],
+    metadata_path: Path,
+    web_output: Path,
+) -> dict[str, Any]:
+    """Construct canonical and optional hash-verified counterfactual score views."""
+
+    views: list[dict[str, Any]] = [
+        {
+            "view_id": "canonical_as_delivered",
+            "label": "Canonical as delivered",
+            "view_kind": "observed",
+            "score": calculation["total_score"],
+            "maximum": 100,
+            "calculation": primary_calculation_reference,
+            "causal_attribution": "primary_observed_result",
+            "provenance_artifacts": [],
+        }
+    ]
+    configured = sorted(
+        metadata.get("counterfactual_score_views", []), key=lambda item: item["view_id"]
+    )
+    seen_ids = {"canonical_as_delivered"}
+    for index, configured_view in enumerate(configured):
+        view_id = configured_view["view_id"]
+        v5.require(
+            view_id not in seen_ids,
+            "score_view_mismatch",
+            "Counterfactual score-view IDs must be unique and cannot replace the canonical view.",
+            {"view_id": view_id},
+        )
+        seen_ids.add(view_id)
+        calculation_reference = configured_view["calculation"]
+        counterfactual_path = v5.resolve_referenced_artifact(
+            calculation_reference,
+            metadata_path,
+            label=f"counterfactual_score_views[{index}].calculation",
+        )
+        v5.require(
+            counterfactual_path != calculation_path
+            and not (
+                counterfactual_path.exists()
+                and calculation_path.exists()
+                and os.path.samefile(counterfactual_path, calculation_path)
+            ),
+            "score_view_mismatch",
+            "A counterfactual score view must bind a distinct V6 calculation artifact.",
+            {"view_id": view_id},
+        )
+        counterfactual = v5.load_json(
+            counterfactual_path, f"Counterfactual score-view calculation {view_id}"
+        )
+        v5.validate_schema_document(
+            counterfactual,
+            "dimension-calculations-v2.schema.json",
+            f"Counterfactual score-view calculation {view_id}",
+        )
+        require_compatible_score_view_calculation(
+            calculation, counterfactual, label=f"Counterfactual score view {view_id}"
+        )
+        v5.require(
+            calculation_reference["calculation_sha256"]
+            == counterfactual["calculation_sha256"],
+            "score_view_mismatch",
+            f"Counterfactual score view {view_id} carries the wrong calculation identity.",
+        )
+        provenance_references: list[dict[str, Any]] = []
+        for provenance_index, provenance in enumerate(
+            configured_view["provenance_artifacts"]
+        ):
+            provenance_path = v5.resolve_referenced_artifact(
+                provenance,
+                metadata_path,
+                label=(
+                    f"counterfactual_score_views[{index}]."
+                    f"provenance_artifacts[{provenance_index}]"
+                ),
+            )
+            provenance_references.append(
+                {
+                    "role": provenance["role"],
+                    "schema_version": provenance["schema_version"],
+                    "artifact_path": v5.portable_relative_reference(
+                        provenance_path,
+                        web_output,
+                        label=(
+                            f"score_views.{view_id}."
+                            f"provenance_artifacts[{provenance_index}].artifact_path"
+                        ),
+                    ),
+                    "sha256": v5.sha256_file(provenance_path),
+                }
+            )
+        views.append(
+            {
+                "view_id": view_id,
+                "label": configured_view["label"],
+                "view_kind": "counterfactual",
+                "score": counterfactual["total_score"],
+                "maximum": 100,
+                "calculation": {
+                    "schema_version": CALCULATION_SCHEMA,
+                    "artifact_path": v5.portable_relative_reference(
+                        counterfactual_path,
+                        web_output,
+                        label=f"score_views.{view_id}.calculation.artifact_path",
+                    ),
+                    "sha256": v5.sha256_file(counterfactual_path),
+                    "calculation_sha256": counterfactual["calculation_sha256"],
+                    "rubric_version": RUBRIC_VERSION,
+                    "calculation_profile": CALCULATION_PROFILE,
+                },
+                "causal_attribution": (
+                    "separate_evidentiary_correction_not_methodology_effect"
+                ),
+                "provenance_artifacts": provenance_references,
+            }
+        )
+    return {
+        "primary_view_id": "canonical_as_delivered",
+        "adjustment_status": (
+            "separate_evidentiary_correction" if configured else "none"
+        ),
+        "views": views,
+    }
+
+
 def build_projections(
     calculation_path: Path,
     item_assessments_path: Path,
@@ -1428,6 +1599,14 @@ def build_projections(
         "rubric_version": RUBRIC_VERSION,
         "calculation_profile": CALCULATION_PROFILE,
     }
+    score_views = build_score_views(
+        calculation,
+        calculation_path,
+        primary_calculation_reference,
+        metadata,
+        metadata_path,
+        web_output,
+    )
     migration_comparison: dict[str, Any] = {"status": "not_applicable"}
     if migration is not None and migration_path is not None:
         migration_comparison = {
@@ -1505,22 +1684,7 @@ def build_projections(
             },
         },
         "migration_comparison": migration_comparison,
-        "score_views": {
-            "primary_view_id": "canonical_as_delivered",
-            "adjustment_status": "none",
-            "views": [
-                {
-                    "view_id": "canonical_as_delivered",
-                    "label": "Canonical as delivered",
-                    "view_kind": "observed",
-                    "score": calculation["total_score"],
-                    "maximum": 100,
-                    "calculation": primary_calculation_reference,
-                    "causal_attribution": "primary_observed_result",
-                    "provenance_artifacts": [],
-                }
-            ],
-        },
+        "score_views": score_views,
         "methodology": {
             "rubric_version": RUBRIC_VERSION,
             "weighted_precision_explanation": "Weights unsuccessful destinations by how severely they misdirect the reader.",
@@ -1541,6 +1705,122 @@ def build_projections(
     v5.validate_schema_document(result, "evaluation-result-v7.schema.json", "V6 result projection")
     v5.validate_schema_document(web_report, "web-report-v5.schema.json", "V6 web projection")
     return result, web_report
+
+
+def validate_score_views(
+    calculation: dict[str, Any],
+    calculation_path: Path,
+    web_report: dict[str, Any],
+    web_report_path: Path,
+) -> dict[str, Any]:
+    """Resolve and hash-validate every observed and counterfactual score view."""
+
+    score_views = web_report["score_views"]
+    views = score_views["views"]
+    view_ids = [view["view_id"] for view in views]
+    v5.require(
+        len(view_ids) == len(set(view_ids)),
+        "score_view_mismatch",
+        "Web-report score-view IDs must be unique.",
+    )
+    primary_matches = [
+        view for view in views if view["view_id"] == score_views["primary_view_id"]
+    ]
+    v5.require(
+        len(primary_matches) == 1,
+        "score_view_mismatch",
+        "Web-report primary_view_id must identify exactly one score view.",
+    )
+    primary_view = primary_matches[0]
+    v5.require(
+        primary_view["view_kind"] == "observed"
+        and all(
+            view is primary_view or view["view_kind"] == "counterfactual"
+            for view in views
+        ),
+        "score_view_mismatch",
+        "The primary score view must be observed and every other view counterfactual.",
+    )
+    counterfactuals = [view for view in views if view is not primary_view]
+    expected_status = (
+        "separate_evidentiary_correction" if counterfactuals else "none"
+    )
+    v5.require(
+        score_views["adjustment_status"] == expected_status,
+        "score_view_mismatch",
+        "Score-view adjustment status does not match the displayed views.",
+    )
+
+    provenance_hashes: set[str] = set()
+    for index, view in enumerate(views):
+        reference = view["calculation"]
+        view_calculation_path = v5.resolve_referenced_artifact(
+            reference,
+            web_report_path,
+            label=f"score_views.views[{index}].calculation",
+        )
+        view_calculation = v5.load_json(
+            view_calculation_path, f"Score-view calculation {view['view_id']}"
+        )
+        v5.validate_schema_document(
+            view_calculation,
+            "dimension-calculations-v2.schema.json",
+            f"Score-view calculation {view['view_id']}",
+        )
+        require_compatible_score_view_calculation(
+            calculation,
+            view_calculation,
+            label=f"Score view {view['view_id']}",
+        )
+        v5.require(
+            reference["calculation_sha256"]
+            == view_calculation["calculation_sha256"],
+            "score_view_mismatch",
+            f"Score view {view['view_id']} carries the wrong calculation identity.",
+        )
+        v5.require(
+            view["score"] == view_calculation["total_score"],
+            "score_view_mismatch",
+            f"Score view {view['view_id']} total differs from its calculation.",
+        )
+        same_as_canonical = view_calculation_path == calculation_path
+        if not same_as_canonical:
+            try:
+                same_as_canonical = os.path.samefile(
+                    view_calculation_path, calculation_path
+                )
+            except OSError:
+                same_as_canonical = False
+        if view is primary_view:
+            v5.require(
+                same_as_canonical
+                and view["score"] == calculation["total_score"],
+                "score_view_mismatch",
+                "The primary score view must bind the canonical calculation and total.",
+            )
+        else:
+            v5.require(
+                not same_as_canonical,
+                "score_view_mismatch",
+                "A counterfactual score view must bind a distinct V6 calculation artifact.",
+            )
+        for provenance_index, provenance in enumerate(
+            view["provenance_artifacts"]
+        ):
+            v5.resolve_referenced_artifact(
+                provenance,
+                web_report_path,
+                label=(
+                    f"score_views.views[{index}]."
+                    f"provenance_artifacts[{provenance_index}]"
+                ),
+            )
+            provenance_hashes.add(provenance["sha256"])
+    return {
+        "view_count": len(views),
+        "counterfactual_view_ids": [view["view_id"] for view in counterfactuals],
+        "provenance_sha256": sorted(provenance_hashes),
+    }
 
 
 def validate_v5_to_v6_migration_projection(
@@ -1642,7 +1922,7 @@ def validate_v5_to_v6_migration_projection(
             f"The immutable historical V5 {label} bytes changed after migration.",
         )
         historical_paths[label] = path
-    old_calculation, old_result, _, old_item_path = validate_historical_v5_projection(
+    old_calculation, old_result, old_web, old_item_path = validate_historical_v5_projection(
         historical_paths["calculation"],
         historical_paths["result"],
         historical_paths["web_report"],
@@ -1710,6 +1990,50 @@ def validate_v5_to_v6_migration_projection(
         and comparison["gate_comparison"]["migrated_outcomes"] == result["critical_gates"],
         "migration_comparison_mismatch",
         "The web migration comparison does not reconstruct from the migration record.",
+    )
+    historical_score_views = old_web["score_views"]
+    migrated_score_views = web_report["score_views"]
+    v5.require(
+        migrated_score_views["adjustment_status"]
+        == historical_score_views["adjustment_status"],
+        "migration_score_view_mismatch",
+        "V6 must preserve the historical representation-adjustment status.",
+    )
+    historical_counterfactuals = [
+        view
+        for view in historical_score_views["views"]
+        if view["view_kind"] == "counterfactual"
+    ]
+    migrated_counterfactuals = [
+        view
+        for view in migrated_score_views["views"]
+        if view["view_kind"] == "counterfactual"
+    ]
+    v5.require(
+        {view["view_id"] for view in migrated_counterfactuals}
+        == {view["view_id"] for view in historical_counterfactuals},
+        "migration_score_view_mismatch",
+        "V6 counterfactual score-view identities differ from immutable V5 history.",
+    )
+    required_provenance_hashes = {
+        provenance["sha256"]
+        for view in historical_counterfactuals
+        for provenance in view["provenance_artifacts"]
+    }
+    migrated_provenance_hashes = {
+        provenance["sha256"]
+        for view in migrated_counterfactuals
+        for provenance in view["provenance_artifacts"]
+    }
+    v5.require(
+        required_provenance_hashes <= migrated_provenance_hashes,
+        "migration_score_view_mismatch",
+        "V6 counterfactual views omit historical representation-correction provenance.",
+        {
+            "missing_sha256": sorted(
+                required_provenance_hashes - migrated_provenance_hashes
+            )
+        },
     )
     return migration
 
@@ -1797,6 +2121,9 @@ def validate_projection_artifacts(
         "projection_mismatch",
         "Web scorecard does not reconstruct byte-for-value from V6 calculations.",
     )
+    score_view_validation = validate_score_views(
+        calculation, calculation_path, web_report, web_report_path
+    )
     gates = result["critical_gates"]
     gate_hash = v5.canonical_hash({"critical_gates": gates})
     v5.require(
@@ -1854,6 +2181,10 @@ def validate_projection_artifacts(
         "item_assessments_file_sha256": v5.sha256_file(result_item_path),
         "strict_precision_reported": True,
         "weighted_precision_reported": True,
+        "score_views_validated": score_view_validation["view_count"],
+        "counterfactual_score_views_validated": score_view_validation[
+            "counterfactual_view_ids"
+        ],
         "gate_projection_unchanged": True,
         "migration_validated": migration is not None,
     }
@@ -1878,6 +2209,27 @@ def command_build_projections(args: argparse.Namespace) -> None:
         }
         if args.migration_record:
             protected.add(Path(args.migration_record).resolve())
+        for view_index, view in enumerate(web_report["score_views"]["views"]):
+            protected.add(
+                v5.resolve_referenced_artifact(
+                    view["calculation"],
+                    web_output,
+                    label=f"score_views.views[{view_index}].calculation",
+                )
+            )
+            for provenance_index, provenance in enumerate(
+                view["provenance_artifacts"]
+            ):
+                protected.add(
+                    v5.resolve_referenced_artifact(
+                        provenance,
+                        web_output,
+                        label=(
+                            f"score_views.views[{view_index}]."
+                            f"provenance_artifacts[{provenance_index}]"
+                        ),
+                    )
+                )
         v5.require(
             not v5.aliases_existing_file(result_output, protected)
             and not v5.aliases_existing_file(web_output, protected),

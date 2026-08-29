@@ -15,6 +15,8 @@ Identities:
 
 V6 changes the precision input to Page-reference Reliability from strict-only precision to reliability credits `1`, `0.5`, `0.25`, and `0`. The quarter tier is limited to unsupported, inspectable, indexable passing mentions, attribution-only presence, citation-only presence, and incidental examples without an independent `SCP`, `CMP`, `CON`, or `STA` failure. Strict substantive precision remains public. Diagnostic locator grades become 100/70/25/0/neutral.
 
+Tooling patch `dimension-score-cli-v6.0.1` adds deterministic construction and complete path/hash/self-hash validation for representation-adjusted V6 score views. It preserves the V6 artifact identities and arithmetic while preventing unmaterialized or unproven counterfactual views from validating.
+
 No other dimension formula, weight, cap, gate, density rule, benchmark rule, treatment-recall denominator, or judgment meaning changes. Selectivity still gives the four weak-presence classes zero. V6 adds deterministic V5-to-V6 score-only migration and new projection schemas. Credit values are frozen methodological choices, not candidate-fitted parameters.
 
 ## V5 — ledger-derived dimensions

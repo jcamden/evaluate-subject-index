@@ -21,6 +21,8 @@
 | `methodology`, `comparability`, `disclosures`, `limitations` | Version, comparison, and interpretation context |
 | `evidence_index` | Public-safe evidence-ID lookup metadata |
 
+`build-projections` constructs `canonical_as_delivered` itself. Optional counterfactuals are declared only through the strict `counterfactual_score_views` array in `subject-index-v6-projection-metadata-v1`; the builder derives each score from a distinct, self-hashed V6 calculation and emits only hash-verified provenance references. `validate-projections` resolves every calculation and provenance file again, verifies shared evaluation/source/benchmark/policy/page-map/chunk identities, and rejects any counterfactual not carried by real bound artifacts. For a migration, the counterfactual view IDs and representation-provenance hashes must preserve immutable V5 history.
+
 ## Precision diagnostics
 
 `precision_diagnostics` is copied from the structured Page-reference Reliability provenance and contains:
@@ -44,6 +46,7 @@ The Page-reference Reliability `scorecard` record carries the full `reliability_
 - Explain that weak presence is not substantive treatment and receives zero selectivity credit.
 - For any diagnostic grade of 25, use the required four-part explanation from [item-grading.md](item-grading.md).
 - Do not average diagnostic locator grades to display precision, a dimension rating, or total score.
+- Do not hand-edit a counterfactual into the report. Supply its bound calculation and provenance through projection metadata and require successful projection validation.
 - Keep gates visibly separate from score arithmetic. A score does not override a failed gate.
 - Render null/neutral uncertainty as unavailable evidence, not a zero or failure color.
 - Use evidence IDs and short paraphrases; never project restricted source text, candidate reconstruction data, credentials, absolute paths, or Library identifiers.

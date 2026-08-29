@@ -84,7 +84,9 @@ python evaluate-subject-index/scripts/dimension_score_v6_cli.py validate-project
   --web-report /evaluation/results/web-report.v5.json
 ```
 
-Projection validation reconstructs the scorecard and precision values, resolves and hash-verifies the V3 item artifact, checks every grade-25 explanation, and requires the web gate projection to equal the result and, for migrations, the immutable V5 gate array.
+When immutable V5 history includes a representation-adjusted counterfactual, calculate its V6 view separately from the frozen adjusted input and add `counterfactual_score_views` to `subject-index-v6-projection-metadata-v1`. Each configured view supplies a unique ID and label, a complete V6 calculation reference, and at least one provenance-artifact reference with role, schema, relative path, and SHA-256. The projection builder resolves and hash-checks every referenced byte, derives the displayed score from the referenced calculation, preserves causal attribution `separate_evidentiary_correction_not_methodology_effect`, and rebases all paths into the web report. It never accepts a manually supplied score.
+
+Projection validation reconstructs the scorecard and precision values, resolves and hash-verifies the V3 item artifact, checks every grade-25 explanation, and requires the web gate projection to equal the result and, for migrations, the immutable V5 gate array. It also resolves every score-view calculation and provenance artifact, verifies V6 calculation self-hashes and shared source/evaluation identities, and requires migrated counterfactual IDs plus all historical representation-provenance hashes to survive into V6. A nonexistent, altered, aliased-primary, cross-evaluation, or unproven counterfactual fails validation.
 
 ## Compatibility and interpretation
 

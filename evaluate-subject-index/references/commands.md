@@ -305,7 +305,7 @@ python scripts/dimension_score_v6_cli.py validate-projections \
   --web-report web-report.v5.json
 ```
 
-This rejects duplicate or omitted dimensions and any drift in the result candidate/evidence identity, comparison key, scorecard, headline total, web scorecard formula details, calculation path/hash binding, resolved item-assessment bytes or identity, result/web item-assessment agreement, or result/web gate projection.
+This rejects duplicate or omitted dimensions and any drift in the result candidate/evidence identity, comparison key, scorecard, headline total, web scorecard formula details, calculation path/hash binding, resolved item-assessment bytes or identity, result/web item-assessment agreement, or result/web gate projection. If projection metadata declares `counterfactual_score_views`, the builder and validator also resolve every distinct V6 calculation and provenance artifact, derive rather than accept the view total, and preserve migrated V5 representation-adjustment identities and hashes.
 
 For a V5-to-V6 score-only migration, pass the bound migration record to `build-projections`. The migration and projection validators preserve and hash-check the V5 calculation, result, item binding, web report, gates, and frozen ledgers while creating separately versioned V6 projections.
 
