@@ -23,6 +23,9 @@ SKILL_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = SKILL_ROOT / "scripts"
 SCHEMAS = SKILL_ROOT / "references" / "schemas"
 FIXTURES = SKILL_ROOT / "tests"
+TEST_METHODOLOGY_COMMIT = "6" * 40
+TEST_MIGRATION_TIMESTAMP = "2026-08-29T02:00:00Z"
+MIGRATION_METADATA_ARGS = ("--methodology-commit", TEST_METHODOLOGY_COMMIT, "--migration-timestamp", TEST_MIGRATION_TIMESTAMP)
 sys.path.insert(0, str(SCRIPTS))
 
 import dimension_score_cli as v5  # noqa: E402
@@ -47,7 +50,10 @@ def run_cli(script: str, *arguments: object, expect_ok: bool = True) -> dict:
         capture_output=True,
         check=False,
     )
-    payload = json.loads(completed.stdout)
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise AssertionError(f"{script} emitted no JSON\nstdout={completed.stdout}\nstderr={completed.stderr}") from exc
     if expect_ok and (completed.returncode != 0 or payload.get("ok") is not True):
         raise AssertionError(f"{script} failed\nstdout={completed.stdout}\nstderr={completed.stderr}")
     if not expect_ok and completed.returncode == 0:
@@ -579,6 +585,7 @@ def web_projection(
     calculations_path: Path,
     item_assessments_path: Path,
     critical_gates: list[dict],
+    migration_path: Path | None = None,
 ) -> dict:
     item_assessments = json.loads(item_assessments_path.read_text(encoding="utf-8"))
     web_scorecard = [
@@ -606,6 +613,37 @@ def web_projection(
         }
         for item in calculations["dimensions"]
     ]
+    primary_calculation_reference = {
+        "schema_version": calculations["schema_version"],
+        "artifact_path": calculations_path.name,
+        "sha256": digest(calculations_path),
+        "calculation_sha256": calculations["calculation_sha256"],
+        "rubric_version": calculations["rubric_version"],
+        "calculation_profile": calculations["calculation_profile"],
+    }
+    migration_comparison = {"status": "not_applicable"}
+    if migration_path is not None:
+        migration = json.loads(migration_path.read_text(encoding="utf-8"))
+        migration_comparison = {
+            "status": "v4_to_v5",
+            "migration_record": {
+                "schema_version": migration["schema_version"],
+                "artifact_path": migration_path.name,
+                "sha256": digest(migration_path),
+                "migration_sha256": migration["migration_sha256"],
+            },
+            "methodology_commit": migration["methodology"]["commit_sha"],
+            "previous_total": migration["from"]["total_score"],
+            "migrated_total": migration["to"]["total_score"],
+            "dimension_comparison": migration["dimension_comparison"],
+            "gate_comparison": {
+                "previous_outcomes_sha256": migration["gate_preservation"]["historical_gate_outcomes_sha256"],
+                "migrated_outcomes_sha256": v5.canonical_hash({"critical_gates": critical_gates}),
+                "previous_outcomes": migration["gate_preservation"]["historical_outcomes"],
+                "migrated_outcomes": copy.deepcopy(critical_gates),
+                "outcomes_equal": True,
+            },
+        }
     return {
         "schema_version": "subject-index-web-report-v4",
         "report_id": "report-v5",
@@ -643,6 +681,21 @@ def web_projection(
                 "popover_source": "popover",
                 "not_measured_behavior": "neutral_not_failure",
             },
+        },
+        "migration_comparison": migration_comparison,
+        "score_views": {
+            "primary_view_id": "canonical_as_delivered",
+            "adjustment_status": "none",
+            "views": [{
+                "view_id": "canonical_as_delivered",
+                "label": "Canonical as delivered",
+                "view_kind": "observed",
+                "score": calculations["total_score"],
+                "maximum": 100,
+                "calculation": primary_calculation_reference,
+                "causal_attribution": "primary_observed_result",
+                "provenance_artifacts": [],
+            }],
         },
         "methodology": {},
         "comparability": {},
@@ -1079,6 +1132,18 @@ class EndToEndCalculationTests(unittest.TestCase):
             duplicated["dimensions"][1] = copy.deepcopy(duplicated["dimensions"][0])
             with self.assertRaises(jsonschema.ValidationError):
                 jsonschema.validate(duplicated, schema)
+            for dimension_record in result["dimensions"]:
+                for component_record in dimension_record["components"]:
+                    self.assertIn("raw_numerator", component_record)
+                    self.assertIn("raw_denominator", component_record)
+                    if component_record["normalized_value"] is None:
+                        self.assertIsNone(component_record["raw_numerator"])
+                        self.assertIsNone(component_record["raw_denominator"])
+                    else:
+                        numerator = Decimal(component_record["raw_numerator"])
+                        denominator = Decimal(component_record["raw_denominator"])
+                        self.assertGreater(denominator, 0)
+                        self.assertEqual(Decimal(component_record["normalized_value"]), numerator / denominator)
 
     def test_v5_result_and_web_projection_contracts_validate(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1164,6 +1229,28 @@ class EndToEndCalculationTests(unittest.TestCase):
                         "not_measured_behavior": "neutral_not_failure",
                     },
                 },
+                "migration_comparison": {"status": "not_applicable"},
+                "score_views": {
+                    "primary_view_id": "canonical_as_delivered",
+                    "adjustment_status": "none",
+                    "views": [{
+                        "view_id": "canonical_as_delivered",
+                        "label": "Canonical as delivered",
+                        "view_kind": "observed",
+                        "score": calculations["total_score"],
+                        "maximum": 100,
+                        "calculation": {
+                            "schema_version": calculations["schema_version"],
+                            "artifact_path": calculations_path.name,
+                            "sha256": calculation_sha256,
+                            "calculation_sha256": calculations["calculation_sha256"],
+                            "rubric_version": calculations["rubric_version"],
+                            "calculation_profile": calculations["calculation_profile"],
+                        },
+                        "causal_attribution": "primary_observed_result",
+                        "provenance_artifacts": [],
+                    }],
+                },
                 "methodology": {},
                 "comparability": {},
                 "disclosures": [],
@@ -1171,6 +1258,11 @@ class EndToEndCalculationTests(unittest.TestCase):
                 "evidence_index": {},
             }
             v5.validate_schema_document(web_report, "web-report-v4.schema.json", "V5 web projection")
+            for required_display in ("migration_comparison", "score_views"):
+                incomplete_report = copy.deepcopy(web_report)
+                incomplete_report.pop(required_display)
+                with self.assertRaises(v5.CalculationError):
+                    v5.validate_schema_document(incomplete_report, "web-report-v4.schema.json", f"web report missing {required_display}")
             duplicated_report = copy.deepcopy(web_report)
             duplicated_report["scorecard"][1] = copy.deepcopy(duplicated_report["scorecard"][0])
             with self.assertRaises(v5.CalculationError):
@@ -2094,11 +2186,14 @@ class EndToEndCalculationTests(unittest.TestCase):
             config = calculation_files(root, *base_documents())
             historical = root / "historical-v4.json"
             historical_gates = [{"gate_id": "GATE-X", "status": "failed", "metrics": {"rate": 0.125}}]
-            write_json(historical, historical_v4_result(gates=historical_gates, input_root=root))
+            historical_value = historical_v4_result(gates=historical_gates, input_root=root)
+            historical_value["scorecard"][1]["rating"] = 3.3333
+            historical_value["scorecard"][1]["points"] = 10
+            write_json(historical, historical_value)
             before = {path.name: digest(path) for path in root.glob("*.json")}
             calculations = root / "dimension-calculations.v1.json"
-            migration = root / "score-migration.v1.json"
-            result = run_cli("dimension_score_cli.py", "score-only-migration", "--input", config, "--historical-result", historical, "--calculations-output", calculations, "--migration-record-output", migration)
+            migration = root / "score-migration.v2.json"
+            result = run_cli("dimension_score_cli.py", "score-only-migration", "--input", config, "--historical-result", historical, "--calculations-output", calculations, "--migration-record-output", migration, *MIGRATION_METADATA_ARGS)
             self.assertFalse(result["input_ledgers_mutated"])
             self.assertFalse(result["historical_result_mutated"])
             self.assertEqual("preserve_identically", result["gate_outcomes_action"])
@@ -2106,6 +2201,37 @@ class EndToEndCalculationTests(unittest.TestCase):
                 self.assertEqual(value, digest(root / name))
             migration_record = json.loads(migration.read_text())
             v5.validate_schema_document(migration_record, "score-migration.schema.json", "Score migration record")
+            self.assertEqual("subject-index-score-migration-v2", migration_record["schema_version"])
+            self.assertEqual(TEST_MIGRATION_TIMESTAMP, migration_record["migration_timestamp"])
+            self.assertEqual(TEST_METHODOLOGY_COMMIT, migration_record["methodology"]["commit_sha"])
+            self.assertEqual(v5.TOOL_VERSION, migration_record["tool"]["version"])
+            self.assertEqual(6, len(migration_record["dimension_comparison"]))
+            self.assertEqual(3.3333, migration_record["from"]["scorecard"][1]["rating"])
+            self.assertEqual(
+                migration_record["to"]["total_score"] - migration_record["from"]["total_score"],
+                migration_record["total_delta"],
+            )
+            portable_paths = [
+                migration_record["from"]["historical_result_path"],
+                migration_record["to"]["calculation_path"],
+                *[item["path"] for item in migration_record["input_lineage"]],
+            ]
+            for stored_path in portable_paths:
+                self.assertFalse(Path(stored_path).is_absolute())
+                self.assertNotIn("\\", stored_path)
+            lineage = {item["role"]: item for item in migration_record["input_lineage"]}
+            self.assertEqual(
+                {
+                    "historical_v4_result",
+                    "dimension_calculation_input",
+                    "v5_dimension_calculations",
+                    *[item["role"] for item in migration_record["input_ledgers"]],
+                },
+                set(lineage),
+            )
+            self.assertEqual("unchanged", lineage["dimension_calculation_input"]["disposition"])
+            self.assertEqual(digest(config), lineage["dimension_calculation_input"]["sha256"])
+            self.assertEqual("deterministically_derived", lineage["v5_dimension_calculations"]["disposition"])
             gates = migration_record["gate_preservation"]
             self.assertTrue(gates["outcomes_equal"])
             self.assertEqual(gates["historical_gate_outcomes_sha256"], gates["preserved_gate_outcomes_sha256"])
@@ -2117,6 +2243,8 @@ class EndToEndCalculationTests(unittest.TestCase):
             }, set(gates["identity_checks"]))
             self.assertEqual(digest(calculations), migration_record["to"]["calculation_file_sha256"])
             calculation_value = json.loads(calculations.read_text(encoding="utf-8"))
+            self.assertEqual("subject-index-score-migration-v2", calculation_value["migration_context"]["migration_schema_version"])
+            self.assertFalse(Path(calculation_value["migration_context"]["migration_record_path"]).is_absolute())
             self.assertEqual(calculation_value["calculation_sha256"], migration_record["to"]["calculation_canonical_sha256"])
             self.assertEqual(
                 gates["historical_gate_outcomes_sha256"],
@@ -2136,6 +2264,118 @@ class EndToEndCalculationTests(unittest.TestCase):
             write_json(evaluation_path, evaluation_result)
             self.assertTrue(v5.validate_projection_artifacts(calculations, evaluation_path)["ok"])
 
+            web_report = web_projection(
+                calculation_value,
+                calculations,
+                item_assessments_path,
+                historical_gates,
+                migration_path=migration,
+            )
+            web_path = root / "web-report.v4.json"
+            write_json(web_path, web_report)
+            self.assertTrue(v5.validate_projection_artifacts(calculations, evaluation_path, web_path)["ok"])
+            config_hash_before_receipt = digest(config)
+            refused_receipt = run_cli(
+                "dimension_score_cli.py",
+                "validate-projections",
+                "--calculation",
+                calculations,
+                "--evaluation-result",
+                evaluation_path,
+                "--web-report",
+                web_path,
+                "--output",
+                config,
+                "--methodology-commit",
+                TEST_METHODOLOGY_COMMIT,
+                "--validation-timestamp",
+                TEST_MIGRATION_TIMESTAMP,
+                expect_ok=False,
+            )
+            self.assertEqual("output_aliases_frozen_input", refused_receipt["error"]["code"])
+            self.assertEqual(config_hash_before_receipt, digest(config))
+            receipt_path = root / "score-migration-validation.v1.json"
+            validation = run_cli(
+                "dimension_score_cli.py",
+                "validate-projections",
+                "--calculation",
+                calculations,
+                "--evaluation-result",
+                evaluation_path,
+                "--web-report",
+                web_path,
+                "--output",
+                receipt_path,
+                "--methodology-commit",
+                TEST_METHODOLOGY_COMMIT,
+                "--validation-timestamp",
+                TEST_MIGRATION_TIMESTAMP,
+            )
+            self.assertEqual(digest(receipt_path), validation["migration_validation_receipt"]["sha256"])
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            v5.validate_schema_document(receipt, "score-migration-validation.schema.json", "Migration validation receipt")
+            self.assertEqual(receipt["validation_sha256"], v5.canonical_hash(receipt, "validation_sha256"))
+            self.assertEqual(digest(evaluation_path), receipt["artifacts"]["evaluation_result"]["sha256"])
+            self.assertEqual(digest(web_path), receipt["artifacts"]["web_report"]["sha256"])
+            for artifact in receipt["artifacts"].values():
+                self.assertFalse(Path(artifact["path"]).is_absolute())
+                self.assertNotIn("\\", artifact["path"])
+
+            nonportable = copy.deepcopy(migration_record)
+            nonportable["from"]["historical_result_path"] = str(historical.resolve())
+            with self.assertRaises(v5.CalculationError):
+                v5.validate_schema_document(nonportable, "score-migration.schema.json", "Nonportable V2 migration")
+
+            undeclared_v2_context = copy.deepcopy(calculation_value)
+            undeclared_v2_context["migration_context"].pop("migration_schema_version")
+            undeclared_v2_context["calculation_sha256"] = v5.canonical_hash(undeclared_v2_context, "calculation_sha256")
+            undeclared_v2_path = root / "dimension-calculations.undeclared-v2.json"
+            write_json(undeclared_v2_path, undeclared_v2_context)
+            with self.assertRaises(v5.CalculationError) as caught:
+                v5.validate_migration_record_for_calculation(undeclared_v2_context, undeclared_v2_path, migration)
+            self.assertEqual("score_migration_binding_mismatch", caught.exception.code)
+
+            legacy_calculation = copy.deepcopy(calculation_value)
+            legacy_migration_path = root / "score-migration.v1.json"
+            legacy_calculation_path = root / "dimension-calculations.legacy-v1.json"
+            legacy_calculation["migration_context"].pop("migration_schema_version")
+            legacy_calculation["migration_context"]["migration_record_path"] = str(legacy_migration_path.resolve())
+            legacy_calculation["calculation_sha256"] = v5.canonical_hash(legacy_calculation, "calculation_sha256")
+            write_json(legacy_calculation_path, legacy_calculation)
+            legacy_migration = {
+                "schema_version": "subject-index-score-migration-v1",
+                "evaluation_id": migration_record["evaluation_id"],
+                "from": {
+                    "rubric_version": "subject-index-rubric-v4",
+                    "historical_result_path": str(historical.resolve()),
+                    "historical_result_sha256": digest(historical),
+                    "total_score": migration_record["from"]["total_score"],
+                },
+                "to": {
+                    "rubric_version": "subject-index-rubric-v5",
+                    "calculation_profile": "subject-index-dimension-calculation-v1",
+                    "calculation_path": str(legacy_calculation_path.resolve()),
+                    "calculation_file_sha256": digest(legacy_calculation_path),
+                    "calculation_canonical_sha256": legacy_calculation["calculation_sha256"],
+                    "total_score": legacy_calculation["total_score"],
+                },
+                "input_ledgers": migration_record["input_ledgers"],
+                "input_ledgers_mutated": False,
+                "historical_result_mutated": False,
+                "gate_preservation": {
+                    key: value
+                    for key, value in migration_record["gate_preservation"].items()
+                    if key not in {"historical_outcomes", "preserved_outcomes"}
+                },
+                "comparability": "v4_and_v5_totals_are_not_directly_comparable",
+            }
+            legacy_migration["migration_sha256"] = v5.canonical_hash(legacy_migration, "migration_sha256")
+            write_json(legacy_migration_path, legacy_migration)
+            self.assertEqual(
+                "subject-index-score-migration-v1",
+                v5.validate_migration_record_for_calculation(legacy_calculation, legacy_calculation_path)["schema_version"],
+            )
+
             changed_gates = copy.deepcopy(evaluation_result)
             changed_gates["critical_gates"][0]["status"] = "passed"
             changed_gates_path = root / "changed-gates-result.v6.json"
@@ -2151,6 +2391,130 @@ class EndToEndCalculationTests(unittest.TestCase):
             with self.assertRaises(v5.CalculationError) as caught:
                 v5.validate_projection_artifacts(calculations, changed_migration_path)
             self.assertEqual("score_migration_binding_mismatch", caught.exception.code)
+
+    def test_representation_adjustment_remains_a_separate_counterfactual_score_view(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            canonical_root = root / "canonical"
+            adjusted_root = root / "adjusted"
+            locator, missing, structure = base_documents(subject_count=100)
+            representation_defect = defect(
+                "DEFECT-REPRESENTATION",
+                "mechanics_consistency",
+                "MEC",
+                "major",
+                kind="representation_corruption",
+                affected=["NODE-0001", "NODE-0002", "NODE-0003"],
+                structural_sections=["NODE-0001", "NODE-0002"],
+                applicable=100,
+                structural_denominator=100,
+                family="representation",
+            )
+            structure["v5_scoring_context"]["defects"] = [representation_defect]
+            structure["defects"] = [copy.deepcopy(representation_defect)]
+            for node_record in structure["node_judgments"][:3]:
+                mechanics = node_record["component_judgments"]["mechanics_consistency"]
+                mechanics["status"] = "major_issues"
+                mechanics["evidence_ids"] = ["DEFECT-REPRESENTATION"]
+            canonical_config = calculation_files(canonical_root, locator, missing, structure)
+            historical_path = canonical_root / "historical-v4.json"
+            historical_gates = [{"gate_id": "GATE-UNCHANGED", "status": "failed"}]
+            write_json(historical_path, historical_v4_result(gates=historical_gates, input_root=canonical_root))
+            representation_path = canonical_root / "representation-adjustment.validation.json"
+            write_json(representation_path, {
+                "schema_version": "subject-index-representation-adjustment-validation-v1",
+                "status": "validated",
+                "causal_attribution": "representation_only",
+            })
+            canonical_calculation_path = canonical_root / "dimension-calculations.v1.json"
+            migration_path = canonical_root / "score-migration.v2.json"
+            run_cli(
+                "dimension_score_cli.py",
+                "score-only-migration",
+                "--input",
+                canonical_config,
+                "--historical-result",
+                historical_path,
+                "--calculations-output",
+                canonical_calculation_path,
+                "--migration-record-output",
+                migration_path,
+                *MIGRATION_METADATA_ARGS,
+                "--representation-adjustment-provenance",
+                representation_path,
+            )
+            canonical_calculation = json.loads(canonical_calculation_path.read_text(encoding="utf-8"))
+
+            adjusted_config = calculation_files(adjusted_root, *base_documents(subject_count=100))
+            adjusted_calculation_path = adjusted_root / "dimension-calculations.v1.json"
+            run_cli(
+                "dimension_score_cli.py",
+                "calculate",
+                "--input",
+                adjusted_config,
+                "--output",
+                adjusted_calculation_path,
+            )
+            adjusted_calculation = json.loads(adjusted_calculation_path.read_text(encoding="utf-8"))
+            self.assertEqual(4, dimension(canonical_calculation, "mechanics_consistency")["final_rating"])
+            self.assertEqual(5, dimension(adjusted_calculation, "mechanics_consistency")["final_rating"])
+            self.assertEqual(1, adjusted_calculation["total_score"] - canonical_calculation["total_score"])
+
+            item_path = canonical_root / "item-assessments.v2.json"
+            write_json(item_path, minimal_item_assessments(canonical_calculation, canonical_root / "item-inventory.json"))
+            evaluation_path = canonical_root / "evaluation-result.v6.json"
+            write_json(
+                evaluation_path,
+                evaluation_projection(
+                    canonical_calculation,
+                    canonical_calculation_path,
+                    item_path,
+                    historical_gates,
+                    migration_path=migration_path,
+                ),
+            )
+            report = web_projection(
+                canonical_calculation,
+                canonical_calculation_path,
+                item_path,
+                historical_gates,
+                migration_path=migration_path,
+            )
+            migration = json.loads(migration_path.read_text(encoding="utf-8"))
+            provenance = migration["representation_adjustment"]["provenance_artifacts"][0]
+            report["score_views"]["adjustment_status"] = "separate_evidentiary_correction"
+            report["score_views"]["views"].append({
+                "view_id": "representation_adjusted",
+                "label": "Representation-adjusted counterfactual",
+                "view_kind": "counterfactual",
+                "score": adjusted_calculation["total_score"],
+                "maximum": 100,
+                "calculation": {
+                    "schema_version": adjusted_calculation["schema_version"],
+                    "artifact_path": "../adjusted/dimension-calculations.v1.json",
+                    "sha256": digest(adjusted_calculation_path),
+                    "calculation_sha256": adjusted_calculation["calculation_sha256"],
+                    "rubric_version": adjusted_calculation["rubric_version"],
+                    "calculation_profile": adjusted_calculation["calculation_profile"],
+                },
+                "causal_attribution": "separate_evidentiary_correction_not_methodology_effect",
+                "provenance_artifacts": [{
+                    "role": provenance["role"],
+                    "schema_version": provenance["schema_version"],
+                    "artifact_path": provenance["path"],
+                    "sha256": provenance["sha256"],
+                }],
+            })
+            report_path = canonical_root / "web-report.v4.json"
+            write_json(report_path, report)
+            self.assertTrue(v5.validate_projection_artifacts(canonical_calculation_path, evaluation_path, report_path)["ok"])
+
+            unbound_adjustment = copy.deepcopy(report)
+            unbound_adjustment["score_views"]["views"][1]["provenance_artifacts"] = []
+            unbound_path = canonical_root / "unbound-adjustment.web-report.v4.json"
+            write_json(unbound_path, unbound_adjustment)
+            with self.assertRaises(v5.CalculationError):
+                v5.validate_projection_artifacts(canonical_calculation_path, evaluation_path, unbound_path)
 
     def test_historical_v3_reconciles_frozen_set_hashes_and_builds_projection_safe_items(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -2235,8 +2599,8 @@ class EndToEndCalculationTests(unittest.TestCase):
             historical["provenance"]["missing_access_audit_set_sha256"] = historical_missing_sha256
             write_json(historical_path, historical)
             calculations_path = root / "dimension-calculations.v1.json"
-            migration_path = root / "score-migration.v1.json"
-            run_cli("dimension_score_cli.py", "score-only-migration", "--input", config_path, "--historical-result", historical_path, "--calculations-output", calculations_path, "--migration-record-output", migration_path)
+            migration_path = root / "score-migration.v2.json"
+            run_cli("dimension_score_cli.py", "score-only-migration", "--input", config_path, "--historical-result", historical_path, "--calculations-output", calculations_path, "--migration-record-output", migration_path, *MIGRATION_METADATA_ARGS)
             migration = json.loads(migration_path.read_text(encoding="utf-8"))
             self.assertFalse(migration["gate_preservation"]["identity_checks"]["locator_audit_set_sha256"]["equal"])
             self.assertEqual("hash_bound_migration_supplement_reconciliation", migration["gate_preservation"]["identity_checks"]["locator_audit_set_sha256"]["comparison_basis"])
@@ -2280,12 +2644,13 @@ class EndToEndCalculationTests(unittest.TestCase):
                 "--calculations-output",
                 root / "dimension-calculations.v1.json",
                 "--migration-record-output",
-                root / "score-migration.v1.json",
+                root / "score-migration.v2.json",
+                *MIGRATION_METADATA_ARGS,
                 expect_ok=False,
             )
             self.assertEqual("historical_gate_identity_mismatch", payload["error"]["code"])
             self.assertFalse((root / "dimension-calculations.v1.json").exists())
-            self.assertFalse((root / "score-migration.v1.json").exists())
+            self.assertFalse((root / "score-migration.v2.json").exists())
 
     def test_historical_gate_identity_uses_supplement_bound_missing_set(self) -> None:
         historical = historical_v4_result()
@@ -2333,7 +2698,7 @@ class EndToEndCalculationTests(unittest.TestCase):
             historical = root / "historical-v4.json"
             write_json(historical, historical_v4_result(total_score=80, input_root=root))
             before = digest(root / "locator.json")
-            payload = run_cli("dimension_score_cli.py", "score-only-migration", "--input", config, "--historical-result", historical, "--calculations-output", root / "locator.json", "--migration-record-output", root / "migration.json", expect_ok=False)
+            payload = run_cli("dimension_score_cli.py", "score-only-migration", "--input", config, "--historical-result", historical, "--calculations-output", root / "locator.json", "--migration-record-output", root / "migration.json", *MIGRATION_METADATA_ARGS, expect_ok=False)
             self.assertEqual("output_aliases_frozen_input", payload["error"]["code"])
             self.assertEqual(before, digest(root / "locator.json"))
 
@@ -2358,6 +2723,7 @@ class EndToEndCalculationTests(unittest.TestCase):
                 hard_link,
                 "--migration-record-output",
                 root / "migration.json",
+                *MIGRATION_METADATA_ARGS,
                 expect_ok=False,
             )
             self.assertEqual("output_aliases_frozen_input", payload["error"]["code"])

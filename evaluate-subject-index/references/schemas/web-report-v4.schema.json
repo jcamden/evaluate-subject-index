@@ -3,7 +3,7 @@
   "$id": "web-report-v4.schema.json",
   "title": "Display-ready V5 subject-index report",
   "type": "object",
-  "required": ["schema_version", "report_id", "headline", "summary", "grade", "scorecard", "calculation_explainer", "key_metrics", "density", "gate_status", "strengths", "defects", "examples", "item_grade_index", "methodology", "comparability", "disclosures", "limitations", "evidence_index"],
+  "required": ["schema_version", "report_id", "headline", "summary", "grade", "scorecard", "calculation_explainer", "key_metrics", "density", "gate_status", "strengths", "defects", "examples", "item_grade_index", "migration_comparison", "score_views", "methodology", "comparability", "disclosures", "limitations", "evidence_index"],
   "properties": {
     "schema_version": {"const": "subject-index-web-report-v4"},
     "report_id": {"type": "string"},
@@ -126,11 +126,152 @@
       },
       "additionalProperties": false
     },
+    "migration_comparison": {"$ref": "#/$defs/migrationComparison"},
+    "score_views": {"$ref": "#/$defs/scoreViews"},
     "methodology": {"type": "object"},
     "comparability": {"type": "object"},
     "disclosures": {"type": "array", "items": {"type": "string"}},
     "limitations": {"type": "array", "items": {"type": "string"}},
     "evidence_index": {"type": "object"}
+  },
+  "$defs": {
+    "artifactReference": {
+      "type": "object",
+      "required": ["role", "schema_version", "artifact_path", "sha256"],
+      "properties": {
+        "role": {"type": "string", "minLength": 1},
+        "schema_version": {"type": "string", "minLength": 1},
+        "artifact_path": {"$ref": "score-migration.schema.json#/$defs/portablePath"},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      },
+      "additionalProperties": false
+    },
+    "calculationReference": {
+      "type": "object",
+      "required": ["schema_version", "artifact_path", "sha256", "calculation_sha256", "rubric_version", "calculation_profile"],
+      "properties": {
+        "schema_version": {"const": "subject-index-dimension-calculations-v1"},
+        "artifact_path": {"$ref": "score-migration.schema.json#/$defs/portablePath"},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "calculation_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "rubric_version": {"const": "subject-index-rubric-v5"},
+        "calculation_profile": {"const": "subject-index-dimension-calculation-v1"}
+      },
+      "additionalProperties": false
+    },
+    "scoreView": {
+      "type": "object",
+      "required": ["view_id", "label", "view_kind", "score", "maximum", "calculation", "causal_attribution", "provenance_artifacts"],
+      "properties": {
+        "view_id": {"type": "string", "minLength": 1},
+        "label": {"type": "string", "minLength": 1},
+        "view_kind": {"enum": ["observed", "counterfactual"]},
+        "score": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+        "maximum": {"const": 100},
+        "calculation": {"$ref": "#/$defs/calculationReference"},
+        "causal_attribution": {"enum": ["primary_observed_result", "separate_evidentiary_correction_not_methodology_effect"]},
+        "provenance_artifacts": {"type": "array", "items": {"$ref": "#/$defs/artifactReference"}, "uniqueItems": true}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"view_kind": {"const": "observed"}}},
+          "then": {"properties": {"causal_attribution": {"const": "primary_observed_result"}}}
+        },
+        {
+          "if": {"properties": {"view_kind": {"const": "counterfactual"}}},
+          "then": {
+            "properties": {"causal_attribution": {"const": "separate_evidentiary_correction_not_methodology_effect"}, "provenance_artifacts": {"minItems": 1}}
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "scoreViews": {
+      "type": "object",
+      "required": ["primary_view_id", "adjustment_status", "views"],
+      "properties": {
+        "primary_view_id": {"type": "string", "minLength": 1},
+        "adjustment_status": {"enum": ["none", "separate_evidentiary_correction"]},
+        "views": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/scoreView"}, "uniqueItems": true}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"adjustment_status": {"const": "none"}}},
+          "then": {
+            "properties": {
+              "views": {
+                "not": {
+                  "contains": {
+                    "properties": {"view_kind": {"const": "counterfactual"}},
+                    "required": ["view_kind"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {"properties": {"adjustment_status": {"const": "separate_evidentiary_correction"}}},
+          "then": {
+            "properties": {
+              "views": {
+                "contains": {
+                  "properties": {"view_kind": {"const": "counterfactual"}},
+                  "required": ["view_kind"]
+                },
+                "minContains": 1
+              }
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "migrationComparison": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["status"],
+          "properties": {"status": {"const": "not_applicable"}},
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["status", "migration_record", "methodology_commit", "previous_total", "migrated_total", "dimension_comparison", "gate_comparison"],
+          "properties": {
+            "status": {"const": "v4_to_v5"},
+            "migration_record": {
+              "type": "object",
+              "required": ["schema_version", "artifact_path", "sha256", "migration_sha256"],
+              "properties": {
+                "schema_version": {"const": "subject-index-score-migration-v2"},
+                "artifact_path": {"$ref": "score-migration.schema.json#/$defs/portablePath"},
+                "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+                "migration_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+              },
+              "additionalProperties": false
+            },
+            "methodology_commit": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+            "previous_total": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+            "migrated_total": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+            "dimension_comparison": {"$ref": "score-migration.schema.json#/$defs/dimensionComparisonArray"},
+            "gate_comparison": {
+              "type": "object",
+              "required": ["previous_outcomes_sha256", "migrated_outcomes_sha256", "previous_outcomes", "migrated_outcomes", "outcomes_equal"],
+              "properties": {
+                "previous_outcomes_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+                "migrated_outcomes_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+                "previous_outcomes": {"type": "array", "items": {"type": "object"}},
+                "migrated_outcomes": {"type": "array", "items": {"type": "object"}},
+                "outcomes_equal": {"const": true}
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
   },
   "additionalProperties": true
 }
