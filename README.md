@@ -6,7 +6,7 @@ An agent skill for repeatable, source-grounded evaluation of finished back-of-bo
 
 It evaluates one index independently against its source and a frozen policy. Compatible results can then be displayed side by side without treating another index as the gold standard.
 
-**Customer-facing explanation:** [How the Subject Index Evaluation Works](evaluate-subject-index/references/customer-methodology.md) describes the process, score, density calibration, publication-readiness checks, and detailed criteria in plain language. It also defines the four-layer presentation strategy for web reports: overall result, six quality questions, supporting evidence, and full methodology.
+**Customer-facing explanation:** [How the Subject Index Evaluation Works — V7](evaluate-subject-index/references/customer-methodology-v7.md) describes the process, score, two-axis locator utility, corrected structure-review counting, publication-readiness checks, and detailed criteria in plain language.
 
 ## What it does
 
@@ -27,9 +27,11 @@ The score uses six dimensions totaling 100 points:
 | Findability and navigation | 20 |
 | Mechanics and consistency | 5 |
 
-Canonical V6 scoring uses `subject-index-rubric-v6` with calculation profile `subject-index-dimension-calculation-v2`. The six ratings are derived from validated audit ledgers; manually selected headline ratings are not accepted. V6 Page-reference Reliability uses locator credits 1, 0.5, 0.25, and 0 while retaining strict substantive precision as a public diagnostic. A quarter-credit weak mention is still unsupported, earns zero Editorial Selectivity credit, and cannot clear a publication gate. Historical V4 and V5 readers remain available under their original identities.
+Canonical V7 scoring uses `subject-index-rubric-v7` with calculation profile `subject-index-dimension-calculation-v3`. Page treatment and complete-path fit are derived separately from frozen structured evidence and combined as `min(T,F)`. A weak mention has a 0.25 ceiling, strict substantive precision remains public, Editorial Selectivity remains separate, and no credit can clear a failed publication gate. Historical V4, V5, and V6 readers remain available under their original identities.
 
-The workflow also produces a separate diagnostic grade for every measured locator, complete heading path, displayed main heading and subheading, cross-reference, and frozen source subject. V6 locator grades are 100, 70, 25, 0, or neutral; these non-additive display values must never be averaged to reconstruct the score. See [`item-grading.md`](evaluate-subject-index/references/item-grading.md).
+The workflow also produces separate diagnostic grades. V7 locator grades are 100, 70, 35, 25, 15, 0, or neutral and equal exactly 100 times the calculation credit. They remain non-additive and are never averaged to reconstruct Page-reference Reliability. See [`item-grading-v3.md`](evaluate-subject-index/references/item-grading-v3.md).
+
+For structure review, one delivered page reference or continuous range is one displayed locator. A range expands to atomic page assignments for auditing but counts once for locator-string scanning. More than six displayed locators or a continuous range longer than ten pages triggers review; neither condition alone is a defect.
 
 ## Standard policy and density calibration
 
@@ -42,9 +44,9 @@ Density is measured by chapter using two permissive calibration targets:
 
 Target bands are 6–10 paths and 15–25 occurrences; broad tolerance bands are 4–12 paths and 10–30 occurrences. These are this framework's calibration points—not quotas, minimums, universal professional requirements, or hard ceilings. Density contributes at most five of 100 points and never controls which subjects enter the frozen source benchmark.
 
-See [`standard-policy.md`](evaluate-subject-index/references/standard-policy.md).
+See [`standard-policy-v7.md`](evaluate-subject-index/references/standard-policy-v7.md).
 
-For a clear explanation suitable for customers, see [How the Subject Index Evaluation Works](evaluate-subject-index/references/customer-methodology.md). The exact V6 scoring formulas and technical anchors are in [`rubric.md`](evaluate-subject-index/references/rubric.md); historical V5 is preserved in [`rubric-v5.md`](evaluate-subject-index/references/rubric-v5.md). See also the [V6 sensitivity analysis](evaluate-subject-index/references/v6-sensitivity-analysis.md) and [version history](evaluate-subject-index/references/version-history.md).
+For a clear explanation suitable for customers, see [How the Subject Index Evaluation Works — V7](evaluate-subject-index/references/customer-methodology-v7.md). Exact formulas and mappings are in [`rubric-v7.md`](evaluate-subject-index/references/rubric-v7.md) and [`locator-utility-v7.md`](evaluate-subject-index/references/locator-utility-v7.md). Historical V5 and V6 documents remain available as [`rubric-v5.md`](evaluate-subject-index/references/rubric-v5.md) and [`rubric.md`](evaluate-subject-index/references/rubric.md). See also the [V7 sensitivity analysis](evaluate-subject-index/references/v7-sensitivity-analysis.md) and [version history](evaluate-subject-index/references/version-history.md).
 
 ## Page labels and chunks
 
@@ -81,7 +83,8 @@ prepare-locator-chunks
 audit-locators [chunk-id]
 audit-missing-access [chunk-id]
 audit-index-structure
-preflight-v6-scoring
+preflight-v7-scoring
+derive-structure-review
 score-index
 migrate-score-only
 build-web-report
@@ -154,7 +157,7 @@ OpenAI's documentation describes a skill as a directory containing `SKILL.md` pl
 - Python 3.10 or newer
 - [`pypdf`](https://pypi.org/project/pypdf/) for physically splitting source PDFs
 - [`PyMuPDF`](https://pypi.org/project/PyMuPDF/) for geometry-aware candidate-index extraction
-- [`jsonschema`](https://pypi.org/project/jsonschema/) for strict runtime validation of V4, V5, and V6 calculation and projection artifacts
+- [`jsonschema`](https://pypi.org/project/jsonschema/) for strict runtime validation of V4, V5, V6, and V7 calculation and projection artifacts
 
 The state manager, standard-policy builder, benchmark-review gate, checkpoint/export/import tooling, page-map expansion, chunk validation, locator routing, stable item inventory, diagnostic item grading, chapter-level density calculation, and scoring arithmetic otherwise use the Python standard library.
 
@@ -199,18 +202,27 @@ python evaluate-subject-index/scripts/score_cli.py density-profile \
   --input evaluate-subject-index/tests/density-chapters.valid.json \
   --output /tmp/density-profile.json
 
-# With a hash-bound dimension-calculation-input v1 file and V6 profile:
-python evaluate-subject-index/scripts/dimension_score_v6_cli.py preflight \
+# With a hash-bound dimension-calculation-input v1 file and V7 profile:
+python evaluate-subject-index/scripts/dimension_score_v7_cli.py preflight \
   --input /path/to/dimension-calculation-input.json
 
-python evaluate-subject-index/scripts/dimension_score_v6_cli.py calculate \
-  --input /path/to/dimension-calculation-input.json \
-  --output /path/to/dimension-calculations.json
+python evaluate-subject-index/scripts/dimension_score_v7_cli.py derive-structure-review \
+  --normalized-candidate /path/to/candidate-index.v2.json \
+  --item-inventory /path/to/item-inventory.v2.json \
+  --structure-audit /path/to/structure-audit.json \
+  --audit-mode full \
+  --output /path/to/structure-locator-review.v7.json
 
-python evaluate-subject-index/scripts/dimension_score_v6_cli.py validate-projections \
-  --calculation /path/to/dimension-calculations.json \
-  --evaluation-result /path/to/evaluation-result.json \
-  --web-report /path/to/web-report.json
+python evaluate-subject-index/scripts/dimension_score_v7_cli.py calculate \
+  --input /path/to/dimension-calculation-input.json \
+  --structure-locator-review /path/to/structure-locator-review.v7.json \
+  --output /path/to/dimension-calculations.v7.json
+
+python evaluate-subject-index/scripts/item_grade_v7_cli.py build-assessments \
+  --v6-compatible-items /path/to/item-assessments.v6-compatible.json \
+  --calculation /path/to/dimension-calculations.v7.json \
+  --structure-locator-review /path/to/structure-locator-review.v7.json \
+  --output /path/to/item-assessments.v7.json
 
 python evaluate-subject-index/scripts/item_grade_cli.py build-inventory \
   --candidate evaluate-subject-index/tests/candidate-index.valid.json \
@@ -233,7 +245,7 @@ python evaluate-subject-index/scripts/item_grade_cli.py build-assessments \
 - Instantiate and freeze standard policy v1, page mapping, chunk ownership, source-specific scope, density calibration, reader tasks, and uncertainty treatment before candidate scoring.
 - Use both index-to-source and source-to-index audits; locator precision alone cannot reveal omissions.
 - Preserve original candidate output and record every normalization.
-- Compare evaluations only when their source, benchmark, judgment-policy, mapping, scope, audit-design, rubric, and dimension-calculation identifiers match. A V5-to-V6 score-only migration preserves the V5 result as history and creates a separately identified V6 projection; it never overwrites V5.
+- Compare evaluations only when their source, benchmark, judgment-policy, mapping, scope, audit-design, rubric, and dimension-calculation identifiers match. A V6-to-V7 score-only migration preserves V6 as history and creates a separately identified V7 projection; it never overwrites history or reinterprets evidence.
 - Publish denominators, gates, evidence, limitations, and representative strengths as well as defects.
 
 No copyrighted source books, candidate indexes, or evaluation results are included in this repository.

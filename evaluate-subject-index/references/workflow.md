@@ -1,5 +1,7 @@
 # Workflow and state machine
 
+The numbered source, benchmark, candidate, and audit stages remain unchanged in V7. The current scoring-stage integration is specified in [workflow-v7.md](workflow-v7.md): native V7 adds a structured architecture-review decision layer, derives display/range/atomic metrics, and calculates with rubric V7/profile V3. V6-to-V7 score-only migration invalidates only active calculation/display projections after fail-closed sufficiency checks and preserves V4–V6 history.
+
 ## Stage order
 
 | Stage | Command | Completion artifact |

@@ -1,0 +1,261 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "structure-locator-review-v1.schema.json",
+  "title": "V7 displayed-locator, range-span, and atomic-assignment review ledger",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "review_id",
+    "evaluation_id",
+    "audit_mode",
+    "inputs",
+    "thresholds",
+    "path_reviews",
+    "summary",
+    "derivation_issues",
+    "migration_ready",
+    "source_or_candidate_reinterpreted",
+    "display_prose_parsed",
+    "historical_artifacts_mutated",
+    "review_sha256"
+  ],
+  "properties": {
+    "schema_version": {"const": "subject-index-structure-locator-review-v1"},
+    "review_id": {"type": "string", "pattern": "^STRUCTREV-[A-F0-9]{12}$"},
+    "evaluation_id": {"type": "string", "minLength": 1},
+    "audit_mode": {"enum": ["full", "pilot"]},
+    "inputs": {
+      "type": "object",
+      "required": ["candidate_sha256", "normalized_candidate_file_sha256", "item_inventory_file_sha256", "structure_audit_file_sha256"],
+      "properties": {
+        "candidate_sha256": {"$ref": "#/$defs/sha256"},
+        "normalized_candidate_file_sha256": {"$ref": "#/$defs/sha256"},
+        "item_inventory_file_sha256": {"$ref": "#/$defs/sha256"},
+        "structure_audit_file_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "thresholds": {
+      "type": "object",
+      "required": ["long_displayed_locator_string", "long_continuous_range", "numeric_trigger_is_automatic_defect"],
+      "properties": {
+        "long_displayed_locator_string": {
+          "type": "object",
+          "required": ["operator", "displayed_locator_count"],
+          "properties": {"operator": {"const": ">"}, "displayed_locator_count": {"const": 6}},
+          "additionalProperties": false
+        },
+        "long_continuous_range": {
+          "type": "object",
+          "required": ["operator", "inclusive_range_span"],
+          "properties": {"operator": {"const": ">"}, "inclusive_range_span": {"const": 10}},
+          "additionalProperties": false
+        },
+        "numeric_trigger_is_automatic_defect": {"const": false}
+      },
+      "additionalProperties": false
+    },
+    "path_reviews": {"type": "array", "items": {"$ref": "#/$defs/pathReview"}},
+    "summary": {
+      "type": "object",
+      "required": ["locator_bearing_path_count", "long_string_review_trigger_count", "long_range_review_trigger_count", "review_required_path_ids", "derivation_failed_path_ids", "removed_historical_defect_ids", "retained_historical_defect_ids"],
+      "properties": {
+        "locator_bearing_path_count": {"type": "integer", "minimum": 0},
+        "long_string_review_trigger_count": {"type": "integer", "minimum": 0},
+        "long_range_review_trigger_count": {"type": "integer", "minimum": 0},
+        "review_required_path_ids": {"$ref": "#/$defs/pathIds"},
+        "derivation_failed_path_ids": {"$ref": "#/$defs/pathIds"},
+        "removed_historical_defect_ids": {"$ref": "#/$defs/defectIds"},
+        "retained_historical_defect_ids": {"$ref": "#/$defs/defectIds"}
+      },
+      "additionalProperties": false
+    },
+    "derivation_issues": {"type": "array", "items": {"type": "object"}},
+    "migration_ready": {"type": "boolean"},
+    "source_or_candidate_reinterpreted": {"const": false},
+    "display_prose_parsed": {"const": false},
+    "historical_artifacts_mutated": {"const": false},
+    "review_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "pathIds": {"type": "array", "items": {"type": "string", "pattern": "^PATH-"}, "uniqueItems": true},
+    "defectIds": {"type": "array", "items": {"type": "string", "pattern": "^DEFECT-"}, "uniqueItems": true},
+    "endpoint": {
+      "type": "object",
+      "required": ["delivered", "locator_id", "source_page_label", "document_page"],
+      "properties": {
+        "delivered": {"type": "string"},
+        "locator_id": {"type": "string", "pattern": "^LOC-"},
+        "source_page_label": {"type": ["string", "null"]},
+        "document_page": {"type": ["integer", "null"], "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "displayedLocator": {
+      "type": "object",
+      "required": ["display_id", "kind", "delivered_kind", "range_id", "expanded_atomic_locator_ids", "atomic_assignment_count", "range_endpoints", "inclusive_range_span", "derivation_rule_id"],
+      "properties": {
+        "display_id": {"type": "string", "pattern": "^DISPLAY-"},
+        "kind": {"enum": ["singleton", "range", "other"]},
+        "delivered_kind": {"enum": ["point", "range", "malformed", "unknown"]},
+        "range_id": {"type": ["string", "null"], "pattern": "^RANGE-"},
+        "expanded_atomic_locator_ids": {"type": "array", "items": {"type": "string", "pattern": "^LOC-"}, "uniqueItems": true},
+        "atomic_assignment_count": {"type": "integer", "minimum": 0, "description": "Expanded page assignments owned by this one displayed locator; never a displayed-locator count."},
+        "range_endpoints": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "required": ["start", "end"],
+              "properties": {"start": {"$ref": "#/$defs/endpoint"}, "end": {"$ref": "#/$defs/endpoint"}},
+              "additionalProperties": false
+            }
+          ]
+        },
+        "inclusive_range_span": {"type": ["integer", "null"], "minimum": 1},
+        "derivation_rule_id": {"type": "string", "minLength": 1}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"const": "range"}}, "required": ["kind"]},
+          "then": {"properties": {"range_id": {"type": "string", "pattern": "^RANGE-"}, "expanded_atomic_locator_ids": {"minItems": 1}, "atomic_assignment_count": {"minimum": 1}}}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "singleton"}}, "required": ["kind"]},
+          "then": {"properties": {"range_id": {"type": "null"}, "inclusive_range_span": {"type": "null"}, "expanded_atomic_locator_ids": {"minItems": 1, "maxItems": 1}, "atomic_assignment_count": {"const": 1}}}
+        }
+      ],
+      "additionalProperties": false
+    },
+    "architectureEvidence": {
+      "type": "object",
+      "required": ["conceptually_distinguishable_treatments", "meaningful_subheadings_or_access_routes", "material_scanning_or_retrieval_impairment", "subdivision_is_conceptual_not_trivial", "review_status", "evidence_ids", "defect_ids", "derivation_rule_id"],
+      "properties": {
+        "conceptually_distinguishable_treatments": {"type": ["boolean", "null"]},
+        "meaningful_subheadings_or_access_routes": {"type": ["boolean", "null"]},
+        "material_scanning_or_retrieval_impairment": {"type": ["boolean", "null"]},
+        "subdivision_is_conceptual_not_trivial": {"type": ["boolean", "null"]},
+        "review_status": {"enum": ["defect_confirmed", "reviewed_no_defect", "not_reviewed"]},
+        "evidence_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "defect_ids": {"$ref": "#/$defs/defectIds"},
+        "derivation_rule_id": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "correctedStructureMetrics": {
+      "type": "object",
+      "required": ["displayed_locator_count", "maximum_range_span", "atomic_assignment_count", "long_displayed_locator_string_review_trigger", "long_continuous_range_review_trigger"],
+      "properties": {
+        "displayed_locator_count": {"type": "integer", "minimum": 1},
+        "maximum_range_span": {"type": ["integer", "null"], "minimum": 0},
+        "atomic_assignment_count": {"type": ["integer", "null"], "minimum": 1},
+        "long_displayed_locator_string_review_trigger": {"type": ["boolean", "null"]},
+        "long_continuous_range_review_trigger": {"type": ["boolean", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "historicalDefectDisposition": {
+      "type": "object",
+      "required": ["defect_id", "historical_structured_basis", "historical_structured_basis_sha256", "basis_classification", "classification_input_fields", "corrected_metrics", "deterministic_mapping_rule_id", "path_architecture_disposition", "active_v7_defect_disposition", "prose_used_for_mapping"],
+      "properties": {
+        "defect_id": {"type": "string", "pattern": "^DEFECT-"},
+        "historical_structured_basis": {"type": "object", "required": ["defect_id", "root_cause_family"], "properties": {"defect_id": {"type": "string", "pattern": "^DEFECT-"}, "root_cause_family": {"type": "string", "minLength": 1}}, "additionalProperties": true},
+        "historical_structured_basis_sha256": {"$ref": "#/$defs/sha256"},
+        "basis_classification": {"enum": ["atomic_assignment_threshold_only", "independent_architecture", "unclassified"]},
+        "classification_input_fields": {"const": ["root_cause_family"]},
+        "corrected_metrics": {"$ref": "#/$defs/correctedStructureMetrics"},
+        "deterministic_mapping_rule_id": {"type": "string", "minLength": 1},
+        "path_architecture_disposition": {"enum": ["derivation_failed", "historical_false_positive_removed", "structured_defect_confirmed", "reviewed_no_defect", "review_required", "historical_defect_retained", "independent_architecture_disposition_retained", "no_numeric_review_trigger"]},
+        "active_v7_defect_disposition": {"enum": ["removed_from_active_projection", "retained_in_active_projection"]},
+        "prose_used_for_mapping": {"const": false}
+      },
+      "additionalProperties": false
+    },
+    "pathReview": {
+      "type": "object",
+      "required": ["path_id", "record_id", "terminal_node_id", "heading_path", "delivered_displayed_locator_ids", "displayed_locator_count", "displayed_locators", "expanded_atomic_locator_ids", "atomic_assignment_count", "maximum_range_span", "long_displayed_locator_string_review_trigger", "long_continuous_range_review_trigger", "independent_architecture_evidence", "applicable_structured_defect_ids", "unclassified_structured_defect_ids", "removed_structured_defect_ids", "retained_structured_defect_ids", "historical_defect_dispositions", "final_architecture_disposition", "deterministic_derivation_rule_ids", "deterministic_mapping_rule_id", "derivation_complete", "derivation_issues"],
+      "properties": {
+        "path_id": {"type": "string", "pattern": "^PATH-"},
+        "record_id": {"type": "string", "pattern": "^REC-"},
+        "terminal_node_id": {"type": "string", "pattern": "^NODE-"},
+        "heading_path": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "delivered_displayed_locator_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^DISPLAY-"}, "uniqueItems": true, "description": "One ID per delivered page reference or continuous range."},
+        "displayed_locator_count": {"type": "integer", "minimum": 1, "description": "Length of delivered_displayed_locator_ids; ranges count once."},
+        "displayed_locators": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/displayedLocator"}},
+        "expanded_atomic_locator_ids": {"type": "array", "items": {"type": "string", "pattern": "^LOC-"}, "uniqueItems": true},
+        "atomic_assignment_count": {"type": ["integer", "null"], "minimum": 1, "description": "Expanded path/page assignments; prohibited as the subdivision-review denominator."},
+        "maximum_range_span": {"type": ["integer", "null"], "minimum": 0},
+        "long_displayed_locator_string_review_trigger": {"type": ["boolean", "null"]},
+        "long_continuous_range_review_trigger": {"type": ["boolean", "null"]},
+        "independent_architecture_evidence": {"$ref": "#/$defs/architectureEvidence"},
+        "applicable_structured_defect_ids": {"$ref": "#/$defs/defectIds"},
+        "unclassified_structured_defect_ids": {"$ref": "#/$defs/defectIds"},
+        "removed_structured_defect_ids": {"$ref": "#/$defs/defectIds"},
+        "retained_structured_defect_ids": {"$ref": "#/$defs/defectIds"},
+        "historical_defect_dispositions": {"type": "array", "items": {"$ref": "#/$defs/historicalDefectDisposition"}},
+        "final_architecture_disposition": {"enum": ["derivation_failed", "historical_false_positive_removed", "structured_defect_confirmed", "reviewed_no_defect", "review_required", "historical_defect_retained", "independent_architecture_disposition_retained", "no_numeric_review_trigger"]},
+        "deterministic_derivation_rule_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "deterministic_mapping_rule_id": {"type": "string", "minLength": 1},
+        "derivation_complete": {"type": "boolean"},
+        "derivation_issues": {"type": "array", "items": {"type": "object"}}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"derivation_complete": {"const": true}}, "required": ["derivation_complete"]},
+          "then": {"properties": {"expanded_atomic_locator_ids": {"minItems": 1}, "atomic_assignment_count": {"type": "integer", "minimum": 1}, "maximum_range_span": {"type": "integer", "minimum": 0}, "long_displayed_locator_string_review_trigger": {"type": "boolean"}, "long_continuous_range_review_trigger": {"type": "boolean"}, "derivation_issues": {"maxItems": 0}}}
+        },
+        {
+          "if": {"properties": {"final_architecture_disposition": {"const": "structured_defect_confirmed"}}, "required": ["final_architecture_disposition"]},
+          "then": {
+            "properties": {
+              "retained_structured_defect_ids": {"minItems": 1},
+              "independent_architecture_evidence": {
+                "properties": {
+                  "review_status": {"const": "defect_confirmed"},
+                  "conceptually_distinguishable_treatments": {"const": true},
+                  "meaningful_subheadings_or_access_routes": {"const": true},
+                  "material_scanning_or_retrieval_impairment": {"const": true},
+                  "subdivision_is_conceptual_not_trivial": {"const": true}
+                  ,"defect_ids": {"minItems": 1}
+                }
+              }
+            },
+            "anyOf": [
+              {"properties": {"long_displayed_locator_string_review_trigger": {"const": true}}},
+              {"properties": {"long_continuous_range_review_trigger": {"const": true}}}
+            ]
+          }
+        },
+        {
+          "if": {"properties": {"final_architecture_disposition": {"const": "reviewed_no_defect"}}, "required": ["final_architecture_disposition"]},
+          "then": {
+            "properties": {"independent_architecture_evidence": {"properties": {"review_status": {"const": "reviewed_no_defect"}, "defect_ids": {"maxItems": 0}}}},
+            "anyOf": [
+              {"properties": {"independent_architecture_evidence": {"properties": {"conceptually_distinguishable_treatments": {"const": false}}}}},
+              {"properties": {"independent_architecture_evidence": {"properties": {"meaningful_subheadings_or_access_routes": {"const": false}}}}},
+              {"properties": {"independent_architecture_evidence": {"properties": {"material_scanning_or_retrieval_impairment": {"const": false}}}}},
+              {"properties": {"independent_architecture_evidence": {"properties": {"subdivision_is_conceptual_not_trivial": {"const": false}}}}}
+            ]
+          }
+        },
+        {
+          "if": {"properties": {"final_architecture_disposition": {"const": "historical_false_positive_removed"}}, "required": ["final_architecture_disposition"]},
+          "then": {"properties": {"removed_structured_defect_ids": {"minItems": 1}, "long_displayed_locator_string_review_trigger": {"const": false}, "long_continuous_range_review_trigger": {"const": false}}}
+        },
+        {
+          "if": {"properties": {"final_architecture_disposition": {"const": "review_required"}}, "required": ["final_architecture_disposition"]},
+          "then": {
+            "properties": {"independent_architecture_evidence": {"properties": {"review_status": {"const": "not_reviewed"}}}},
+            "anyOf": [
+              {"properties": {"long_displayed_locator_string_review_trigger": {"const": true}}},
+              {"properties": {"long_continuous_range_review_trigger": {"const": true}}}
+            ]
+          }
+        }
+      ],
+      "additionalProperties": false
+    }
+  }
+}

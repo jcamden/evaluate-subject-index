@@ -2,6 +2,12 @@
 
 Commands are a prompt vocabulary implemented by the skill, not assumed to be native application slash commands. Return JSON by default. A human-readable explanation may accompany JSON when requested.
 
+## Current V7 scoring profile
+
+The current scoring/profile commands are documented in [commands-v7.md](commands-v7.md). Use `preflight-v7-scoring`, `derive-structure-review`, `score-index`, and `migrate-score-only` with `dimension_score_v7_cli.py`. The V6 command paragraphs retained later in this file document historical V6 compatibility and must not be used to create a new current result.
+
+For `audit-index-structure`, follow [structure-audit-v7.md](structure-audit-v7.md): displayed locator count, inclusive range span, and atomic assignment count are distinct. More than six displayed locators and a range longer than ten pages are review-only triggers. For `score-index`, use rubric V7/calculation profile V3 and `min(T,F)`. For `migrate-score-only`, migrate V6 to V7 with the exact manifest and invariants in [score-migration-v6-to-v7.md](score-migration-v6-to-v7.md). Preserve all historical artifacts and stop on prose-dependent mapping or an unreviewed newly triggered path.
+
 ## `help [command]`
 
 Show purpose, syntax, required inputs, generated artifact, dependencies, completion test, and likely next command. With no argument, return every canonical stage command plus applicable worker and coordinator commands in workflow order, and identify whether each is available, blocked, or complete from the current state. Label parallel commands as auxiliary lanes rather than numbered stages.
@@ -264,7 +270,7 @@ After successful preflight, merge only the selected proposals, obtain post-merge
 
 Required: complete normalized candidate, all locator judgments, all missing-access judgments, and policy.
 
-Judge the index globally under the heading/access, cross-reference, coherence, and mechanics rules: heading clarity, parent-child truth, sibling parallelism, direct access, underdivision, overdivision, fragmentation, terminology consistency, every cross-reference, filing, mechanics, distribution, and long undivided locator strings. Measure both frozen density metrics for each chapter using indexable source words and use source-word-weighted aggregation. Preserve the raw chapter word counts, but derive locator occurrences from the chunk's expected stable locator IDs and locator-bearing paths from its unique `PATH-*` judgments; the V5 and V6 scorers independently reconstruct those counts and reject drift. Output `structure-audit.json` with item-level defects, chapter measurements, target disclosure, and metrics.
+Judge the index globally under the heading/access, cross-reference, coherence, and mechanics rules: heading clarity, parent-child truth, sibling parallelism, direct access, underdivision, overdivision, fragmentation, terminology consistency, every cross-reference, filing, mechanics, distribution, long displayed locator strings, and long continuous ranges. Measure both frozen density metrics for each chapter using indexable source words and use source-word-weighted aggregation. Preserve the raw chapter word counts, but derive locator occurrences from the chunk's expected stable locator IDs and locator-bearing paths from its unique `PATH-*` judgments; V5–V7 scorers independently reconstruct those counts and reject drift. Output `structure-audit.json` with item-level defects, chapter measurements, target disclosure, and metrics.
 
 Use the frozen item inventory. Judge every `NODE-*` separately for conceptual/stance fidelity, heading/access architecture, and mechanics. Judge every `XREF-*` as supported, partially supported, unsupported, or uninspectable. Record completion counts against the inventory and include node/reference evidence IDs. A main-heading node judgment concerns that heading's wording and organizational role; do not hide a weak child by averaging its descendants.
 
