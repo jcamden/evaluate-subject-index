@@ -41,8 +41,12 @@ python scripts/dimension_score_cli.py score-only-migration \
   --input dimension-calculation-input.v1.json \
   --historical-result candidate/history/evaluation-result.v4.json \
   --calculations-output candidate/dimension-calculations.v1.json \
-  --migration-record-output candidate/score-migration.v4-to-v5.json
+  --migration-record-output candidate/score-migration.v4-to-v5.json \
+  --methodology-commit 0123456789abcdef0123456789abcdef01234567 \
+  --migration-timestamp 2026-08-29T12:00:00Z
 ```
+
+Supply the exact merged methodology commit and an explicit RFC 3339 UTC timestamp. When an existing representation correction applies, repeat `--representation-adjustment-provenance PATH` for its causal ledger, validation receipt, and other immutable provenance artifacts. These files are recorded as a separate evidentiary correction; they do not alter the canonical as-delivered calculation or become a V5 methodology effect.
 
 The helper:
 
@@ -51,10 +55,27 @@ The helper:
 - rejects resolved-path, symbolic-link, and hard-link output aliases, then produces a distinct V5 calculation artifact and migration record;
 - proves that no input-ledger or historical-result byte changed;
 - compares the historical candidate, source, benchmark, policy, page map, chunk manifest, normalized candidate, item inventory, structure audit, both audit sets, and audit mode to the supplied frozen evidence before it records unchanged gate outcomes; and
-- records the historical-result and historical-gate hashes inside the calculation's canonical `migration_context`; and
+- emits `subject-index-score-migration-v2` with portable relative POSIX paths, the timestamp and tool version, the exact methodology commit, old/new schema and rubric identities, old/new totals and six-dimension scorecards, per-dimension deltas, exact input lineage and dispositions, representation-correction provenance, and explicit old/new gate arrays and hashes;
+- records the historical-result and historical-gate hashes plus the migration schema and portable migration-record path inside the calculation's canonical `migration_context`; and
 - records that V4 and V5 totals are not directly comparable.
 
-Do not overwrite the historical result or relabel it as V5. Build the V5 `subject-index-evaluation-result-v6` and `subject-index-web-report-v4` as new active artifacts, with links back to immutable history. The V6 result must hash-bind the emitted `subject-index-score-migration-v1` record and copy the historical `critical_gates` exactly. It must also hash-bind a `subject-index-item-assessments-v2` artifact whose five assessment families exactly exhaust the bound item inventory and expected source-subject set and whose evidence identity exactly matches the calculation. The web report must point to that same item-assessment file and reproduce the result's gate set and canonical gate hash. Run `validate-projections` against the calculation, result, and web report. Validation rejects incomplete, duplicated, or foreign item assessments, changed gates, substituted migration artifacts, and any result/web projection drift.
+Do not overwrite the historical result or relabel it as V5. Build the V5 `subject-index-evaluation-result-v6` and `subject-index-web-report-v4` as new active artifacts, with links back to immutable history. The V6 result must hash-bind the emitted `subject-index-score-migration-v2` record and copy the historical `critical_gates` exactly. It must also hash-bind a `subject-index-item-assessments-v2` artifact whose five assessment families exactly exhaust the bound item inventory and expected source-subject set and whose evidence identity exactly matches the calculation.
+
+The web report must point to that same item-assessment file, reproduce the result's gate set and canonical gate hash, expose the complete old/new migration comparison, and define explicit score views. The canonical as-delivered calculation is the one primary observed view. Every additional view is an explicit counterfactual with its own canonical V5 calculation artifact. A representation-adjusted view must cite every provenance artifact recorded by the migration and must use causal attribution `separate_evidentiary_correction_not_methodology_effect`.
+
+After writing both projections, create the post-projection receipt:
+
+```bash
+python scripts/dimension_score_cli.py validate-projections \
+  --calculation candidate/dimension-calculations.v1.json \
+  --evaluation-result candidate/evaluation-result.v6.json \
+  --web-report candidate/web-report.v4.json \
+  --output candidate/score-migration-validation.v1.json \
+  --methodology-commit 0123456789abcdef0123456789abcdef01234567 \
+  --validation-timestamp 2026-08-29T12:30:00Z
+```
+
+The strict `subject-index-score-migration-validation-v1` receipt hash-binds the historical result, V5 calculation, V2 migration record, new V6 result, and new V4 web report without creating a circular hash dependency. It repeats the totals, six-dimension comparison, unchanged gate sets, and score-view provenance. Validation rejects incomplete, duplicated, or foreign item assessments, changed gates, substituted migration artifacts, absolute V2 paths, missing correction provenance, and any result/web projection drift. The V1 migration schema remains readable as historical compatibility, but new migrations always emit V2.
 
 A public export is not automatically a migration checkpoint. If its structure audit binds a different locator-audit set from the supplied public locator files, preflight must fail even when the displayed aggregate metrics agree. Use a canonical private checkpoint whose hashes match; never waive the mismatch or reinterpret judgments to make a migration pass.
 

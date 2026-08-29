@@ -14,6 +14,7 @@ import json
 import os
 from collections import Counter, defaultdict
 from copy import deepcopy
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Iterable, Sequence
@@ -26,7 +27,11 @@ RUBRIC_VERSION = "subject-index-rubric-v5"
 CALCULATION_PROFILE = "subject-index-dimension-calculation-v1"
 CALCULATION_SCHEMA = "subject-index-dimension-calculations-v1"
 INPUT_SCHEMA = "subject-index-dimension-calculation-input-v1"
-MIGRATION_SCHEMA = "subject-index-score-migration-v1"
+MIGRATION_SCHEMA = "subject-index-score-migration-v2"
+MIGRATION_VALIDATION_SCHEMA = "subject-index-score-migration-validation-v1"
+TOOL_NAME = "dimension_score_cli.py"
+TOOL_VERSION = "dimension-score-cli-v5.1.0"
+METHODOLOGY_REPOSITORY = "https://github.com/jcamden/evaluate-subject-index"
 
 WEIGHTS = {
     "meaningful_coverage": 20,
@@ -147,6 +152,44 @@ class CalculationError(ValueError):
 def require(condition: bool, code: str, message: str, details: Any = None) -> None:
     if not condition:
         raise CalculationError(code, message, details)
+
+
+def require_methodology_commit(value: Any) -> str:
+    require(
+        isinstance(value, str)
+        and len(value) == 40
+        and all(character in "0123456789abcdef" for character in value),
+        "invalid_methodology_commit",
+        "The methodology commit must be an exact lowercase 40-character Git SHA-1.",
+    )
+    return value
+
+
+def require_utc_timestamp(value: Any, *, label: str) -> str:
+    require(isinstance(value, str) and value.endswith("Z"), "invalid_timestamp", f"{label} must be an RFC 3339 UTC timestamp ending in Z.")
+    try:
+        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError as exc:
+        raise CalculationError("invalid_timestamp", f"{label} must be an RFC 3339 UTC timestamp ending in Z.") from exc
+    require(parsed.utcoffset() == timezone.utc.utcoffset(parsed), "invalid_timestamp", f"{label} must use UTC.")
+    return value
+
+
+def require_portable_relative_path(value: Any, *, label: str) -> str:
+    require(isinstance(value, str) and value, "nonportable_artifact_path", f"{label} must be a non-empty relative POSIX path.")
+    drive_prefixed = len(value) >= 2 and value[1] == ":" and value[0].isalpha()
+    require(
+        not value.startswith(("/", "\\")) and not drive_prefixed and "\\" not in value,
+        "nonportable_artifact_path",
+        f"{label} must be a relative POSIX path and must not contain an absolute workspace path.",
+        {"path": value},
+    )
+    return value
+
+
+def portable_relative_reference(target: Path, container_path: Path, *, label: str) -> str:
+    reference = os.path.relpath(target.resolve(), start=container_path.resolve().parent).replace(os.sep, "/")
+    return require_portable_relative_path(reference, label=label)
 
 
 def decimal_value(value: Any, field: str = "value") -> Decimal:
@@ -314,7 +357,7 @@ def portable_input_record(record: Any, label: str) -> tuple[str, str]:
     require(set(record) == {"path", "sha256"}, "invalid_input_reference", f"{label} must contain exactly path and sha256.")
     path = record.get("path")
     digest = record.get("sha256")
-    require(isinstance(path, str) and path, "invalid_input_reference", f"{label}.path must be a non-empty string.")
+    require_portable_relative_path(path, label=f"{label}.path")
     require(
         isinstance(digest, str) and len(digest) == 64 and all(char in "0123456789abcdef" for char in digest),
         "invalid_input_reference",
@@ -1494,7 +1537,15 @@ def calculate_coverage(ledgers: dict[str, Any], audit_mode: str) -> dict[str, An
     result["input_roles"] = ["missing_access_audit", "structure_audit_or_migration_supplement"]
     result["raw_status_counts"] = dict(Counter(item.get("coverage") for item in applicable_records)) | {"not_measured_expected_ids": len(missing_ids)}
     result["credit_mappings"] = {"coverage": {key: decimal_text(value) for key, value in COVERAGE_CREDIT.items()}, "priority": {key: decimal_text(value) for key, value in PRIORITY_CREDIT.items()}}
-    result["components"] = [{"component_id": "priority_weighted_subject_access", "normalized_value": decimal_text(central_base / FIVE if FIVE else ZERO), "weight": "1", "effective_weight": "1", "weight_renormalized": False}]
+    result["components"] = [{
+        "component_id": "priority_weighted_subject_access",
+        "raw_numerator": decimal_text(measured_credit),
+        "raw_denominator": decimal_text(weight_total),
+        "normalized_value": decimal_text(central_base / FIVE if FIVE else ZERO),
+        "weight": "1",
+        "effective_weight": "1",
+        "weight_renormalized": False,
+    }]
     return result
 
 
@@ -1764,8 +1815,8 @@ def calculate_selectivity(ledgers: dict[str, Any], audit_mode: str) -> dict[str,
     result["raw_status_counts"] = dict(Counter(item.get("treatment_class") for item in measured)) | {"uninspectable": len(uninspectable), "not_measured": len(not_measured)}
     result["credit_mappings"] = {"treatment_class": {key: decimal_text(value) for key, value in SELECTIVITY_CREDIT.items()}}
     result["components"] = [
-        {"component_id": "substantive_selectivity", "normalized_value": decimal_text(central_sub_post / FIVE), "weight": "10/15", "effective_weight": "10/15", "weight_renormalized": False, "rounded_rating": displayed_number(central_sub)},
-        {"component_id": "density_fit", "normalized_value": decimal_text(density_rating / FIVE), "weight": "5/15", "effective_weight": "5/15", "weight_renormalized": False, "rounded_rating": displayed_number(density_rating), "details": density_detail},
+        {"component_id": "substantive_selectivity", "raw_numerator": decimal_text(credit), "raw_denominator": decimal_text(Decimal(len(measured))), "normalized_value": decimal_text(central_sub_post / FIVE), "weight": "10/15", "effective_weight": "10/15", "weight_renormalized": False, "rounded_rating": displayed_number(central_sub)},
+        {"component_id": "density_fit", "raw_numerator": decimal_text(density_rating), "raw_denominator": "5", "normalized_value": decimal_text(density_rating / FIVE), "weight": "5/15", "effective_weight": "5/15", "weight_renormalized": False, "rounded_rating": displayed_number(density_rating), "details": density_detail},
     ]
     return result
 
@@ -1867,7 +1918,7 @@ def calculate_concept(ledgers: dict[str, Any], audit_mode: str) -> dict[str, Any
     result["input_roles"] = ["structure_audit", "structure_audit_or_migration_supplement"]
     result["raw_status_counts"] = dict(Counter(item["_status"] for item in measured)) | {"uninspectable": len(uninspectable), "not_measured": len(not_measured_ids)}
     result["credit_mappings"] = {"node_status": {key: decimal_text(value) for key, value in NODE_CREDIT.items()}}
-    result["components"] = [{"component_id": "conceptual_stance_nodes", "normalized_value": decimal_text(central_base / FIVE), "weight": "1", "effective_weight": "1", "weight_renormalized": False}]
+    result["components"] = [{"component_id": "conceptual_stance_nodes", "raw_numerator": decimal_text(credit), "raw_denominator": decimal_text(Decimal(len(measured))), "normalized_value": decimal_text(central_base / FIVE), "weight": "1", "effective_weight": "1", "weight_renormalized": False}]
     return result
 
 
@@ -2005,9 +2056,9 @@ def calculate_reliability(ledgers: dict[str, Any], audit_mode: str) -> dict[str,
     }
     result["credit_mappings"] = {"strict_precision": {"supported": "1", "partially_supported": "0", "unsupported": "0"}, "treatment_recall": {"found": "1", "missed": "0"}}
     result["components"] = [
-        {"component_id": "strict_locator_precision", "normalized_value": decimal_text(p), "weight": "harmonic_mean", "effective_weight": "harmonic_mean", "weight_renormalized": False},
-        {"component_id": "expected_treatment_recall", "normalized_value": decimal_text(r), "weight": "harmonic_mean", "effective_weight": "harmonic_mean", "weight_renormalized": False},
-        {"component_id": "high_value_treatment_recall_safeguard", "normalized_value": decimal_text(rate(high_found, len(high_measured))), "weight": "cap_only", "effective_weight": "cap_only", "weight_renormalized": False},
+        {"component_id": "strict_locator_precision", "raw_numerator": decimal_text(Decimal(supported)), "raw_denominator": decimal_text(Decimal(len(measured_locators))), "normalized_value": decimal_text(p), "weight": "harmonic_mean", "effective_weight": "harmonic_mean", "weight_renormalized": False},
+        {"component_id": "expected_treatment_recall", "raw_numerator": decimal_text(Decimal(found)), "raw_denominator": decimal_text(Decimal(len(measured_treatments))), "normalized_value": decimal_text(r), "weight": "harmonic_mean", "effective_weight": "harmonic_mean", "weight_renormalized": False},
+        {"component_id": "high_value_treatment_recall_safeguard", "raw_numerator": decimal_text(Decimal(high_found)), "raw_denominator": decimal_text(Decimal(len(high_measured))), "normalized_value": decimal_text(rate(high_found, len(high_measured))), "weight": "cap_only", "effective_weight": "cap_only", "weight_renormalized": False},
     ]
     return result
 
@@ -2168,6 +2219,7 @@ def calculate_findability(ledgers: dict[str, Any], audit_mode: str) -> dict[str,
     if ref_inapplicable:
         ref_denom = component_denominators("cross_reference_validity", ledgers["reference_original"], 0, 0, 0, 0, {"genuinely_inapplicable": ledgers["reference_original"]}, inapplicable=True)
         ref_central = ref_lower = ref_upper = ZERO
+        ref_raw_numerator = ref_raw_denominator = None
         weights = (Decimal("0.6666666666666666666666666667"), Decimal("0.3333333333333333333333333333"), ZERO)
     else:
         ref_applicable_count = len(refs_measured) + len(refs_unknown) + len(refs_not_measured)
@@ -2182,6 +2234,8 @@ def calculate_findability(ledgers: dict[str, Any], audit_mode: str) -> dict[str,
         reference_original = ledgers["reference_original"] + adverse_zeros
         ref_denom = component_denominators("cross_reference_validity", reference_original, ref_applicable_count, len(refs_measured) + adverse_zeros, len(refs_unknown), len(refs_not_measured), {"not_reference_applicable": reference_original - ref_applicable_count})
         ref_credit = sum((REFERENCE_CREDIT[item["judgment"]] for item in refs_measured), ZERO)
+        ref_raw_numerator = ref_credit
+        ref_raw_denominator = Decimal(len(refs_measured) + adverse_zeros)
         ref_central = ref_credit / Decimal(len(refs_measured) + adverse_zeros) if len(refs_measured) + adverse_zeros else ZERO
         ref_lower = ref_credit / Decimal(ref_applicable_count) if ref_applicable_count else ZERO
         ref_upper = (ref_credit + Decimal(len(refs_unknown) + len(refs_not_measured))) / Decimal(ref_applicable_count) if ref_applicable_count else ZERO
@@ -2248,9 +2302,9 @@ def calculate_findability(ledgers: dict[str, Any], audit_mode: str) -> dict[str,
         "cross_references": {key: decimal_text(value) for key, value in REFERENCE_CREDIT.items()} | {"warranted_undelivered": "0", "reference_defect_without_delivered_or_warranted_route": "0"},
     }
     result["components"] = [
-        {"component_id": "coverage_conditioned_reader_tasks", "normalized_value": decimal_text(task_central), "weight": "0.60", "effective_weight": decimal_text(weights[0]), "weight_renormalized": ref_inapplicable, "label": "navigation success among subjects having at least partial access", "details": {"lower_bound_scenario": task_bounds["lower_scenario"], "upper_bound_scenario": task_bounds["upper_scenario"]}},
-        {"component_id": "heading_access_architecture", "normalized_value": decimal_text(arch_central), "weight": "0.30", "effective_weight": decimal_text(weights[1]), "weight_renormalized": ref_inapplicable},
-        {"component_id": "cross_reference_validity", "normalized_value": None if ref_inapplicable else decimal_text(ref_central), "weight": "0.10", "effective_weight": decimal_text(weights[2]), "weight_renormalized": ref_inapplicable, "details": {"warranted_undelivered_zero_count": 0 if ref_inapplicable else obligation_zeros, "reference_defect_zero_count": 0 if ref_inapplicable else defect_zeros}},
+        {"component_id": "coverage_conditioned_reader_tasks", "raw_numerator": decimal_text(sum((TASK_CREDIT[item["result"]] for item in eligible_tasks), ZERO)), "raw_denominator": decimal_text(Decimal(len(eligible_tasks))), "normalized_value": decimal_text(task_central), "weight": "0.60", "effective_weight": decimal_text(weights[0]), "weight_renormalized": ref_inapplicable, "label": "navigation success among subjects having at least partial access", "details": {"lower_bound_scenario": task_bounds["lower_scenario"], "upper_bound_scenario": task_bounds["upper_scenario"]}},
+        {"component_id": "heading_access_architecture", "raw_numerator": decimal_text(arch_credit), "raw_denominator": decimal_text(Decimal(len(architecture))), "normalized_value": decimal_text(arch_central), "weight": "0.30", "effective_weight": decimal_text(weights[1]), "weight_renormalized": ref_inapplicable},
+        {"component_id": "cross_reference_validity", "raw_numerator": decimal_text(ref_raw_numerator), "raw_denominator": decimal_text(ref_raw_denominator), "normalized_value": None if ref_inapplicable else decimal_text(ref_central), "weight": "0.10", "effective_weight": decimal_text(weights[2]), "weight_renormalized": ref_inapplicable, "details": {"warranted_undelivered_zero_count": 0 if ref_inapplicable else obligation_zeros, "reference_defect_zero_count": 0 if ref_inapplicable else defect_zeros}},
     ]
     return result
 
@@ -2334,7 +2388,7 @@ def calculate_mechanics(ledgers: dict[str, Any], audit_mode: str) -> dict[str, A
     result["input_roles"] = ["structure_audit", "structure_audit_or_migration_supplement"]
     result["raw_status_counts"] = dict(Counter(item["_status"] for item in measured)) | {"uninspectable": len(uninspectable), "not_measured": len(not_measured_ids)}
     result["credit_mappings"] = {"node_status": {key: decimal_text(value) for key, value in MECHANICS_CREDIT.items()}}
-    result["components"] = [{"component_id": "mechanics_nodes", "normalized_value": decimal_text(central_base / FIVE if FIVE else ZERO), "weight": "1", "effective_weight": "1", "weight_renormalized": False}]
+    result["components"] = [{"component_id": "mechanics_nodes", "raw_numerator": decimal_text(credit), "raw_denominator": decimal_text(Decimal(len(measured))), "normalized_value": decimal_text(central_base / FIVE if FIVE else ZERO), "weight": "1", "effective_weight": "1", "weight_renormalized": False}]
     return result
 
 
@@ -2561,12 +2615,15 @@ def exact_dimension_map(records: Any, label: str) -> dict[str, dict[str, Any]]:
     return mapped
 
 
-def resolve_referenced_artifact(reference: Any, container_path: Path, *, label: str) -> Path:
+def resolve_referenced_artifact(reference: Any, container_path: Path, *, label: str, allow_legacy_absolute: bool = False) -> Path:
     require(isinstance(reference, dict), "projection_binding_mismatch", f"{label} must be an object.")
     stored_path = reference.get("artifact_path")
-    require(isinstance(stored_path, str) and stored_path, "projection_binding_mismatch", f"{label}.artifact_path is required.")
+    if allow_legacy_absolute:
+        require(isinstance(stored_path, str) and stored_path, "projection_binding_mismatch", f"{label}.artifact_path is required.")
+    else:
+        require_portable_relative_path(stored_path, label=f"{label}.artifact_path")
     candidate = Path(stored_path)
-    resolved = (candidate if candidate.is_absolute() else container_path.parent / candidate).resolve()
+    resolved = (candidate if allow_legacy_absolute and candidate.is_absolute() else container_path.parent / candidate).resolve()
     require(resolved.is_file(), "projection_binding_mismatch", f"{label}.artifact_path does not resolve to a file.", {"resolved": str(resolved)})
     actual_hash = sha256_file(resolved)
     require(reference.get("sha256") == actual_hash, "projection_binding_mismatch", f"{label}.sha256 does not match the referenced file bytes.", {"expected": actual_hash, "actual": reference.get("sha256")})
@@ -2702,11 +2759,18 @@ def validate_projection_artifacts(calculation_path: Path, evaluation_result_path
 
     migration_context = calculation.get("migration_context")
     migration_reference = evaluation.get("score_migration")
+    migration: dict[str, Any] | None = None
+    migration_path: Path | None = None
     if migration_context is None:
         require(migration_reference is None, "unexpected_score_migration", "A native V5 calculation must not claim a V4-to-V5 score migration.")
     else:
         require(isinstance(migration_reference, dict), "score_migration_binding_required", "A migrated calculation requires a bound score-migration record in the V5 result.")
-        migration_path = resolve_referenced_artifact(migration_reference, evaluation_result_path, label="score_migration")
+        migration_path = resolve_referenced_artifact(
+            migration_reference,
+            evaluation_result_path,
+            label="score_migration",
+            allow_legacy_absolute=migration_reference.get("schema_version") == "subject-index-score-migration-v1",
+        )
         migration = validate_migration_record_for_calculation(calculation, calculation_path, migration_path)
         migration_checks = (
             ("schema_version", migration_reference.get("schema_version"), migration.get("schema_version")),
@@ -2770,6 +2834,74 @@ def validate_projection_artifacts(calculation_path: Path, evaluation_result_path
         result_gate_hash = canonical_hash({"critical_gates": evaluation.get("critical_gates", [])})
         require(gate_status.get("critical_gates") == evaluation.get("critical_gates", []), "gate_projection_mismatch", "Web-report critical gates differ from the evaluation result.")
         require(gate_status.get("outcomes_sha256") == result_gate_hash, "gate_projection_mismatch", "Web-report gate-outcome hash differs from the evaluation result.")
+        score_views = report["score_views"]
+        views = score_views.get("views", [])
+        view_ids = [item.get("view_id") for item in views]
+        require(len(view_ids) == len(set(view_ids)), "score_view_mismatch", "Web-report score-view IDs must be unique.")
+        primary_id = score_views.get("primary_view_id")
+        primary_matches = [item for item in views if item.get("view_id") == primary_id]
+        require(len(primary_matches) == 1, "score_view_mismatch", "Web-report primary_view_id must identify exactly one score view.")
+        primary_view = primary_matches[0]
+        require(primary_view.get("view_kind") == "observed", "score_view_mismatch", "The primary score view must be the observed result.")
+        require(all(item is primary_view or item.get("view_kind") == "counterfactual" for item in views), "score_view_mismatch", "Every non-primary score view must be an explicit counterfactual.")
+        require(primary_view.get("score") == calculation.get("total_score"), "score_view_mismatch", "The primary score view total differs from the canonical calculation.")
+        primary_calculation_reference = primary_view.get("calculation")
+        primary_calculation_path = resolve_referenced_artifact(primary_calculation_reference, web_report_path, label="score_views.primary.calculation")
+        require_same_artifact(primary_calculation_path, calculation_path, label="The primary score-view calculation")
+        require(primary_calculation_reference.get("calculation_sha256") == calculation.get("calculation_sha256"), "score_view_mismatch", "The primary score view canonical calculation hash differs.")
+        for index, view in enumerate(views):
+            view_calculation_reference = view.get("calculation")
+            view_calculation_path = resolve_referenced_artifact(view_calculation_reference, web_report_path, label=f"score_views.views[{index}].calculation")
+            view_calculation = load_json(view_calculation_path, f"Score-view calculation[{index}]")
+            validate_schema_document(view_calculation, "dimension-calculations.schema.json", f"Score-view calculation[{index}]")
+            require(view_calculation.get("calculation_sha256") == canonical_hash(view_calculation, "calculation_sha256"), "score_view_mismatch", f"Score-view calculation[{index}] canonical hash does not reconstruct.")
+            require(view_calculation_reference.get("calculation_sha256") == view_calculation.get("calculation_sha256"), "score_view_mismatch", f"Score-view calculation[{index}] canonical hash differs from its reference.")
+            require(view.get("score") == view_calculation.get("total_score"), "score_view_mismatch", f"Score-view calculation[{index}] total differs from the displayed view.")
+            require(view_calculation.get("evaluation_id") == calculation.get("evaluation_id"), "score_view_mismatch", f"Score-view calculation[{index}] belongs to another evaluation.")
+            for field in ("candidate_sha256", "source_sha256", "benchmark_sha256", "policy_sha256", "page_map_sha256", "chunk_manifest_sha256"):
+                require(view_calculation.get("evidence_identity", {}).get(field) == evidence_identity[field], "score_view_mismatch", f"Score-view calculation[{index}] evidence_identity.{field} differs from the canonical view.")
+            for provenance_index, provenance in enumerate(view.get("provenance_artifacts", [])):
+                provenance_path = resolve_referenced_artifact(provenance, web_report_path, label=f"score_views.views[{index}].provenance_artifacts[{provenance_index}]")
+                require(provenance.get("sha256") == sha256_file(provenance_path), "score_view_mismatch", "A score-view provenance artifact hash differs from its file.")
+
+        migration_comparison = report["migration_comparison"]
+        if migration_context is None:
+            require(migration_comparison.get("status") == "not_applicable", "migration_projection_mismatch", "A native V5 web report must mark migration comparison not applicable.")
+        else:
+            require(isinstance(migration, dict) and migration_path is not None, "migration_projection_mismatch", "Migrated web validation requires the bound migration record.")
+            require(migration_comparison.get("status") == "v4_to_v5", "migration_projection_mismatch", "A migrated V5 web report must expose its V4-to-V5 comparison.")
+            comparison_reference = migration_comparison.get("migration_record")
+            comparison_path = resolve_referenced_artifact(comparison_reference, web_report_path, label="migration_comparison.migration_record")
+            require_same_artifact(comparison_path, migration_path, label="The web migration-comparison record")
+            expected_gate_comparison = {
+                "previous_outcomes_sha256": migration["gate_preservation"]["historical_gate_outcomes_sha256"],
+                "migrated_outcomes_sha256": result_gate_hash,
+                "previous_outcomes": json_compatible(migration["gate_preservation"]["historical_outcomes"]),
+                "migrated_outcomes": json_compatible(evaluation.get("critical_gates", [])),
+                "outcomes_equal": True,
+            }
+            comparison_checks = (
+                ("migration_record.schema_version", comparison_reference.get("schema_version"), migration.get("schema_version")),
+                ("migration_record.migration_sha256", comparison_reference.get("migration_sha256"), migration.get("migration_sha256")),
+                ("methodology_commit", migration_comparison.get("methodology_commit"), migration.get("methodology", {}).get("commit_sha")),
+                ("previous_total", migration_comparison.get("previous_total"), migration.get("from", {}).get("total_score")),
+                ("migrated_total", migration_comparison.get("migrated_total"), migration.get("to", {}).get("total_score")),
+                ("dimension_comparison", migration_comparison.get("dimension_comparison"), migration.get("dimension_comparison")),
+                ("gate_comparison", migration_comparison.get("gate_comparison"), expected_gate_comparison),
+            )
+            for field, actual, expected in comparison_checks:
+                require(actual == expected, "migration_projection_mismatch", f"Web-report migration comparison {field} differs from the migration record.", {"expected": expected, "actual": actual})
+            adjustment = migration.get("representation_adjustment", {})
+            expected_adjustment_status = "separate_evidentiary_correction" if adjustment.get("status") == "separate_evidentiary_correction" else "none"
+            require(score_views.get("adjustment_status") == expected_adjustment_status, "score_view_mismatch", "Web-report score-view adjustment status differs from the migration record.")
+            if adjustment.get("status") == "separate_evidentiary_correction":
+                required_hashes = {item["sha256"] for item in adjustment.get("provenance_artifacts", [])}
+                counterfactual_hashes = {
+                    artifact["sha256"]
+                    for view in views if view.get("view_kind") == "counterfactual"
+                    for artifact in view.get("provenance_artifacts", [])
+                }
+                require(required_hashes <= counterfactual_hashes, "score_view_mismatch", "Counterfactual score views do not expose every representation-adjustment provenance artifact.", {"missing_sha256": sorted(required_hashes - counterfactual_hashes)})
         web_dimensions = exact_dimension_map(report.get("scorecard"), "web-report scorecard")
         web_projection = {
             "rating": "final_rating",
@@ -2806,13 +2938,123 @@ def validate_projection_artifacts(calculation_path: Path, evaluation_result_path
     }
 
 
+def migration_validation_receipt(
+    calculation_path: Path,
+    evaluation_result_path: Path,
+    web_report_path: Path,
+    output_path: Path,
+    *,
+    methodology_commit: str,
+    validation_timestamp: str,
+) -> dict[str, Any]:
+    calculation_path = calculation_path.resolve()
+    evaluation_result_path = evaluation_result_path.resolve()
+    web_report_path = web_report_path.resolve()
+    output_path = output_path.resolve()
+    require_methodology_commit(methodology_commit)
+    require_utc_timestamp(validation_timestamp, label="validation_timestamp")
+    calculation = load_json(calculation_path, "V5 dimension calculation")
+    evaluation = load_json(evaluation_result_path, "V5 evaluation result")
+    report = load_json(web_report_path, "V5 web report")
+    require(isinstance(calculation.get("migration_context"), dict), "migration_validation_requires_migration", "A migration-validation receipt requires a score-only migration calculation.")
+    migration_path = resolve_referenced_artifact(evaluation.get("score_migration"), evaluation_result_path, label="score_migration")
+    migration = validate_migration_record_for_calculation(calculation, calculation_path, migration_path)
+    require(migration.get("schema_version") == MIGRATION_SCHEMA, "migration_validation_requires_v2", "A canonical migration-validation receipt requires a V2 migration record.")
+    require(migration.get("methodology", {}).get("commit_sha") == methodology_commit, "migration_validation_methodology_mismatch", "Validation methodology commit differs from the migration record.")
+    historical_path = resolve_stored_artifact_path(migration["from"]["historical_result_path"], migration_path, label="score_migration.from.historical_result_path")
+    historical = load_json(historical_path, "Historical V4 evaluation result")
+    historical_gates = json_compatible(historical.get("critical_gates", []))
+    migrated_gates = json_compatible(evaluation.get("critical_gates", []))
+    historical_gate_hash = canonical_hash({"critical_gates": historical.get("critical_gates", [])})
+    migrated_gate_hash = canonical_hash({"critical_gates": evaluation.get("critical_gates", [])})
+    require(historical_gate_hash == migrated_gate_hash and historical_gates == migrated_gates, "gate_preservation_mismatch", "Migration-validation receipt requires byte-identical canonical gate outcomes.")
+    protected_paths = {calculation_path, evaluation_result_path, web_report_path, migration_path, historical_path}
+    protected_paths.update(
+        resolve_stored_artifact_path(lineage["path"], migration_path, label=f"score_migration.input_lineage.{lineage['role']}.path")
+        for lineage in migration.get("input_lineage", [])
+    )
+    item_path = resolve_referenced_artifact(evaluation["item_assessments"], evaluation_result_path, label="item_assessments")
+    protected_paths.add(item_path)
+    item_assessments = load_json(item_path, "Diagnostic item assessments")
+    protected_paths.add(resolve_referenced_artifact(item_assessments["item_inventory_artifact"], item_path, label="item_inventory_artifact"))
+    for view_index, view in enumerate(report["score_views"]["views"]):
+        protected_paths.add(resolve_referenced_artifact(view["calculation"], web_report_path, label=f"score_views.views[{view_index}].calculation"))
+        protected_paths.update(
+            resolve_referenced_artifact(provenance, web_report_path, label=f"score_views.views[{view_index}].provenance_artifacts[{provenance_index}]")
+            for provenance_index, provenance in enumerate(view["provenance_artifacts"])
+        )
+    require(not aliases_existing_file(output_path, protected_paths), "output_aliases_frozen_input", "Migration-validation receipt must not overwrite or alias a bound artifact.")
+
+    def artifact(path: Path, schema_version: str, *, canonical_sha256: str | None = None) -> dict[str, Any]:
+        record = {
+            "schema_version": schema_version,
+            "path": portable_relative_reference(path, output_path, label=f"validation.artifacts.{schema_version}.path"),
+            "sha256": sha256_file(path),
+        }
+        if canonical_sha256 is not None:
+            record["canonical_sha256"] = canonical_sha256
+        return record
+
+    receipt = {
+        "schema_version": MIGRATION_VALIDATION_SCHEMA,
+        "validation_timestamp": validation_timestamp,
+        "tool": {"name": TOOL_NAME, "version": TOOL_VERSION},
+        "methodology": {"repository": METHODOLOGY_REPOSITORY, "commit_sha": methodology_commit},
+        "evaluation_id": calculation["evaluation_id"],
+        "artifacts": {
+            "historical_result": artifact(historical_path, historical["schema_version"]),
+            "dimension_calculations": artifact(calculation_path, calculation["schema_version"], canonical_sha256=calculation["calculation_sha256"]),
+            "migration_record": artifact(migration_path, migration["schema_version"], canonical_sha256=migration["migration_sha256"]),
+            "evaluation_result": artifact(evaluation_result_path, evaluation["schema_version"]),
+            "web_report": artifact(web_report_path, report["schema_version"]),
+        },
+        "totals": json_compatible({
+            "previous": migration["from"]["total_score"],
+            "migrated": migration["to"]["total_score"],
+            "delta": migration["total_delta"],
+        }),
+        "dimension_comparison": json_compatible(migration["dimension_comparison"]),
+        "gate_comparison": {
+            "historical_outcomes_sha256": historical_gate_hash,
+            "migrated_outcomes_sha256": migrated_gate_hash,
+            "historical_outcomes": historical_gates,
+            "migrated_outcomes": migrated_gates,
+            "outcomes_equal": True,
+        },
+        "score_views": json_compatible(report["score_views"]),
+    }
+    receipt["validation_sha256"] = canonical_hash(receipt, "validation_sha256")
+    validate_schema_document(receipt, "score-migration-validation.schema.json", "Migration-validation receipt")
+    write_json(output_path, receipt)
+    return receipt
+
+
 def command_validate_projections(args: argparse.Namespace) -> None:
     try:
-        emit(validate_projection_artifacts(
+        result = validate_projection_artifacts(
             Path(args.calculation),
             Path(args.evaluation_result),
             Path(args.web_report) if args.web_report else None,
-        ))
+        )
+        if args.output:
+            require(args.web_report, "migration_validation_requires_web_report", "Writing a migration-validation receipt requires --web-report.")
+            require(args.methodology_commit, "migration_validation_methodology_required", "Writing a migration-validation receipt requires --methodology-commit.")
+            require(args.validation_timestamp, "migration_validation_timestamp_required", "Writing a migration-validation receipt requires --validation-timestamp.")
+            output_path = Path(args.output).resolve()
+            receipt = migration_validation_receipt(
+                Path(args.calculation),
+                Path(args.evaluation_result),
+                Path(args.web_report),
+                output_path,
+                methodology_commit=args.methodology_commit,
+                validation_timestamp=args.validation_timestamp,
+            )
+            result["migration_validation_receipt"] = {
+                "path": str(output_path),
+                "sha256": sha256_file(output_path),
+                "validation_sha256": receipt["validation_sha256"],
+            }
+        emit(result)
     except (OSError, CalculationError) as exc:
         if isinstance(exc, CalculationError):
             error = {"code": exc.code, "message": exc.message, "details": exc.details}
@@ -2881,10 +3123,13 @@ def verify_historical_gate_identity(
     return checks
 
 
-def resolve_stored_artifact_path(stored_path: Any, container_path: Path, *, label: str) -> Path:
-    require(isinstance(stored_path, str) and stored_path, "score_migration_binding_mismatch", f"{label} is required.")
+def resolve_stored_artifact_path(stored_path: Any, container_path: Path, *, label: str, allow_legacy_absolute: bool = False) -> Path:
+    if allow_legacy_absolute:
+        require(isinstance(stored_path, str) and stored_path, "score_migration_binding_mismatch", f"{label} is required.")
+    else:
+        require_portable_relative_path(stored_path, label=label)
     candidate = Path(stored_path)
-    resolved = (candidate if candidate.is_absolute() else container_path.parent / candidate).resolve()
+    resolved = (candidate if allow_legacy_absolute and candidate.is_absolute() else container_path.parent / candidate).resolve()
     require(resolved.is_file(), "score_migration_binding_mismatch", f"{label} does not resolve to a file.", {"resolved": str(resolved)})
     return resolved
 
@@ -2909,7 +3154,13 @@ def validate_migration_record_for_calculation(
     calculation_path = calculation_path.resolve()
     context = calculation.get("migration_context")
     require(isinstance(context, dict), "score_only_migration_required", "A migrated V5 calculation requires a bound migration context.")
-    context_migration_path = resolve_stored_artifact_path(context.get("migration_record_path"), calculation_path, label="migration_context.migration_record_path")
+    legacy_context = context.get("migration_schema_version") in {None, "subject-index-score-migration-v1"}
+    context_migration_path = resolve_stored_artifact_path(
+        context.get("migration_record_path"),
+        calculation_path,
+        label="migration_context.migration_record_path",
+        allow_legacy_absolute=legacy_context,
+    )
     if migration_path is None:
         migration_path = context_migration_path
     else:
@@ -2918,15 +3169,21 @@ def validate_migration_record_for_calculation(
 
     migration = load_json(migration_path, "Score-migration record")
     validate_schema_document(migration, "score-migration.schema.json", "Score-migration record")
+    legacy_migration = migration.get("schema_version") == "subject-index-score-migration-v1"
+    if legacy_migration:
+        require(context.get("migration_schema_version") in {None, migration.get("schema_version")}, "score_migration_binding_mismatch", "Legacy calculation migration-context schema version differs from its V1 migration record.")
+    else:
+        require(context.get("migration_schema_version") == migration.get("schema_version"), "score_migration_binding_mismatch", "A V2 calculation must declare the exact migration schema version in its migration context.")
+        require_portable_relative_path(context.get("migration_record_path"), label="migration_context.migration_record_path")
     require(migration.get("migration_sha256") == canonical_hash(migration, "migration_sha256"), "migration_self_hash_mismatch", "The score-migration canonical hash does not reconstruct.")
-    historical_path = resolve_stored_artifact_path(migration.get("from", {}).get("historical_result_path"), migration_path, label="score_migration.from.historical_result_path")
+    historical_path = resolve_stored_artifact_path(migration.get("from", {}).get("historical_result_path"), migration_path, label="score_migration.from.historical_result_path", allow_legacy_absolute=legacy_migration)
     historical = load_json(historical_path, "Historical V4 evaluation result")
     validate_schema_document(historical, "evaluation-result.schema.json", "Historical V4 evaluation result")
     require(historical.get("provenance", {}).get("rubric_version") == "subject-index-rubric-v4", "not_historical_v4", "The bound historical result is not an explicit V4 result.")
 
     historical_file_sha256 = sha256_file(historical_path)
     historical_gate_sha256 = canonical_hash({"critical_gates": historical.get("critical_gates", [])})
-    recorded_calculation_path = resolve_stored_artifact_path(migration.get("to", {}).get("calculation_path"), migration_path, label="score_migration.to.calculation_path")
+    recorded_calculation_path = resolve_stored_artifact_path(migration.get("to", {}).get("calculation_path"), migration_path, label="score_migration.to.calculation_path", allow_legacy_absolute=legacy_migration)
     require_same_artifact(recorded_calculation_path, calculation_path, label="The score-migration calculation binding")
     checks = (
         ("evaluation_id", migration.get("evaluation_id"), calculation.get("evaluation_id")),
@@ -2945,8 +3202,60 @@ def validate_migration_record_for_calculation(
     for field, actual, expected in checks:
         require(actual == expected, "score_migration_binding_mismatch", f"Score-migration {field} differs from its exact calculation or historical result.", {"expected": expected, "actual": actual})
 
+    if migration.get("schema_version") == MIGRATION_SCHEMA:
+        require_utc_timestamp(migration.get("migration_timestamp"), label="score_migration.migration_timestamp")
+        require_methodology_commit(migration.get("methodology", {}).get("commit_sha"))
+        previous_scorecard = score_snapshots(historical.get("scorecard"), migrated=False)
+        migrated_scorecard = score_snapshots(calculation.get("dimensions"), migrated=True)
+        v2_checks = (
+            ("from.result_schema_version", migration.get("from", {}).get("result_schema_version"), historical.get("schema_version")),
+            ("from.scorecard", migration.get("from", {}).get("scorecard"), previous_scorecard),
+            ("to.calculation_schema_version", migration.get("to", {}).get("calculation_schema_version"), calculation.get("schema_version")),
+            ("to.scorecard", migration.get("to", {}).get("scorecard"), migrated_scorecard),
+            ("dimension_comparison", migration.get("dimension_comparison"), compare_score_snapshots(previous_scorecard, migrated_scorecard)),
+            ("total_delta", migration.get("total_delta"), nullable_delta(calculation.get("total_score"), historical.get("total_score"), Decimal("0.01"))),
+            ("historical_outcomes", migration.get("gate_preservation", {}).get("historical_outcomes"), json_compatible(historical.get("critical_gates", []))),
+            ("preserved_outcomes", migration.get("gate_preservation", {}).get("preserved_outcomes"), json_compatible(historical.get("critical_gates", []))),
+        )
+        for field, actual, expected in v2_checks:
+            require(canonical_json_text(actual) == canonical_json_text(expected), "score_migration_binding_mismatch", f"Score-migration {field} does not reconstruct.", {"expected": expected, "actual": actual})
+        lineage_roles: set[str] = set()
+        lineage_by_role: dict[str, dict[str, Any]] = {}
+        for index, lineage in enumerate(migration.get("input_lineage", [])):
+            role = lineage.get("role")
+            require(isinstance(role, str) and role not in lineage_roles, "score_migration_binding_mismatch", "Score-migration input-lineage roles must be unique.", {"role": role})
+            lineage_roles.add(role)
+            lineage_by_role[role] = lineage
+            path = resolve_stored_artifact_path(lineage.get("path"), migration_path, label=f"score_migration.input_lineage[{index}].path")
+            require(lineage.get("sha256") == sha256_file(path), "score_migration_binding_mismatch", f"Score-migration input_lineage[{index}] hash differs from the bound file.")
+        ledger_roles = {item["role"] for item in migration.get("input_ledgers", [])}
+        representation_roles = {item["role"] for item in migration.get("representation_adjustment", {}).get("provenance_artifacts", [])}
+        expected_lineage_roles = {"historical_v4_result", "dimension_calculation_input", "v5_dimension_calculations", *ledger_roles, *representation_roles}
+        require(lineage_roles == expected_lineage_roles, "score_migration_binding_mismatch", "Score-migration input lineage does not exactly cover every frozen input and derived calculation.", {"missing": sorted(expected_lineage_roles - lineage_roles), "unexpected": sorted(lineage_roles - expected_lineage_roles)})
+        require(lineage_by_role["historical_v4_result"].get("disposition") == "unchanged" and lineage_by_role["historical_v4_result"].get("sha256") == historical_file_sha256, "score_migration_binding_mismatch", "Historical V4 result lineage is not immutable and hash-bound.")
+        require(lineage_by_role["dimension_calculation_input"].get("disposition") == "unchanged", "score_migration_binding_mismatch", "Dimension-calculation input lineage must be recorded as unchanged.")
+        for artifact in migration.get("input_ledgers", []):
+            lineage = lineage_by_role[artifact["role"]]
+            require(lineage.get("disposition") == "unchanged" and lineage.get("sha256") == artifact["sha256"], "score_migration_binding_mismatch", f"Frozen input lineage for {artifact['role']} does not match the migration input ledger.")
+        for artifact in migration.get("representation_adjustment", {}).get("provenance_artifacts", []):
+            lineage = lineage_by_role[artifact["role"]]
+            require(lineage.get("disposition") == "unchanged" and lineage.get("sha256") == artifact["sha256"], "score_migration_binding_mismatch", f"Representation-adjustment lineage for {artifact['role']} does not match its provenance artifact.")
+        calculation_lineage = lineage_by_role["v5_dimension_calculations"]
+        expected_derived_roles = ["historical_v4_result", "dimension_calculation_input", *[item["role"] for item in migration.get("input_ledgers", [])]]
+        require(calculation_lineage.get("disposition") == "deterministically_derived" and calculation_lineage.get("sha256") == sha256_file(calculation_path) and calculation_lineage.get("derived_from_roles") == expected_derived_roles, "score_migration_binding_mismatch", "V5 calculation lineage does not reconstruct from the declared inputs.")
+        for index, artifact in enumerate(migration.get("representation_adjustment", {}).get("provenance_artifacts", [])):
+            path = resolve_stored_artifact_path(artifact.get("path"), migration_path, label=f"score_migration.representation_adjustment.provenance_artifacts[{index}].path")
+            require(artifact.get("sha256") == sha256_file(path), "score_migration_binding_mismatch", "Representation-adjustment provenance hash differs from the bound file.")
+
     if loaded is not None:
         require(calculation.get("input_artifacts") == loaded.get("input_artifacts"), "score_migration_binding_mismatch", "The migrated calculation does not bind the supplied frozen input artifacts.")
+        if migration.get("schema_version") == MIGRATION_SCHEMA:
+            config_lineage_path = resolve_stored_artifact_path(lineage_by_role["dimension_calculation_input"]["path"], migration_path, label="score_migration.input_lineage.dimension_calculation_input.path")
+            require_same_artifact(config_lineage_path, loaded["config_path"], label="The score-migration dimension-calculation input")
+            require(lineage_by_role["dimension_calculation_input"]["sha256"] == sha256_file(loaded["config_path"]), "score_migration_binding_mismatch", "Dimension-calculation input lineage hash differs from the supplied configuration.")
+            for artifact, input_path in zip(loaded["input_artifacts"], loaded["input_paths"], strict=True):
+                lineage_path = resolve_stored_artifact_path(lineage_by_role[artifact["role"]]["path"], migration_path, label=f"score_migration.input_lineage.{artifact['role']}.path")
+                require_same_artifact(lineage_path, input_path, label=f"The score-migration {artifact['role']} input")
         ledger_identity = validate_ledger_set_integrity(loaded)
         expected_identity_checks = verify_historical_gate_identity(historical, ledger_identity, loaded["structure"], loaded.get("supplement"))
         require(migration.get("gate_preservation", {}).get("identity_checks") == expected_identity_checks, "score_migration_binding_mismatch", "The score-migration gate identity checks do not reconstruct from the historical result and frozen ledgers.")
@@ -2955,9 +3264,75 @@ def validate_migration_record_for_calculation(
     return migration
 
 
+def score_snapshots(records: Any, *, migrated: bool) -> list[dict[str, Any]]:
+    mapped = exact_dimension_map(records, "migrated calculation" if migrated else "historical scorecard")
+    snapshots: list[dict[str, Any]] = []
+    for dimension_id in WEIGHTS:
+        record = mapped[dimension_id]
+        rating = record.get("final_rating" if migrated else "rating")
+        points = record.get("awarded_points" if migrated else "points")
+        snapshots.append({
+            "dimension_id": dimension_id,
+            "rating": displayed_number(decimal_value(rating), Decimal("0.0001")) if rating is not None else None,
+            "points": displayed_number(decimal_value(points), Decimal("0.01")) if points is not None else None,
+        })
+    return snapshots
+
+
+def nullable_delta(current: Any, previous: Any, quantum: Decimal) -> int | float | None:
+    if current is None or previous is None:
+        return None
+    return displayed_number(decimal_value(current) - decimal_value(previous), quantum)
+
+
+def compare_score_snapshots(previous: list[dict[str, Any]], migrated: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    previous_by_id = {item["dimension_id"]: item for item in previous}
+    migrated_by_id = {item["dimension_id"]: item for item in migrated}
+    return [
+        {
+            "dimension_id": dimension_id,
+            "previous": previous_by_id[dimension_id],
+            "migrated": migrated_by_id[dimension_id],
+            "rating_delta": nullable_delta(migrated_by_id[dimension_id]["rating"], previous_by_id[dimension_id]["rating"], Decimal("0.0001")),
+            "points_delta": nullable_delta(migrated_by_id[dimension_id]["points"], previous_by_id[dimension_id]["points"], Decimal("0.01")),
+        }
+        for dimension_id in WEIGHTS
+    ]
+
+
+def json_compatible(value: Any) -> Any:
+    return json.loads(canonical_json_text(value))
+
+
+def representation_provenance(paths: Sequence[str], migration_output: Path) -> tuple[dict[str, Any], list[Path]]:
+    if not paths:
+        return {"status": "not_applicable"}, []
+    artifacts: list[dict[str, Any]] = []
+    resolved_paths: list[Path] = []
+    for index, raw_path in enumerate(paths):
+        path = Path(raw_path).resolve()
+        document = load_json(path, f"Representation-adjustment provenance[{index}]")
+        schema_version = document.get("schema_version")
+        require(isinstance(schema_version, str) and schema_version, "invalid_representation_provenance", "Representation-adjustment provenance must declare schema_version.")
+        artifacts.append({
+            "role": f"representation_adjustment_provenance[{index}]",
+            "path": portable_relative_reference(path, migration_output, label=f"representation_adjustment.provenance_artifacts[{index}].path"),
+            "sha256": sha256_file(path),
+            "schema_version": schema_version,
+        })
+        resolved_paths.append(path)
+    return {
+        "status": "separate_evidentiary_correction",
+        "causal_attribution": "not_a_v5_methodology_effect",
+        "provenance_artifacts": artifacts,
+    }, resolved_paths
+
+
 def command_migrate(args: argparse.Namespace) -> None:
     historical_path = Path(args.historical_result).resolve()
     try:
+        methodology_commit = require_methodology_commit(args.methodology_commit)
+        migration_timestamp = require_utc_timestamp(args.migration_timestamp, label="migration_timestamp")
         historical_bytes_before = historical_path.read_bytes()
         historical = load_json(historical_path, "Historical evaluation result")
         validate_schema_document(historical, "evaluation-result.schema.json", "Historical V4 evaluation result")
@@ -2969,10 +3344,13 @@ def command_migrate(args: argparse.Namespace) -> None:
         loaded = load_inputs(config_path)
         calculations_output = Path(args.calculations_output).resolve()
         migration_output = Path(args.migration_record_output).resolve()
-        migration_record_reference = migration_output.name if migration_output.parent == calculations_output.parent else str(migration_output)
+        migration_record_reference = portable_relative_reference(migration_output, calculations_output, label="migration_context.migration_record_path")
+        representation_record, representation_paths = representation_provenance(args.representation_adjustment_provenance or [], migration_output)
+        representation_hashes_before = {path: sha256_file(path) for path in representation_paths}
         calculations = calculate_loaded(loaded, allow_historical_migration=True)
         calculations["migration_context"] = {
             "from_rubric_version": "subject-index-rubric-v4",
+            "migration_schema_version": MIGRATION_SCHEMA,
             "migration_record_path": migration_record_reference,
             "historical_result_sha256": historical_result_sha256,
             "historical_gate_outcomes_sha256": historical_gate_hash,
@@ -2980,7 +3358,7 @@ def command_migrate(args: argparse.Namespace) -> None:
         }
         calculations["calculation_sha256"] = canonical_hash(calculations, "calculation_sha256")
         ledger_identity = validate_ledger_set_integrity(loaded)
-        protected_paths = {historical_path, config_path, *loaded["input_paths"]}
+        protected_paths = {historical_path, config_path, *loaded["input_paths"], *representation_paths}
         require(historical.get("evaluation_id") == calculations["evaluation_id"], "evaluation_identity_mismatch", "The historical result and frozen ledgers belong to different evaluations.")
         gate_identity_checks = verify_historical_gate_identity(historical, ledger_identity, loaded["structure"], loaded.get("supplement"))
         require(not aliases_existing_file(calculations_output, protected_paths) and not aliases_existing_file(migration_output, protected_paths), "output_aliases_frozen_input", "Migration outputs must not overwrite or alias the historical result, input config, or any frozen ledger.")
@@ -3000,27 +3378,86 @@ def command_migrate(args: argparse.Namespace) -> None:
         # Re-resolve every input to prove the migration did not mutate a ledger byte.
         loaded_again = load_inputs(Path(args.input).resolve())
         require(input_hashes_after == {item["path"]: item["sha256"] for item in loaded_again["input_artifacts"]}, "input_ledger_mutated", "An input-ledger hash changed during migration.")
+        require(representation_hashes_before == {path: sha256_file(path) for path in representation_paths}, "representation_provenance_mutated", "A representation-adjustment provenance artifact changed during migration.")
+        previous_scorecard = score_snapshots(historical["scorecard"], migrated=False)
+        migrated_scorecard = score_snapshots(calculations["dimensions"], migrated=True)
+        input_lineage = [{
+            "role": "historical_v4_result",
+            "path": portable_relative_reference(historical_path, migration_output, label="input_lineage.historical_v4_result.path"),
+            "sha256": historical_result_sha256,
+            "disposition": "unchanged",
+        }, {
+            "role": "dimension_calculation_input",
+            "path": portable_relative_reference(config_path, migration_output, label="input_lineage.dimension_calculation_input.path"),
+            "sha256": hashlib.sha256(config_bytes_before).hexdigest(),
+            "disposition": "unchanged",
+        }]
+        input_lineage.extend({
+            "role": artifact["role"],
+            "path": portable_relative_reference(path, migration_output, label=f"input_lineage.{artifact['role']}.path"),
+            "sha256": artifact["sha256"],
+            "disposition": "unchanged",
+        } for artifact, path in zip(loaded["input_artifacts"], loaded["input_paths"], strict=True))
+        input_lineage.extend({
+            "role": artifact["role"],
+            "path": artifact["path"],
+            "sha256": artifact["sha256"],
+            "disposition": "unchanged",
+        } for artifact in representation_record.get("provenance_artifacts", []))
+        input_lineage.append({
+            "role": "v5_dimension_calculations",
+            "path": portable_relative_reference(calculations_output, migration_output, label="input_lineage.v5_dimension_calculations.path"),
+            "sha256": sha256_file(calculations_output),
+            "disposition": "deterministically_derived",
+            "derived_from_roles": ["historical_v4_result", "dimension_calculation_input", *[artifact["role"] for artifact in loaded["input_artifacts"]]],
+        })
+        historical_total = displayed_number(decimal_value(historical["total_score"])) if historical.get("total_score") is not None else None
         migration = {
             "schema_version": MIGRATION_SCHEMA,
             "evaluation_id": calculations["evaluation_id"],
-            "from": {"rubric_version": "subject-index-rubric-v4", "historical_result_path": str(historical_path), "historical_result_sha256": historical_result_sha256, "total_score": displayed_number(decimal_value(historical["total_score"])) if historical.get("total_score") is not None else None},
+            "migration_timestamp": migration_timestamp,
+            "tool": {"name": TOOL_NAME, "version": TOOL_VERSION},
+            "methodology": {
+                "repository": METHODOLOGY_REPOSITORY,
+                "commit_sha": methodology_commit,
+                "previous_rubric_version": "subject-index-rubric-v4",
+                "migrated_rubric_version": RUBRIC_VERSION,
+                "calculation_profile": CALCULATION_PROFILE,
+            },
+            "from": {
+                "rubric_version": "subject-index-rubric-v4",
+                "result_schema_version": historical["schema_version"],
+                "historical_result_path": portable_relative_reference(historical_path, migration_output, label="from.historical_result_path"),
+                "historical_result_sha256": historical_result_sha256,
+                "total_score": historical_total,
+                "scorecard": previous_scorecard,
+            },
             "to": {
                 "rubric_version": RUBRIC_VERSION,
                 "calculation_profile": CALCULATION_PROFILE,
-                "calculation_path": str(calculations_output),
+                "calculation_schema_version": calculations["schema_version"],
+                "target_result_schema_version": "subject-index-evaluation-result-v6",
+                "calculation_path": portable_relative_reference(calculations_output, migration_output, label="to.calculation_path"),
                 "calculation_file_sha256": sha256_file(calculations_output),
                 "calculation_canonical_sha256": calculations["calculation_sha256"],
                 "total_score": calculations["total_score"],
+                "scorecard": migrated_scorecard,
             },
+            "total_delta": nullable_delta(calculations["total_score"], historical_total, Decimal("0.01")),
+            "dimension_comparison": compare_score_snapshots(previous_scorecard, migrated_scorecard),
             "input_ledgers": loaded["input_artifacts"],
+            "input_lineage": input_lineage,
             "input_ledgers_mutated": False,
             "historical_result_mutated": False,
+            "representation_adjustment": representation_record,
             "gate_preservation": {
                 "policy_or_evidence_changed": False,
                 "identity_checks": gate_identity_checks,
                 "frozen_gate_evidence_inputs_sha256": canonical_hash(loaded["input_artifacts"]),
                 "historical_gate_outcomes_sha256": historical_gate_hash,
                 "preserved_gate_outcomes_sha256": historical_gate_hash,
+                "historical_outcomes": json_compatible(historical.get("critical_gates", [])),
+                "preserved_outcomes": json_compatible(historical.get("critical_gates", [])),
                 "outcomes_equal": True,
                 "outcomes_action": "preserve_identically",
             },
@@ -3030,7 +3467,7 @@ def command_migrate(args: argparse.Namespace) -> None:
         validate_schema_document(migration, "score-migration.schema.json", "Generated score-migration record")
         write_json(migration_output, migration)
         validate_migration_record_for_calculation(calculations, calculations_output, migration_output, loaded)
-        emit({"command": "score-only-migration", "ok": True, "evaluation_id": calculations["evaluation_id"], "v5_total_score": calculations["total_score"], "artifacts_written": [str(calculations_output), str(migration_output)], "input_ledgers_mutated": False, "historical_result_mutated": False, "gate_outcomes_action": "preserve_identically"})
+        emit({"command": "score-only-migration", "ok": True, "evaluation_id": calculations["evaluation_id"], "v5_total_score": calculations["total_score"], "migration_schema_version": MIGRATION_SCHEMA, "methodology_commit": methodology_commit, "artifacts_written": [str(calculations_output), str(migration_output)], "input_ledgers_mutated": False, "historical_result_mutated": False, "gate_outcomes_action": "preserve_identically"})
     except (OSError, CalculationError) as exc:
         if isinstance(exc, CalculationError):
             error = {"code": exc.code, "message": exc.message, "details": exc.details}
@@ -3054,12 +3491,18 @@ def build_parser() -> argparse.ArgumentParser:
     projections.add_argument("--calculation", required=True)
     projections.add_argument("--evaluation-result", required=True)
     projections.add_argument("--web-report")
+    projections.add_argument("--output", help="Write a canonical post-projection migration-validation receipt.")
+    projections.add_argument("--methodology-commit", help="Exact merged methodology commit; required with --output.")
+    projections.add_argument("--validation-timestamp", help="RFC 3339 UTC timestamp ending in Z; required with --output.")
     projections.set_defaults(func=command_validate_projections)
     migrate = subparsers.add_parser("score-only-migration", help="Preserve V4 history and produce a distinct V5 calculation and migration record.")
     migrate.add_argument("--input", required=True)
     migrate.add_argument("--historical-result", required=True)
     migrate.add_argument("--calculations-output", required=True)
     migrate.add_argument("--migration-record-output", required=True)
+    migrate.add_argument("--methodology-commit", required=True, help="Exact merged methodology commit used for the migration.")
+    migrate.add_argument("--migration-timestamp", required=True, help="RFC 3339 UTC timestamp ending in Z.")
+    migrate.add_argument("--representation-adjustment-provenance", action="append", default=[], help="Existing provenance artifact for a separate evidentiary correction; may be repeated.")
     migrate.set_defaults(func=command_migrate)
     return parser
 

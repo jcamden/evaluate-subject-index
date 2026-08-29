@@ -36,11 +36,18 @@
       "required": ["from_rubric_version", "migration_record_path", "historical_result_sha256", "historical_gate_outcomes_sha256", "gate_outcomes_action"],
       "properties": {
         "from_rubric_version": {"const": "subject-index-rubric-v4"},
+        "migration_schema_version": {"enum": ["subject-index-score-migration-v1", "subject-index-score-migration-v2"]},
         "migration_record_path": {"type": "string", "minLength": 1},
         "historical_result_sha256": {"$ref": "#/$defs/sha256"},
         "historical_gate_outcomes_sha256": {"$ref": "#/$defs/sha256"},
         "gate_outcomes_action": {"const": "preserve_identically"}
       },
+      "allOf": [
+        {
+          "if": {"properties": {"migration_schema_version": {"const": "subject-index-score-migration-v2"}}, "required": ["migration_schema_version"]},
+          "then": {"properties": {"migration_record_path": {"$ref": "score-migration.schema.json#/$defs/portablePath"}}}
+        }
+      ],
       "additionalProperties": false
     },
     "input_artifacts": {"type": "array", "minItems": 3, "items": {"$ref": "#/$defs/inputArtifact"}, "uniqueItems": true},
@@ -127,9 +134,11 @@
     },
     "component": {
       "type": "object",
-      "required": ["component_id", "normalized_value", "weight", "effective_weight", "weight_renormalized"],
+      "required": ["component_id", "raw_numerator", "raw_denominator", "normalized_value", "weight", "effective_weight", "weight_renormalized"],
       "properties": {
         "component_id": {"type": "string", "minLength": 1},
+        "raw_numerator": {"$ref": "#/$defs/decimal"},
+        "raw_denominator": {"$ref": "#/$defs/decimal"},
         "normalized_value": {"$ref": "#/$defs/decimal"},
         "weight": {"type": "string", "minLength": 1},
         "effective_weight": {"type": "string", "minLength": 1},

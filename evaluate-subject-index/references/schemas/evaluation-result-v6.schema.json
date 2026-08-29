@@ -83,11 +83,17 @@
       "type": "object",
       "required": ["schema_version", "artifact_path", "sha256", "migration_sha256"],
       "properties": {
-        "schema_version": {"const": "subject-index-score-migration-v1"},
+        "schema_version": {"enum": ["subject-index-score-migration-v1", "subject-index-score-migration-v2"]},
         "artifact_path": {"type": "string", "minLength": 1},
         "sha256": {"$ref": "#/$defs/sha256"},
         "migration_sha256": {"$ref": "#/$defs/sha256"}
       },
+      "allOf": [
+        {
+          "if": {"properties": {"schema_version": {"const": "subject-index-score-migration-v2"}}, "required": ["schema_version"]},
+          "then": {"properties": {"artifact_path": {"$ref": "score-migration.schema.json#/$defs/portablePath"}}}
+        }
+      ],
       "additionalProperties": false
     },
     "critical_gates": {"type": "array", "items": {"type": "object"}},

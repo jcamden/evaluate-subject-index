@@ -2,52 +2,79 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "score-migration.schema.json",
   "title": "Versioned V4-to-V5 score-only migration record",
-  "type": "object",
-  "required": ["schema_version", "evaluation_id", "from", "to", "input_ledgers", "input_ledgers_mutated", "historical_result_mutated", "gate_preservation", "comparability", "migration_sha256"],
-  "properties": {
-    "schema_version": {"const": "subject-index-score-migration-v1"},
-    "evaluation_id": {"type": "string", "minLength": 1},
-    "from": {"type": "object", "required": ["rubric_version", "historical_result_path", "historical_result_sha256", "total_score"], "properties": {"rubric_version": {"const": "subject-index-rubric-v4"}, "historical_result_path": {"type": "string"}, "historical_result_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "total_score": {"type": ["number", "null"]}}, "additionalProperties": false},
-    "to": {"type": "object", "required": ["rubric_version", "calculation_profile", "calculation_path", "calculation_file_sha256", "calculation_canonical_sha256", "total_score"], "properties": {"rubric_version": {"const": "subject-index-rubric-v5"}, "calculation_profile": {"const": "subject-index-dimension-calculation-v1"}, "calculation_path": {"type": "string"}, "calculation_file_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "calculation_canonical_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "total_score": {"type": ["number", "null"]}}, "additionalProperties": false},
-    "input_ledgers": {"type": "array", "minItems": 3, "items": {"$ref": "dimension-calculations.schema.json#/$defs/inputArtifact"}, "uniqueItems": true},
-    "input_ledgers_mutated": {"const": false},
-    "historical_result_mutated": {"const": false},
-    "gate_preservation": {
+  "oneOf": [
+    {"$ref": "#/$defs/v1"},
+    {"$ref": "#/$defs/v2"}
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "gitCommit": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+    "portablePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!\\\\)(?![A-Za-z]:[\\\\/])[^\\\\]+$"
+    },
+    "inputArtifact": {
       "type": "object",
-      "required": ["policy_or_evidence_changed", "identity_checks", "frozen_gate_evidence_inputs_sha256", "historical_gate_outcomes_sha256", "preserved_gate_outcomes_sha256", "outcomes_equal", "outcomes_action"],
+      "required": ["role", "path", "sha256", "schema_version"],
       "properties": {
-        "policy_or_evidence_changed": {"const": false},
-        "identity_checks": {
-          "type": "object",
-          "required": ["candidate_sha256", "source_sha256", "benchmark_sha256", "policy_sha256", "page_map_sha256", "chunk_manifest_sha256", "normalized_candidate_file_sha256", "item_inventory_file_sha256", "structure_audit_file_sha256", "locator_audit_set_sha256", "missing_access_audit_set_sha256", "audit_mode"],
-          "properties": {
-            "candidate_sha256": {"$ref": "#/$defs/identityCheck"},
-            "source_sha256": {"$ref": "#/$defs/identityCheck"},
-            "benchmark_sha256": {"$ref": "#/$defs/identityCheck"},
-            "policy_sha256": {"$ref": "#/$defs/identityCheck"},
-            "page_map_sha256": {"$ref": "#/$defs/identityCheck"},
-            "chunk_manifest_sha256": {"$ref": "#/$defs/identityCheck"},
-            "normalized_candidate_file_sha256": {"$ref": "#/$defs/identityCheck"},
-            "item_inventory_file_sha256": {"$ref": "#/$defs/identityCheck"},
-            "structure_audit_file_sha256": {"$ref": "#/$defs/identityCheck"},
-            "locator_audit_set_sha256": {"$ref": "#/$defs/identityCheck"},
-            "missing_access_audit_set_sha256": {"$ref": "#/$defs/identityCheck"},
-            "audit_mode": {"$ref": "#/$defs/identityCheck"}
-          },
-          "additionalProperties": false
-        },
-        "frozen_gate_evidence_inputs_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-        "historical_gate_outcomes_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-        "preserved_gate_outcomes_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-        "outcomes_equal": {"const": true},
-        "outcomes_action": {"const": "preserve_identically"}
+        "role": {"type": "string", "minLength": 1},
+        "path": {"$ref": "#/$defs/portablePath"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "schema_version": {"type": "string", "minLength": 1}
       },
       "additionalProperties": false
     },
-    "comparability": {"const": "v4_and_v5_totals_are_not_directly_comparable"},
-    "migration_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
-  },
-  "$defs": {
+    "scoreSnapshot": {
+      "type": "object",
+      "required": ["dimension_id", "rating", "points"],
+      "properties": {
+        "dimension_id": {"enum": ["meaningful_coverage", "editorial_selectivity", "conceptual_stance_fidelity", "page_reference_reliability", "findability_navigation", "mechanics_consistency"]},
+        "rating": {"type": ["number", "null"], "minimum": 0, "maximum": 5},
+        "points": {"type": ["number", "null"], "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "scoreSnapshotArray": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {"$ref": "#/$defs/scoreSnapshot"},
+      "allOf": [
+        {"contains": {"properties": {"dimension_id": {"const": "meaningful_coverage"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "editorial_selectivity"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "conceptual_stance_fidelity"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "page_reference_reliability"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "findability_navigation"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "mechanics_consistency"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1}
+      ]
+    },
+    "dimensionComparison": {
+      "type": "object",
+      "required": ["dimension_id", "previous", "migrated", "rating_delta", "points_delta"],
+      "properties": {
+        "dimension_id": {"enum": ["meaningful_coverage", "editorial_selectivity", "conceptual_stance_fidelity", "page_reference_reliability", "findability_navigation", "mechanics_consistency"]},
+        "previous": {"$ref": "#/$defs/scoreSnapshot"},
+        "migrated": {"$ref": "#/$defs/scoreSnapshot"},
+        "rating_delta": {"type": ["number", "null"]},
+        "points_delta": {"type": ["number", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "dimensionComparisonArray": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {"$ref": "#/$defs/dimensionComparison"},
+      "allOf": [
+        {"contains": {"properties": {"dimension_id": {"const": "meaningful_coverage"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "editorial_selectivity"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "conceptual_stance_fidelity"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "page_reference_reliability"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "findability_navigation"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "mechanics_consistency"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1}
+      ]
+    },
     "identityCheck": {
       "type": "object",
       "required": ["historical", "current", "equal", "evidence_equivalent", "comparison_basis"],
@@ -63,7 +90,144 @@
         {"if": {"properties": {"comparison_basis": {"const": "hash_bound_migration_supplement_reconciliation"}}}, "then": {"properties": {"equal": {"const": false}}}}
       ],
       "additionalProperties": false
+    },
+    "identityChecks": {
+      "type": "object",
+      "required": ["candidate_sha256", "source_sha256", "benchmark_sha256", "policy_sha256", "page_map_sha256", "chunk_manifest_sha256", "normalized_candidate_file_sha256", "item_inventory_file_sha256", "structure_audit_file_sha256", "locator_audit_set_sha256", "missing_access_audit_set_sha256", "audit_mode"],
+      "properties": {
+        "candidate_sha256": {"$ref": "#/$defs/identityCheck"},
+        "source_sha256": {"$ref": "#/$defs/identityCheck"},
+        "benchmark_sha256": {"$ref": "#/$defs/identityCheck"},
+        "policy_sha256": {"$ref": "#/$defs/identityCheck"},
+        "page_map_sha256": {"$ref": "#/$defs/identityCheck"},
+        "chunk_manifest_sha256": {"$ref": "#/$defs/identityCheck"},
+        "normalized_candidate_file_sha256": {"$ref": "#/$defs/identityCheck"},
+        "item_inventory_file_sha256": {"$ref": "#/$defs/identityCheck"},
+        "structure_audit_file_sha256": {"$ref": "#/$defs/identityCheck"},
+        "locator_audit_set_sha256": {"$ref": "#/$defs/identityCheck"},
+        "missing_access_audit_set_sha256": {"$ref": "#/$defs/identityCheck"},
+        "audit_mode": {"$ref": "#/$defs/identityCheck"}
+      },
+      "additionalProperties": false
+    },
+    "lineage": {
+      "type": "object",
+      "required": ["role", "path", "sha256", "disposition"],
+      "properties": {
+        "role": {"type": "string", "minLength": 1},
+        "path": {"$ref": "#/$defs/portablePath"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "disposition": {"enum": ["unchanged", "copied", "deterministically_derived"]},
+        "derived_from_roles": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      },
+      "allOf": [
+        {"if": {"properties": {"disposition": {"const": "deterministically_derived"}}}, "then": {"required": ["derived_from_roles"]}}
+      ],
+      "additionalProperties": false
+    },
+    "v1": {
+      "type": "object",
+      "required": ["schema_version", "evaluation_id", "from", "to", "input_ledgers", "input_ledgers_mutated", "historical_result_mutated", "gate_preservation", "comparability", "migration_sha256"],
+      "properties": {
+        "schema_version": {"const": "subject-index-score-migration-v1"},
+        "evaluation_id": {"type": "string", "minLength": 1},
+        "from": {"type": "object", "required": ["rubric_version", "historical_result_path", "historical_result_sha256", "total_score"], "properties": {"rubric_version": {"const": "subject-index-rubric-v4"}, "historical_result_path": {"type": "string"}, "historical_result_sha256": {"$ref": "#/$defs/sha256"}, "total_score": {"type": ["number", "null"]}}, "additionalProperties": false},
+        "to": {"type": "object", "required": ["rubric_version", "calculation_profile", "calculation_path", "calculation_file_sha256", "calculation_canonical_sha256", "total_score"], "properties": {"rubric_version": {"const": "subject-index-rubric-v5"}, "calculation_profile": {"const": "subject-index-dimension-calculation-v1"}, "calculation_path": {"type": "string"}, "calculation_file_sha256": {"$ref": "#/$defs/sha256"}, "calculation_canonical_sha256": {"$ref": "#/$defs/sha256"}, "total_score": {"type": ["number", "null"]}}, "additionalProperties": false},
+        "input_ledgers": {"type": "array", "minItems": 3, "items": {"$ref": "dimension-calculations.schema.json#/$defs/inputArtifact"}, "uniqueItems": true},
+        "input_ledgers_mutated": {"const": false},
+        "historical_result_mutated": {"const": false},
+        "gate_preservation": {"type": "object", "required": ["policy_or_evidence_changed", "identity_checks", "frozen_gate_evidence_inputs_sha256", "historical_gate_outcomes_sha256", "preserved_gate_outcomes_sha256", "outcomes_equal", "outcomes_action"], "properties": {"policy_or_evidence_changed": {"const": false}, "identity_checks": {"$ref": "#/$defs/identityChecks"}, "frozen_gate_evidence_inputs_sha256": {"$ref": "#/$defs/sha256"}, "historical_gate_outcomes_sha256": {"$ref": "#/$defs/sha256"}, "preserved_gate_outcomes_sha256": {"$ref": "#/$defs/sha256"}, "outcomes_equal": {"const": true}, "outcomes_action": {"const": "preserve_identically"}}, "additionalProperties": false},
+        "comparability": {"const": "v4_and_v5_totals_are_not_directly_comparable"},
+        "migration_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "v2": {
+      "type": "object",
+      "required": ["schema_version", "evaluation_id", "migration_timestamp", "tool", "methodology", "from", "to", "total_delta", "dimension_comparison", "input_ledgers", "input_lineage", "input_ledgers_mutated", "historical_result_mutated", "representation_adjustment", "gate_preservation", "comparability", "migration_sha256"],
+      "properties": {
+        "schema_version": {"const": "subject-index-score-migration-v2"},
+        "evaluation_id": {"type": "string", "minLength": 1},
+        "migration_timestamp": {"type": "string", "format": "date-time", "pattern": "Z$"},
+        "tool": {
+          "type": "object",
+          "required": ["name", "version"],
+          "properties": {"name": {"const": "dimension_score_cli.py"}, "version": {"const": "dimension-score-cli-v5.1.0"}},
+          "additionalProperties": false
+        },
+        "methodology": {
+          "type": "object",
+          "required": ["repository", "commit_sha", "previous_rubric_version", "migrated_rubric_version", "calculation_profile"],
+          "properties": {
+            "repository": {"const": "https://github.com/jcamden/evaluate-subject-index"},
+            "commit_sha": {"$ref": "#/$defs/gitCommit"},
+            "previous_rubric_version": {"const": "subject-index-rubric-v4"},
+            "migrated_rubric_version": {"const": "subject-index-rubric-v5"},
+            "calculation_profile": {"const": "subject-index-dimension-calculation-v1"}
+          },
+          "additionalProperties": false
+        },
+        "from": {
+          "type": "object",
+          "required": ["rubric_version", "result_schema_version", "historical_result_path", "historical_result_sha256", "total_score", "scorecard"],
+          "properties": {
+            "rubric_version": {"const": "subject-index-rubric-v4"},
+            "result_schema_version": {"type": "string", "minLength": 1},
+            "historical_result_path": {"$ref": "#/$defs/portablePath"},
+            "historical_result_sha256": {"$ref": "#/$defs/sha256"},
+            "total_score": {"type": ["number", "null"]},
+            "scorecard": {"$ref": "#/$defs/scoreSnapshotArray"}
+          },
+          "additionalProperties": false
+        },
+        "to": {
+          "type": "object",
+          "required": ["rubric_version", "calculation_profile", "calculation_schema_version", "target_result_schema_version", "calculation_path", "calculation_file_sha256", "calculation_canonical_sha256", "total_score", "scorecard"],
+          "properties": {
+            "rubric_version": {"const": "subject-index-rubric-v5"},
+            "calculation_profile": {"const": "subject-index-dimension-calculation-v1"},
+            "calculation_schema_version": {"const": "subject-index-dimension-calculations-v1"},
+            "target_result_schema_version": {"const": "subject-index-evaluation-result-v6"},
+            "calculation_path": {"$ref": "#/$defs/portablePath"},
+            "calculation_file_sha256": {"$ref": "#/$defs/sha256"},
+            "calculation_canonical_sha256": {"$ref": "#/$defs/sha256"},
+            "total_score": {"type": ["number", "null"]},
+            "scorecard": {"$ref": "#/$defs/scoreSnapshotArray"}
+          },
+          "additionalProperties": false
+        },
+        "total_delta": {"type": ["number", "null"]},
+        "dimension_comparison": {"$ref": "#/$defs/dimensionComparisonArray"},
+        "input_ledgers": {"type": "array", "minItems": 3, "items": {"$ref": "#/$defs/inputArtifact"}, "uniqueItems": true},
+        "input_lineage": {"type": "array", "minItems": 6, "items": {"$ref": "#/$defs/lineage"}, "uniqueItems": true},
+        "input_ledgers_mutated": {"const": false},
+        "historical_result_mutated": {"const": false},
+        "representation_adjustment": {
+          "oneOf": [
+            {"type": "object", "required": ["status"], "properties": {"status": {"const": "not_applicable"}}, "additionalProperties": false},
+            {"type": "object", "required": ["status", "causal_attribution", "provenance_artifacts"], "properties": {"status": {"const": "separate_evidentiary_correction"}, "causal_attribution": {"const": "not_a_v5_methodology_effect"}, "provenance_artifacts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/inputArtifact"}, "uniqueItems": true}}, "additionalProperties": false}
+          ]
+        },
+        "gate_preservation": {
+          "type": "object",
+          "required": ["policy_or_evidence_changed", "identity_checks", "frozen_gate_evidence_inputs_sha256", "historical_gate_outcomes_sha256", "preserved_gate_outcomes_sha256", "historical_outcomes", "preserved_outcomes", "outcomes_equal", "outcomes_action"],
+          "properties": {
+            "policy_or_evidence_changed": {"const": false},
+            "identity_checks": {"$ref": "#/$defs/identityChecks"},
+            "frozen_gate_evidence_inputs_sha256": {"$ref": "#/$defs/sha256"},
+            "historical_gate_outcomes_sha256": {"$ref": "#/$defs/sha256"},
+            "preserved_gate_outcomes_sha256": {"$ref": "#/$defs/sha256"},
+            "historical_outcomes": {"type": "array", "items": {"type": "object"}},
+            "preserved_outcomes": {"type": "array", "items": {"type": "object"}},
+            "outcomes_equal": {"const": true},
+            "outcomes_action": {"const": "preserve_identically"}
+          },
+          "additionalProperties": false
+        },
+        "comparability": {"const": "v4_and_v5_totals_are_not_directly_comparable"},
+        "migration_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
     }
-  },
-  "additionalProperties": false
+  }
 }
