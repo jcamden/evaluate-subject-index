@@ -8,7 +8,7 @@
     "schema_version": {"const": "subject-index-score-migration-v5-to-v6-v1"},
     "evaluation_id": {"type": "string", "minLength": 1},
     "migration_timestamp": {"type": "string", "pattern": "Z$"},
-    "tool": {"type": "object", "required": ["name", "version"], "properties": {"name": {"const": "dimension_score_v6_cli.py"}, "version": {"enum": ["dimension-score-cli-v6.0.0", "dimension-score-cli-v6.0.1", "dimension-score-cli-v6.0.2"]}}, "additionalProperties": false},
+    "tool": {"type": "object", "required": ["name", "version"], "properties": {"name": {"const": "dimension_score_v6_cli.py"}, "version": {"enum": ["dimension-score-cli-v6.0.0", "dimension-score-cli-v6.0.1", "dimension-score-cli-v6.0.2", "dimension-score-cli-v6.0.3"]}}, "additionalProperties": false},
     "methodology": {
       "type": "object",
       "required": ["repository", "commit_sha", "previous_rubric_version", "migrated_rubric_version", "calculation_profile", "credit_values_frozen_not_candidate_fitted"],
@@ -19,6 +19,15 @@
         "migrated_rubric_version": {"const": "subject-index-rubric-v6"},
         "calculation_profile": {"const": "subject-index-dimension-calculation-v2"},
         "credit_values_frozen_not_candidate_fitted": {"const": true}
+      },
+      "additionalProperties": false
+    },
+    "artifact_path_root": {
+      "type": "object",
+      "required": ["path", "resolution"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^(?:\\.|\\.\\.(?:/\\.\\.)*)$"},
+        "resolution": {"const": "migration_record_relative_ancestor_v1"}
       },
       "additionalProperties": false
     },
@@ -84,6 +93,20 @@
     "comparability": {"const": "v5_and_v6_totals_are_not_directly_comparable"},
     "migration_sha256": {"$ref": "#/$defs/sha256"}
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "tool": {
+            "properties": {"version": {"const": "dimension-score-cli-v6.0.3"}},
+            "required": ["version"]
+          }
+        },
+        "required": ["tool"]
+      },
+      "then": {"required": ["artifact_path_root"]}
+    }
+  ],
   "$defs": {
     "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "decimal": {"type": "string", "pattern": "^-?[0-9]+(?:\\.[0-9]+)?$"},

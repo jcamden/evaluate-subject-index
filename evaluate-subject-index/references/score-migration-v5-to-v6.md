@@ -43,7 +43,7 @@ Migration byte-checks and preserves:
 - V5 item-assessment identity; and
 - immutable V5 web-report provenance.
 
-The migration record stores the exact path, file SHA-256, canonical calculation identity, evidence identity, old/new scorecard, precision comparison, gate hash and arrays, frozen input lineage, and methodology commit.
+The migration record stores the exact path, file SHA-256, canonical calculation identity, evidence identity, old/new scorecard, precision comparison, gate hash and arrays, frozen input lineage, and methodology commit. Tooling `dimension-score-cli-v6.0.3` derives one common artifact root for the immutable V5 files, new V6 calculation, and migration record. The root must be the record directory or an ancestor below the filesystem root. Every stored artifact path is then root-relative, normalized, and forbidden from containing `..`; validation also rejects a symlink or resolved path that escapes the declared root. This supports ordinary sibling layouts such as `candidate/v5-migration/` and `candidate/v6-migration/` without weakening path containment. Historical V6 migration records without `artifact_path_root` retain their original record-directory-relative interpretation.
 
 Only active calculation-derived artifacts are invalidated: dimension calculations, evaluation result, item assessments, and web report. Upstream benchmark, preparation, audit, and gate evidence are not invalidated. Historical artifacts stay present under their V5 identities.
 
@@ -62,6 +62,8 @@ python evaluate-subject-index/scripts/dimension_score_v6_cli.py score-only-migra
 ```
 
 The operation derives `subject-index-dimension-calculations-v2`, verifies that historical and migrated strict substantive precision are equal, records the new weighted precision, copies gates identically, and writes `subject-index-score-migration-v5-to-v6-v1`. Output paths may not overwrite or alias any frozen input or historical artifact.
+
+For example, when the immutable files are under `candidate/v5-migration/` and both outputs are under `candidate/v6-migration/`, the record stores `artifact_path_root.path` as `..`, the historical calculation as `v5-migration/dimension-calculations.v1.json`, and the new calculation as `v6-migration/dimension-calculations.v2.json`. The single ancestor reference establishes the bounded root; individual artifact bindings never traverse upward.
 
 Upgrade the exact projection-safe V5 item artifact with the same locator and structure evidence, then build the result and web projections:
 
