@@ -33,7 +33,7 @@ ITEM_ASSESSMENT_SCHEMA = "subject-index-item-assessments-v3"
 ITEM_GRADING_POLICY = "subject-index-item-grading-v2"
 MIGRATION_SCHEMA = "subject-index-score-migration-v5-to-v6-v1"
 TOOL_NAME = "dimension_score_v6_cli.py"
-TOOL_VERSION = "dimension-score-cli-v6.0.1"
+TOOL_VERSION = "dimension-score-cli-v6.0.2"
 METHODOLOGY_REPOSITORY = "https://github.com/jcamden/evaluate-subject-index"
 SCORE_VIEW_SHARED_EVIDENCE_FIELDS = (
     "candidate_sha256",

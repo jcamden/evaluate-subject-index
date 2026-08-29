@@ -119,11 +119,11 @@ V6 reports two precision measures. **Strict substantive precision** counts only 
 | Destination | Weighted reliability credit | Strict precision credit |
 | --- | ---: | ---: |
 | Substantively supports the complete path | 1.00 | 1 |
-| Materially treats the subject but supports only part of the path | 0.50 | 0 |
-| Contains only a genuine passing mention, attribution, citation, or incidental example | 0.25 | 0 |
+| Genuinely supports only part of the path, whether through material or weak presence | 0.50 | 0 |
+| Contains genuine weak presence but the locator judgment remains unsupported | 0.25 | 0 |
 | Subject is absent, wrong, out of scope, fabricated, or otherwise invalid | 0.00 | 0 |
 
-A weakly relevant page is still not a valid substantive locator. The limited credit recognizes only that it misdirects a reader less severely than a wholly false destination; it does not endorse concordance-like indexing. If the page uses the terms in the wrong sense, asserts the wrong relationship or stance, fails compound scope, or is out of scope, the locator receives zero even when some matching words occur.
+A weakly relevant page is still not a valid substantive locator. When the frozen judgment is `unsupported`, limited credit recognizes only that it misdirects a reader less severely than a wholly false destination; it does not endorse concordance-like indexing. When the judgment is `partially_supported`, the same weak-presence class receives 0.50 because the page genuinely supports part of the asserted path. Conceptual, stance, compound, and scope codes remain visible diagnostics and retain their defect, cap, and gate consequences, but do not override a positive reliability judgment. An `unsupported` wrong-sense, wrong-relationship, wrong-stance, compound-scope, fabricated, nonexistent, or out-of-scope destination receives zero.
 
 ### 5. Findability and navigation — 20 points
 

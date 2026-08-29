@@ -133,6 +133,13 @@ class LocatorCreditPolicyTests(unittest.TestCase):
         cases = (
             (locator_state("supported", "substantive"), "1", 100.0),
             (locator_state("partially_supported", "mixed"), "0.5", 70.0),
+            (
+                locator_state(
+                    "partially_supported", "passing_mention", codes=["CON", "LOC_POS"]
+                ),
+                "0.5",
+                70.0,
+            ),
             (locator_state("unsupported", "passing_mention"), "0.25", 25.0),
             (locator_state("unsupported", "absent", codes=["LOC_POS"]), "0", 0.0),
             (locator_state("uninspectable", "unavailable", scope="unavailable"), None, None),
@@ -142,6 +149,25 @@ class LocatorCreditPolicyTests(unittest.TestCase):
                 assignment = assign_locator_credit(record)
                 self.assertEqual(expected_credit, assignment.as_dict()["reliability_credit"])
                 self.assertEqual(expected_grade, assignment.diagnostic_grade)
+
+    def test_partial_support_accepts_each_relevant_treatment_class_and_diagnostic_code(self) -> None:
+        for treatment in (
+            "substantive",
+            "mixed",
+            "passing_mention",
+            "attribution_only",
+            "citation_only",
+            "incidental_example",
+        ):
+            for code in ("SCP", "CMP", "CON", "STA"):
+                with self.subTest(treatment=treatment, code=code):
+                    assignment = assign_locator_credit(
+                        locator_state("partially_supported", treatment, codes=[code])
+                    )
+                    self.assertEqual("partially_supported", assignment.credit_tier)
+                    self.assertEqual(Decimal("0.50"), assignment.reliability_credit)
+                    self.assertEqual(70.0, assignment.diagnostic_grade)
+                    self.assertEqual((), assignment.disqualifying_codes)
 
     def test_each_weak_presence_class_is_quarter_credit(self) -> None:
         for treatment in (
@@ -200,7 +226,7 @@ class LocatorCreditPolicyTests(unittest.TestCase):
         self.assertEqual(Decimal(0), assignment.reliability_credit)
         self.assertEqual(("DEFECT-1",), assignment.disqualifying_defect_ids)
 
-    def test_structured_disqualifying_code_reduces_weak_presence_to_zero(self) -> None:
+    def test_structured_disqualifying_code_reduces_only_unsupported_weak_presence_to_zero(self) -> None:
         record = locator_state("unsupported", "citation_only")
         defect = {
             "defect_id": "DEFECT-STA",
@@ -214,10 +240,19 @@ class LocatorCreditPolicyTests(unittest.TestCase):
         self.assertEqual(("STA",), assignment.disqualifying_codes)
         self.assertEqual(("DEFECT-STA",), assignment.disqualifying_defect_ids)
 
-        with self.assertRaisesRegex(
-            ValueError, "positive_judgment_with_structured_zero_failure"
-        ):
-            assign_locator_credit(locator_state("supported", "substantive"), [defect])
+        partial = assign_locator_credit(
+            locator_state("partially_supported", "citation_only"), [defect]
+        )
+        self.assertEqual(Decimal("0.50"), partial.reliability_credit)
+        self.assertEqual((), partial.disqualifying_codes)
+        self.assertEqual((), partial.disqualifying_defect_ids)
+
+        supported = assign_locator_credit(
+            locator_state("supported", "substantive"), [defect]
+        )
+        self.assertEqual(Decimal("1.00"), supported.reliability_credit)
+        self.assertEqual((), supported.disqualifying_codes)
+        self.assertEqual((), supported.disqualifying_defect_ids)
 
     def test_inconsistent_states_are_rejected_by_schema_and_runtime(self) -> None:
         inconsistent = locator_state("supported", "passing_mention")
@@ -225,14 +260,23 @@ class LocatorCreditPolicyTests(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(inconsistent, schema)
         self.assertIn(
-            "inconsistent:positive_judgment_requires_material_treatment",
+            "inconsistent:supported_judgment_requires_material_treatment",
             combined_state_errors(inconsistent),
         )
         self.assertIn("missing:error_codes", combined_state_errors({"locator_id": "LOC-X"}))
-        with self.assertRaises(jsonschema.ValidationError):
+        for treatment in (
+            "substantive",
+            "mixed",
+            "passing_mention",
+            "attribution_only",
+            "citation_only",
+            "incidental_example",
+        ):
             jsonschema.validate(
-                locator_state("partially_supported", "mixed", codes=["STA"]), schema
+                locator_state("partially_supported", treatment, codes=["STA"]), schema
             )
+        with self.assertRaises(jsonschema.ValidationError):
+            jsonschema.validate(locator_state("partially_supported", "absent"), schema)
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(locator_state("unsupported", "substantive"), schema)
 
@@ -817,6 +861,18 @@ class DiagnosticProjectionMigrationAndCompatibilityTests(unittest.TestCase):
             self.assertFalse(migrated["frozen_evidence_mutated"])
             self.assertEqual(before, {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in frozen_paths})
             migration = json.loads(migration_path.read_text())
+            self.assertEqual(v6.TOOL_VERSION, migration["tool"]["version"])
+            for historical_tool_version in (
+                "dimension-score-cli-v6.0.0",
+                "dimension-score-cli-v6.0.1",
+            ):
+                historical_migration = copy.deepcopy(migration)
+                historical_migration["tool"]["version"] = historical_tool_version
+                v5.validate_schema_document(
+                    historical_migration,
+                    "score-migration-v5-to-v6.schema.json",
+                    f"Historical {historical_tool_version} migration",
+                )
             self.assertTrue(migration["precision_comparison"]["strict_precision_unchanged"])
             self.assertEqual(gates, migration["gate_preservation"]["preserved_outcomes"])
             self.assertFalse(migration["invalidation"]["upstream_evidence_invalidated"])
@@ -1094,20 +1150,31 @@ class DiagnosticProjectionMigrationAndCompatibilityTests(unittest.TestCase):
         )
         report = v6.locator_state_requirements(ledgers)
         self.assertEqual("inconsistent_or_incomplete_locator_state", report[0]["code"])
-        self.assertIn("positive_judgment_requires_material_treatment", " ".join(report[0]["state_errors"]))
+        self.assertIn("supported_judgment_requires_material_treatment", " ".join(report[0]["state_errors"]))
 
-        structured_contradiction = reliability_ledgers(
-            [locator_state("supported", "substantive")],
+        clarified_positive_state = reliability_ledgers(
+            [locator_state("partially_supported", "passing_mention", codes=["STA"])],
             defects=[{
                 "defect_id": "DEFECT-STA",
                 "code": "STA",
                 "affected_item_ids": ["LOC-TEST"],
             }],
         )
-        report = v6.locator_state_requirements(structured_contradiction)
+        self.assertEqual([], v6.locator_state_requirements(clarified_positive_state))
+
+        false_destination = reliability_ledgers(
+            [locator_state("partially_supported", "passing_mention")],
+            defects=[{
+                "defect_id": "DEFECT-FALSE",
+                "code": "SCP",
+                "defect_kind": "nonexistent_locator",
+                "affected_item_ids": ["LOC-TEST"],
+            }],
+        )
+        report = v6.locator_state_requirements(false_destination)
         self.assertEqual("inconsistent_or_incomplete_locator_state", report[0]["code"])
         self.assertIn(
-            "inconsistent:positive_judgment_with_structured_zero_failure",
+            "inconsistent:positive_judgment_with_false_destination",
             report[0]["state_errors"],
         )
 

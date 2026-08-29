@@ -17,6 +17,8 @@ V6 changes the precision input to Page-reference Reliability from strict-only pr
 
 Tooling patch `dimension-score-cli-v6.0.1` adds deterministic construction and complete path/hash/self-hash validation for representation-adjusted V6 score views. It preserves the V6 artifact identities and arithmetic while preventing unmaterialized or unproven counterfactual views from validating.
 
+Tooling patch `dimension-score-cli-v6.0.2` clarifies judgment-first locator reliability credit. A valid `partially_supported` judgment receives 0.50 with substantive, mixed, or weak-presence treatment, and diagnostic `SCP`, `CMP`, `CON`, or `STA` codes do not override `supported` or `partially_supported`. Treatment class and those codes continue to distinguish 0.25 from 0 for `unsupported` evidence and retain all existing selectivity, defect, cap, gate, and disclosure consequences. Fabricated, nonexistent, out-of-scope, unavailable, and contradictory scope states remain hard failures or zero by precedence. Historical `v6.0.0` and `v6.0.1` migration artifacts remain schema-valid.
+
 No other dimension formula, weight, cap, gate, density rule, benchmark rule, treatment-recall denominator, or judgment meaning changes. Selectivity still gives the four weak-presence classes zero. V6 adds deterministic V5-to-V6 score-only migration and new projection schemas. Credit values are frozen methodological choices, not candidate-fitted parameters.
 
 ## V5 — ledger-derived dimensions
