@@ -1,5 +1,28 @@
 # Methodology version history
 
+## V7 — two-axis locator utility and corrected structure-review units
+
+Identities:
+
+- rubric `subject-index-rubric-v7`;
+- dimension profile `subject-index-dimension-calculation-v3`;
+- calculations `subject-index-dimension-calculations-v3`;
+- result `subject-index-evaluation-result-v8`;
+- diagnostic policy `subject-index-item-grading-v3`;
+- item assessments `subject-index-item-assessments-v4`;
+- native structure audit `structure-audit-v5`;
+- structure review `subject-index-structure-locator-review-v1`;
+- web report `subject-index-web-report-v6`; and
+- migration `subject-index-score-migration-v6-to-v7-v1` with validation receipt V1.
+
+V7 separates page treatment from complete-path fit and combines their deterministic frozen-evidence scores with `min(T,F)`. Treatment values are 1.00, 0.70, 0.25, and 0; fit values are 1.00, 0.70, 0.35, 0.15, and 0. Locator grade is exactly `100 × combined_credit`, while the canonical reliability calculation continues to use the locator-credit ledger rather than grade averages. Expected-treatment recall, weighted F1, strict precision, caps, gates, weights, uncertainty, and rounding remain unchanged.
+
+V7 also corrects locator-string architecture screening. A displayed range counts once for `displayed_locator_count`, retains its own inclusive span, and expands to separate atomic assignments for support auditing. More than six displayed locators and, separately, a range longer than ten pages trigger review only. Neither trigger creates a defect without complete structured evidence of conceptual heterogeneity, meaningful subdivision/access, material retrieval impairment, and nontrivial conceptual division.
+
+The V6-to-V7 migration preserves all prior bytes, may remove a sole structured atomic-threshold false positive only from the active projection, and stops on missing grouping, prose-dependent locator mapping, or newly exposed unreviewed cases. Counterfactual views are recalculated from their own artifacts and provenance. The approved values and thresholds are frozen methodological choices, not Oxford-fitted parameters; the Oxford-shaped locator example is a regression case only.
+
+See [rubric-v7.md](rubric-v7.md), [locator-utility-v7.md](locator-utility-v7.md), [structure-audit-v7.md](structure-audit-v7.md), and [score-migration-v6-to-v7.md](score-migration-v6-to-v7.md).
+
 ## V6 — weighted locator relevance
 
 Identities:
@@ -39,7 +62,7 @@ V5 derives all six ratings from validated raw ledgers, introduced complete arith
 
 ## V4 — historical headline-rating scorecard
 
-Identity `subject-index-rubric-v4`. V4 accepted five dimension ratings and the substantive-selectivity rating as evaluator inputs, then applied deterministic scorecard arithmetic. Its original schemas, density behavior, result reader, and score-only migration reader remain available for historical artifacts. V4 results are never silently upgraded or interpreted under V5 or V6.
+Identity `subject-index-rubric-v4`. V4 accepted five dimension ratings and the substantive-selectivity rating as evaluator inputs, then applied deterministic scorecard arithmetic. Its original schemas, density behavior, result reader, and score-only migration reader remain available for historical artifacts. V4 results are never silently upgraded or interpreted under V5, V6, or V7.
 
 ## Comparability rule
 

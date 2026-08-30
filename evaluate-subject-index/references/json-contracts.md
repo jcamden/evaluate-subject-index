@@ -1,5 +1,7 @@
 # JSON artifact contracts
 
+This catalog preserves the V4–V6 contracts under their historical identities. The current V7 additions and cross-field invariants are listed in [json-contracts-v7.md](json-contracts-v7.md); do not overwrite the schemas described below.
+
 The schemas in `schemas/` are machine-readable contracts. Each schema controls extensibility explicitly: strict preparation, publication, proof, lock, and integration contracts reject unexpected fields, while broader evaluation artifacts may preserve richer evidence where their schema permits it. Required identity, status, score, and provenance fields must remain stable.
 
 | Artifact | Schema | Purpose |

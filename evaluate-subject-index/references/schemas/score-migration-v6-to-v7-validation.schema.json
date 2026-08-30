@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "score-migration-v6-to-v7-validation.schema.json",
+  "title": "V6-to-V7 active and historical projection validation receipt",
+  "type": "object",
+  "required": ["schema_version", "receipt_id", "evaluation_id", "migration", "active_projections", "historical_projections", "counterfactual_projections", "validation", "receipt_sha256"],
+  "properties": {
+    "schema_version": {"const": "subject-index-score-migration-v6-to-v7-validation-v1"},
+    "receipt_id": {"type": "string", "pattern": "^VAL-[A-F0-9]{12}$"},
+    "evaluation_id": {"type": "string", "minLength": 1},
+    "migration": {"allOf": [{"$ref": "#/$defs/artifact"}, {"required": ["migration_sha256"], "properties": {"schema_version": {"const": "subject-index-score-migration-v6-to-v7-v1"}, "migration_sha256": {"$ref": "#/$defs/sha256"}}}]},
+    "active_projections": {"type": "object", "required": ["calculation", "result", "item_assessments", "web_report", "projection_metadata", "structure_locator_review"], "additionalProperties": {"$ref": "#/$defs/artifact"}},
+    "historical_projections": {"type": "object", "required": ["calculation", "result", "item_assessments", "web_report", "projection_metadata"], "additionalProperties": {"$ref": "#/$defs/artifact"}},
+    "counterfactual_projections": {"type": "array", "items": {"type": "object", "required": ["view_id", "calculation", "structure_locator_review", "provenance_sha256"], "properties": {"view_id": {"type": "string"}, "calculation": {"$ref": "#/$defs/artifact"}, "structure_locator_review": {"$ref": "#/$defs/artifact"}, "provenance_sha256": {"type": "array", "items": {"$ref": "#/$defs/sha256"}, "uniqueItems": true}}, "additionalProperties": false}},
+    "validation": {
+      "type": "object",
+      "required": ["all_hashes_recomputed", "all_schemas_valid", "historical_bytes_unchanged", "calculation_hash_valid", "migration_hash_valid", "structure_review_hash_valid", "decimal_safe_projection_validation", "gate_outcomes_equal", "representation_provenance_complete"],
+      "properties": {
+        "all_hashes_recomputed": {"const": true},
+        "all_schemas_valid": {"const": true},
+        "historical_bytes_unchanged": {"const": true},
+        "calculation_hash_valid": {"const": true},
+        "migration_hash_valid": {"const": true},
+        "structure_review_hash_valid": {"const": true},
+        "decimal_safe_projection_validation": {"const": true},
+        "gate_outcomes_equal": {"const": true},
+        "representation_provenance_complete": {"const": true}
+      },
+      "additionalProperties": false
+    },
+    "receipt_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "artifact": {
+      "type": "object",
+      "required": ["schema_version", "artifact_path", "sha256"],
+      "properties": {
+        "schema_version": {"type": "string", "minLength": 1},
+        "artifact_path": {"$ref": "score-migration.schema.json#/$defs/portablePath"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "calculation_sha256": {"$ref": "#/$defs/sha256"},
+        "migration_sha256": {"$ref": "#/$defs/sha256"},
+        "review_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

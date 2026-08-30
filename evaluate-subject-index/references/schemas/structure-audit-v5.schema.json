@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "structure-audit-v5.schema.json",
+  "title": "V7 global structure audit with explicit architecture-review determinations",
+  "type": "object",
+  "required": ["schema_version", "evaluation_id", "candidate_sha256", "item_inventory_sha256", "audit_mode", "scope_complete", "metrics", "density", "expected_node_ids", "node_judgments", "expected_cross_reference_ids", "cross_reference_judgments", "defects", "strengths", "completion", "provenance", "v5_scoring_context", "v7_architecture_review_decisions"],
+  "properties": {
+    "schema_version": {"const": "structure-audit-v5"},
+    "evaluation_id": {"$ref": "structure-audit-v4.schema.json#/properties/evaluation_id"},
+    "candidate_sha256": {"$ref": "structure-audit-v4.schema.json#/properties/candidate_sha256"},
+    "item_inventory_sha256": {"$ref": "structure-audit-v4.schema.json#/properties/item_inventory_sha256"},
+    "audit_mode": {"$ref": "structure-audit-v4.schema.json#/properties/audit_mode"},
+    "scope_complete": {"$ref": "structure-audit-v4.schema.json#/properties/scope_complete"},
+    "metrics": {"$ref": "structure-audit-v4.schema.json#/properties/metrics"},
+    "density": {"$ref": "structure-audit-v4.schema.json#/properties/density"},
+    "expected_node_ids": {"$ref": "structure-audit-v4.schema.json#/properties/expected_node_ids"},
+    "node_judgments": {"$ref": "structure-audit-v4.schema.json#/properties/node_judgments"},
+    "expected_cross_reference_ids": {"$ref": "structure-audit-v4.schema.json#/properties/expected_cross_reference_ids"},
+    "cross_reference_judgments": {"$ref": "structure-audit-v4.schema.json#/properties/cross_reference_judgments"},
+    "defects": {"$ref": "structure-audit-v4.schema.json#/properties/defects"},
+    "strengths": {"$ref": "structure-audit-v4.schema.json#/properties/strengths"},
+    "completion": {"$ref": "structure-audit-v4.schema.json#/properties/completion"},
+    "provenance": {"$ref": "structure-audit-v4.schema.json#/properties/provenance"},
+    "v5_scoring_context": {"$ref": "structure-audit-v4.schema.json#/properties/v5_scoring_context"},
+    "v7_architecture_review_decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["review_id", "path_id", "review_status", "conceptually_distinguishable_treatments", "meaningful_subheadings_or_access_routes", "material_scanning_or_retrieval_impairment", "subdivision_is_conceptual_not_trivial", "evidence_ids", "defect_ids"],
+        "properties": {
+          "review_id": {"type": "string", "pattern": "^ARCHREV-"},
+          "path_id": {"type": "string", "pattern": "^PATH-"},
+          "review_status": {"enum": ["defect_confirmed", "reviewed_no_defect"]},
+          "conceptually_distinguishable_treatments": {"type": "boolean"},
+          "meaningful_subheadings_or_access_routes": {"type": "boolean"},
+          "material_scanning_or_retrieval_impairment": {"type": "boolean"},
+          "subdivision_is_conceptual_not_trivial": {"type": "boolean", "description": "True only when the proposed subdivision is conceptual rather than page-based, merely chronological, grammatical, or trivial."},
+          "evidence_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+          "defect_ids": {"type": "array", "items": {"type": "string", "pattern": "^DEFECT-"}, "uniqueItems": true},
+          "explanation": {"type": "string", "description": "Display-only prose; prohibited as a scoring or migration input."}
+        },
+        "allOf": [
+          {
+            "if": {"properties": {"review_status": {"const": "defect_confirmed"}}, "required": ["review_status"]},
+            "then": {
+              "properties": {
+                "conceptually_distinguishable_treatments": {"const": true},
+                "meaningful_subheadings_or_access_routes": {"const": true},
+                "material_scanning_or_retrieval_impairment": {"const": true},
+                "subdivision_is_conceptual_not_trivial": {"const": true},
+                "defect_ids": {"minItems": 1}
+              }
+            }
+          },
+          {
+            "if": {"properties": {"review_status": {"const": "reviewed_no_defect"}}, "required": ["review_status"]},
+            "then": {
+              "properties": {"defect_ids": {"maxItems": 0}},
+              "anyOf": [
+                {"properties": {"conceptually_distinguishable_treatments": {"const": false}}},
+                {"properties": {"meaningful_subheadings_or_access_routes": {"const": false}}},
+                {"properties": {"material_scanning_or_retrieval_impairment": {"const": false}}},
+                {"properties": {"subdivision_is_conceptual_not_trivial": {"const": false}}}
+              ]
+            }
+          }
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": true
+}
