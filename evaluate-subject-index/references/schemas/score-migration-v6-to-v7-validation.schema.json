@@ -12,6 +12,7 @@
     "active_projections": {"type": "object", "required": ["calculation", "result", "item_assessments", "web_report", "projection_metadata", "structure_locator_review"], "additionalProperties": {"$ref": "#/$defs/artifact"}},
     "historical_projections": {"type": "object", "required": ["calculation", "result", "item_assessments", "web_report", "projection_metadata"], "additionalProperties": {"$ref": "#/$defs/artifact"}},
     "counterfactual_projections": {"type": "array", "items": {"type": "object", "required": ["view_id", "calculation", "structure_locator_review", "provenance_sha256"], "properties": {"view_id": {"type": "string"}, "calculation": {"$ref": "#/$defs/artifact"}, "structure_locator_review": {"$ref": "#/$defs/artifact"}, "provenance_sha256": {"type": "array", "items": {"$ref": "#/$defs/sha256"}, "uniqueItems": true}}, "additionalProperties": false}},
+    "supplemental_architecture_reviews": {"type": "array", "items": {"type": "object", "required": ["view_id", "artifact"], "properties": {"view_id": {"type": "string", "minLength": 1}, "artifact": {"$ref": "#/$defs/artifact"}}, "additionalProperties": false}},
     "validation": {
       "type": "object",
       "required": ["all_hashes_recomputed", "all_schemas_valid", "historical_bytes_unchanged", "calculation_hash_valid", "migration_hash_valid", "structure_review_hash_valid", "decimal_safe_projection_validation", "gate_outcomes_equal", "representation_provenance_complete"],
@@ -22,6 +23,8 @@
         "calculation_hash_valid": {"const": true},
         "migration_hash_valid": {"const": true},
         "structure_review_hash_valid": {"const": true},
+        "supplemental_review_hash_valid": {"const": true},
+        "supplemental_review_scope_exact": {"const": true},
         "decimal_safe_projection_validation": {"const": true},
         "gate_outcomes_equal": {"const": true},
         "representation_provenance_complete": {"const": true}
@@ -41,7 +44,9 @@
         "sha256": {"$ref": "#/$defs/sha256"},
         "calculation_sha256": {"$ref": "#/$defs/sha256"},
         "migration_sha256": {"$ref": "#/$defs/sha256"},
-        "review_sha256": {"$ref": "#/$defs/sha256"}
+        "review_sha256": {"$ref": "#/$defs/sha256"},
+        "supplement_id": {"type": "string", "pattern": "^ARCHSUP-[A-F0-9]{12}$"},
+        "supplement_sha256": {"$ref": "#/$defs/sha256"}
       },
       "additionalProperties": true
     }

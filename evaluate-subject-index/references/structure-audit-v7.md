@@ -41,6 +41,13 @@ Bind at least one evidence ID and one applicable `DEFECT-*` ID. A `reviewed_no_d
 
 Native V7 structure audits use `structure-audit-v5` and `v7_architecture_review_decisions`. Historical V3/V4 structure audits remain immutable. During score-only migration, `subject-index-structure-locator-review-v1` records the mechanical derivation and any deterministic historical disposition.
 
+If a historical migration first exposes an unreviewed trigger, preserve the
+historical structure audit and freeze the authorized follow-up separately as
+`subject-index-v7-architecture-review-supplement-v1`. The migration requires
+the supplement's decision set to equal the unresolved trigger set exactly,
+projects those decisions only in memory, and hash-binds the supplement in every
+affected score view. It never upgrades or rewrites the V3/V4 file in place.
+
 ## Migration dispositions
 
 | Disposition | Meaning |

@@ -48,8 +48,11 @@ ITEM_GRADING_POLICY = "subject-index-item-grading-v3"
 PROJECTION_METADATA_SCHEMA = "subject-index-v7-projection-metadata-v1"
 MIGRATION_SCHEMA = "subject-index-score-migration-v6-to-v7-v1"
 VALIDATION_RECEIPT_SCHEMA = "subject-index-score-migration-v6-to-v7-validation-v1"
+SUPPLEMENTAL_ARCHITECTURE_REVIEW_SCHEMA = (
+    "subject-index-v7-architecture-review-supplement-v1"
+)
 TOOL_NAME = "dimension_score_v7_cli.py"
-TOOL_VERSION = "dimension-score-cli-v7.0.0"
+TOOL_VERSION = "dimension-score-cli-v7.0.1"
 METHODOLOGY_REPOSITORY = "https://github.com/jcamden/evaluate-subject-index"
 
 ZERO = Decimal(0)
@@ -706,6 +709,7 @@ def calculate_loaded(
     *,
     structure_review: dict[str, Any] | None = None,
     structure_review_artifact: dict[str, Any] | None = None,
+    supplemental_architecture_review_artifact: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     ledgers, missing = preflight_loaded(loaded)
     v5.require(
@@ -733,6 +737,28 @@ def calculate_loaded(
             "structure_review_input_binding_mismatch",
             "The V7 review does not bind the exact frozen structure audit used for calculation.",
         )
+        supplemental_sha256 = structure_review.get("inputs", {}).get(
+            "supplemental_architecture_review_file_sha256"
+        )
+        if supplemental_sha256 is None:
+            v5.require(
+                supplemental_architecture_review_artifact is None,
+                "unexpected_supplemental_architecture_review_artifact",
+                "A V7 calculation cannot bind a supplemental architecture review that is absent from the structure-locator review.",
+            )
+        else:
+            v5.require(
+                supplemental_architecture_review_artifact is not None
+                and supplemental_architecture_review_artifact.get("sha256")
+                == supplemental_sha256
+                and supplemental_architecture_review_artifact.get("schema_version")
+                == SUPPLEMENTAL_ARCHITECTURE_REVIEW_SCHEMA,
+                "supplemental_architecture_review_binding_mismatch",
+                "The V7 structure-locator review does not bind the supplied supplemental architecture review.",
+            )
+            calculation_artifacts.append(
+                deepcopy(supplemental_architecture_review_artifact)
+            )
         try:
             ledgers = apply_deterministic_structure_corrections(
                 ledgers, structure_review, audit_mode=audit_mode
@@ -762,6 +788,11 @@ def calculate_loaded(
                 for requested in dimension["input_roles"]
             )
             if role == "structure_locator_review" and dimension["dimension_id"] == "findability_navigation":
+                include = True
+            if (
+                role == "supplemental_architecture_review"
+                and dimension["dimension_id"] == "findability_navigation"
+            ):
                 include = True
             if include and artifact not in selected:
                 selected.append(artifact)
@@ -1067,6 +1098,158 @@ def _resolve_manifest_artifact(
     return v5.resolve_input(manifest_path, dict(reference), label)
 
 
+def _load_supplemental_architecture_review(
+    path: Path, *, label: str
+) -> dict[str, Any]:
+    document = v5.load_json(path, label)
+    v5.validate_schema_document(
+        document,
+        "v7-architecture-review-supplement.schema.json",
+        label,
+    )
+    v5.require(
+        document.get("supplement_sha256")
+        == v5.canonical_hash(document, "supplement_sha256"),
+        "supplemental_architecture_review_hash_mismatch",
+        "The supplemental V7 architecture review self-hash does not reconstruct.",
+    )
+    identity_seed = deepcopy(document)
+    identity_seed["supplement_id"] = ""
+    identity_seed["supplement_sha256"] = ""
+    v5.require(
+        document.get("supplement_id")
+        == f"ARCHSUP-{v5.canonical_hash(identity_seed)[:12].upper()}",
+        "supplemental_architecture_review_id_mismatch",
+        "The supplemental V7 architecture review identity does not reconstruct.",
+    )
+    return document
+
+
+def _validate_supplemental_architecture_review(
+    supplement: Mapping[str, Any],
+    *,
+    loaded: Mapping[str, Any],
+    config_path: Path,
+    candidate: Mapping[str, Any],
+    candidate_path: Path,
+    inventory: Mapping[str, Any],
+    inventory_path: Path,
+    structure_path: Path,
+    base_review: Mapping[str, Any],
+) -> None:
+    bindings = supplement["bindings"]
+    expected_bindings = {
+        "candidate_sha256": candidate.get("candidate_sha256"),
+        "v6_dimension_calculation_input_file_sha256": v5.sha256_file(
+            config_path
+        ),
+        "normalized_candidate_file_sha256": v5.sha256_file(candidate_path),
+        "item_inventory_file_sha256": v5.sha256_file(inventory_path),
+        "historical_structure_audit_file_sha256": v5.sha256_file(structure_path),
+    }
+    v5.require(
+        bindings == expected_bindings,
+        "supplemental_architecture_review_binding_mismatch",
+        "The supplemental architecture review must bind the exact frozen candidate, inventory, and historical structure audit.",
+        {"expected": expected_bindings, "actual": bindings},
+    )
+    v5.require(
+        supplement.get("evaluation_id") == loaded["config"]["evaluation_id"]
+        and supplement.get("audit_mode") == loaded["config"]["audit_mode"],
+        "supplemental_architecture_review_identity_mismatch",
+        "The supplemental architecture review has a different evaluation identity or audit mode.",
+    )
+
+    decisions = supplement["decisions"]
+    decision_path_ids = [item["path_id"] for item in decisions]
+    scope_path_ids = supplement["review_scope"]["path_ids"]
+    unresolved_path_ids = base_review["summary"]["review_required_path_ids"]
+    v5.require(
+        decision_path_ids == sorted(decision_path_ids)
+        and scope_path_ids == sorted(scope_path_ids)
+        and decision_path_ids == scope_path_ids
+        and decision_path_ids == unresolved_path_ids,
+        "supplemental_architecture_review_scope_mismatch",
+        "The supplemental review must contain every and only the mechanically unresolved trigger paths, in stable PATH-* order.",
+        {
+            "decision_path_ids": decision_path_ids,
+            "declared_scope_path_ids": scope_path_ids,
+            "unresolved_trigger_path_ids": unresolved_path_ids,
+        },
+    )
+    review_ids = [item["review_id"] for item in decisions]
+    v5.require(
+        len(review_ids) == len(set(review_ids)),
+        "supplemental_architecture_review_duplicate_id",
+        "Every supplemental architecture decision requires a unique ARCHREV-* identity.",
+    )
+
+    candidates_by_path = {
+        item["path_id"]: item for item in candidate.get("records", [])
+    }
+    inventory_by_path = {
+        item["path_id"]: item for item in inventory.get("paths", [])
+    }
+    for decision in decisions:
+        path_id = decision["path_id"]
+        candidate_record = candidates_by_path[path_id]
+        inventory_record = inventory_by_path[path_id]
+        allowed_evidence_ids = {
+            path_id,
+            candidate_record["record_id"],
+            *inventory_record["node_ids"],
+            *inventory_record["locator_ids"],
+            *(
+                display["display_id"]
+                for display in candidate_record["locator_displays"]
+            ),
+            *(
+                display["range_id"]
+                for display in candidate_record["locator_displays"]
+                if display.get("range_id") is not None
+            ),
+        }
+        evidence_ids = set(decision["evidence_ids"])
+        v5.require(
+            evidence_ids <= allowed_evidence_ids,
+            "supplemental_architecture_review_evidence_scope_mismatch",
+            "A supplemental architecture decision cites evidence outside its frozen candidate path, inventory nodes, displays, ranges, or assignments.",
+            {
+                "path_id": path_id,
+                "unexpected_evidence_ids": sorted(
+                    evidence_ids - allowed_evidence_ids
+                ),
+            },
+        )
+
+
+def _structure_with_supplemental_decisions(
+    structure: Mapping[str, Any], supplement: Mapping[str, Any]
+) -> dict[str, Any]:
+    projected = deepcopy(structure)
+    historical = projected.get("v7_architecture_review_decisions", [])
+    v5.require(
+        isinstance(historical, list),
+        "invalid_structure_review_input",
+        "v7_architecture_review_decisions must be an array.",
+    )
+    historical_paths = {
+        item.get("path_id") for item in historical if isinstance(item, dict)
+    }
+    supplemental_paths = {item["path_id"] for item in supplement["decisions"]}
+    v5.require(
+        not historical_paths & supplemental_paths,
+        "supplemental_architecture_review_override_forbidden",
+        "A supplemental architecture review cannot replace a decision already frozen in the historical structure audit.",
+        sorted(historical_paths & supplemental_paths),
+    )
+    projected["v7_architecture_review_decisions"] = [
+        *deepcopy(historical),
+        *deepcopy(supplement["decisions"]),
+    ]
+    return projected
+
+
 def _write_new(path: Path, document: dict[str, Any]) -> None:
     v5.require(not path.exists(), "migration_output_exists", "Score-only migration refuses to overwrite an existing output.", str(path))
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1292,7 +1475,7 @@ def _migrate_calculation_view(
         for path, artifact in zip(loaded["input_paths"], loaded["input_artifacts"])
         if artifact["role"] == "structure_audit"
     )
-    review = derive_structure_locator_review(
+    base_review = derive_structure_locator_review(
         candidate,
         inventory,
         loaded["structure"],
@@ -1301,6 +1484,55 @@ def _migrate_calculation_view(
         structure_file_sha256=v5.sha256_file(structure_path),
         audit_mode=loaded["config"]["audit_mode"],
     )
+    supplemental_path: Path | None = None
+    supplemental_document: dict[str, Any] | None = None
+    supplemental_artifact: dict[str, Any] | None = None
+    if "supplemental_architecture_review" in references:
+        supplemental_path, _, _ = _resolve_manifest_artifact(
+            manifest_path,
+            references["supplemental_architecture_review"],
+            f"{label}.supplemental_architecture_review",
+        )
+        supplemental_document = _load_supplemental_architecture_review(
+            supplemental_path,
+            label=f"{label} supplemental architecture review",
+        )
+        _validate_supplemental_architecture_review(
+            supplemental_document,
+            loaded=loaded,
+            config_path=config_path,
+            candidate=candidate,
+            candidate_path=candidate_path,
+            inventory=inventory,
+            inventory_path=inventory_path,
+            structure_path=structure_path,
+            base_review=base_review,
+        )
+        review_structure = _structure_with_supplemental_decisions(
+            loaded["structure"], supplemental_document
+        )
+        supplemental_artifact = {
+            "role": "supplemental_architecture_review",
+            "path": os.path.relpath(
+                supplemental_path, calculation_output.parent
+            ).replace(os.sep, "/"),
+            "sha256": v5.sha256_file(supplemental_path),
+            "schema_version": supplemental_document["schema_version"],
+        }
+        review = derive_structure_locator_review(
+            candidate,
+            inventory,
+            review_structure,
+            candidate_file_sha256=v5.sha256_file(candidate_path),
+            inventory_file_sha256=v5.sha256_file(inventory_path),
+            structure_file_sha256=v5.sha256_file(structure_path),
+            audit_mode=loaded["config"]["audit_mode"],
+            supplemental_architecture_review_file_sha256=supplemental_artifact[
+                "sha256"
+            ],
+        )
+    else:
+        review = base_review
     v5.validate_schema_document(review, "structure-locator-review-v1.schema.json", f"{label} V7 structure review")
     validate_structure_locator_review_semantics(review)
     v5.require(review["migration_ready"], "v7_migration_review_incomplete", "The V6-to-V7 score-only migration requires a supplemental architecture review or unreconstructable grouping to be resolved.", review["summary"])
@@ -1315,6 +1547,7 @@ def _migrate_calculation_view(
         loaded,
         structure_review=review,
         structure_review_artifact=review_artifact,
+        supplemental_architecture_review_artifact=supplemental_artifact,
     )
     if migration_context is not None:
         calculation["migration_context"] = deepcopy(migration_context)
@@ -1335,6 +1568,9 @@ def _migrate_calculation_view(
         "review_path": review_output,
         "calculation": calculation,
         "calculation_path": calculation_output,
+        "supplemental_architecture_review": supplemental_document,
+        "supplemental_architecture_review_path": supplemental_path,
+        "supplemental_architecture_review_artifact": supplemental_artifact,
     }
 
 
@@ -1360,6 +1596,20 @@ def _historical_reference(path: Path, container: Path, document: Mapping[str, An
     if "calculation_sha256" in document:
         record["calculation_sha256"] = document["calculation_sha256"]
     return record
+
+
+def _supplement_reference(
+    path: Path, container: Path, document: Mapping[str, Any]
+) -> dict[str, Any]:
+    return {
+        **_artifact_reference(
+            path,
+            container,
+            schema_version=SUPPLEMENTAL_ARCHITECTURE_REVIEW_SCHEMA,
+        ),
+        "supplement_id": document["supplement_id"],
+        "supplement_sha256": document["supplement_sha256"],
+    }
 
 
 def _build_projection_metadata(
@@ -1680,6 +1930,27 @@ def command_migrate(args: argparse.Namespace) -> None:
         )
         _write_new(item_output, items)
         dimension_comparison = _dimension_comparison(old_calc, canonical["calculation"], canonical["review"])
+        supplemental_view_inputs = [
+            {
+                "view_id": view_id,
+                "path": view["supplemental_architecture_review_path"],
+                "document": view["supplemental_architecture_review"],
+            }
+            for view_id, view in [
+                ("canonical_as_delivered", canonical),
+                *((item["view_id"], item) for item in counterfactuals),
+            ]
+            if view["supplemental_architecture_review"] is not None
+        ]
+        supplemental_migration_references = [
+            {
+                "view_id": item["view_id"],
+                "artifact": _supplement_reference(
+                    item["path"], migration_output, item["document"]
+                ),
+            }
+            for item in supplemental_view_inputs
+        ]
         migration = {
             "schema_version": MIGRATION_SCHEMA,
             "migration_id": "",
@@ -1717,16 +1988,24 @@ def command_migrate(args: argparse.Namespace) -> None:
                 "historical_input_artifacts": [{**deepcopy(item), "disposition": "unchanged_byte_for_byte"} for item in old_calc["input_artifacts"]],
                 "normalized_candidate": _historical_reference(canonical["candidate_path"], migration_output, canonical["candidate"]),
                 "item_inventory": _historical_reference(canonical["inventory_path"], migration_output, canonical["inventory"]),
+                "supplemental_architecture_reviews": supplemental_migration_references,
                 "source_pages_reopened": False,
                 "prose_inference_used": False,
-                "semantic_judgments_added": False,
+                "semantic_judgments_added": bool(
+                    supplemental_migration_references
+                ),
+                "semantic_judgment_scope": (
+                    "supplemental_architecture_review_only"
+                    if supplemental_migration_references
+                    else "none"
+                ),
                 "historical_artifacts_modified": False,
             },
             "dimension_comparison": dimension_comparison,
             "precision_comparison": {"v6": {"weighted_locator_precision": v6.precision_diagnostics(old_calc)["weighted_locator_precision"], "strict_substantive_precision": v6.precision_diagnostics(old_calc)["strict_substantive_precision"]}, "v7": precision_diagnostics(canonical["calculation"])},
             "gate_preservation": {"historical_gate_outcomes_sha256": gate_hash, "preserved_gate_outcomes_sha256": gate_hash, "historical_outcomes": deepcopy(old_result["critical_gates"]), "preserved_outcomes": deepcopy(old_result["critical_gates"]), "outcomes_equal": True},
             "structure_count_correction": {"thresholds": deepcopy(canonical["review"]["thresholds"]), "path_dispositions": [{key: deepcopy(item[key]) for key in ("path_id", "displayed_locator_count", "maximum_range_span", "atomic_assignment_count", "long_displayed_locator_string_review_trigger", "long_continuous_range_review_trigger", "applicable_structured_defect_ids", "removed_structured_defect_ids", "retained_structured_defect_ids", "historical_defect_dispositions", "final_architecture_disposition", "deterministic_mapping_rule_id")} for item in canonical["review"]["path_reviews"]], "removed_historical_defect_ids": deepcopy(canonical["review"]["summary"]["removed_historical_defect_ids"]), "new_defects_created_from_numeric_triggers": False},
-            "invariants": {"only_calculation_and_display_artifacts_rebuilt": True, "locator_support_and_missing_access_unchanged": True, "non_reliability_dimensions_unchanged_except_deterministic_structure_correction": True, "gates_unchanged": True, "representation_views_recalculated_from_own_inputs": True, "oxford_artifacts_modified": False, "formula_tuned_to_oxford_result": False},
+            "invariants": {"only_calculation_and_display_artifacts_rebuilt": True, "locator_support_and_missing_access_unchanged": True, "non_reliability_dimensions_unchanged_except_deterministic_structure_correction": True, "gates_unchanged": True, "representation_views_recalculated_from_own_inputs": True, "supplemental_review_narrowly_scoped_and_hash_bound": True, "oxford_artifacts_modified": False, "formula_tuned_to_oxford_result": False},
             "migration_sha256": "",
         }
         migration["migration_id"] = f"MIG-{v5.canonical_hash(migration)[:12].upper()}"
@@ -1746,7 +2025,16 @@ def command_migrate(args: argparse.Namespace) -> None:
             "active_projections": {name: _artifact_reference(path, receipt_output, schema_version=document["schema_version"]) for name, path, document in (("calculation", canonical_calc_output, canonical["calculation"]), ("result", result_output, result), ("item_assessments", item_output, items), ("web_report", web_output, web), ("projection_metadata", metadata_output, projection_metadata), ("structure_locator_review", canonical_review_output, canonical["review"]))},
             "historical_projections": {name: _historical_reference(path, receipt_output, document) for name, path, document in (("calculation", old_calc_path, old_calc), ("result", old_result_path, old_result), ("item_assessments", old_items_path, old_items), ("web_report", old_web_path, old_web), ("projection_metadata", old_metadata_path, old_metadata))},
             "counterfactual_projections": [{"view_id": item["view_id"], "calculation": _calculation_reference(item["calculation_path"], receipt_output, item["calculation"]), "structure_locator_review": _artifact_reference(item["review_path"], receipt_output, schema_version=item["review"]["schema_version"]) | {"review_sha256": item["review"]["review_sha256"]}, "provenance_sha256": sorted(provenance["sha256"] for provenance in item["provenance_artifacts"])} for item in counterfactuals],
-            "validation": {"all_hashes_recomputed": True, "all_schemas_valid": True, "historical_bytes_unchanged": True, "calculation_hash_valid": canonical["calculation"]["calculation_sha256"] == v5.canonical_hash(canonical["calculation"], "calculation_sha256"), "migration_hash_valid": migration["migration_sha256"] == v5.canonical_hash(migration, "migration_sha256"), "structure_review_hash_valid": canonical["review"]["review_sha256"] == structure_review_hash(canonical["review"], "review_sha256"), "decimal_safe_projection_validation": True, "gate_outcomes_equal": True, "representation_provenance_complete": True},
+            "supplemental_architecture_reviews": [
+                {
+                    "view_id": item["view_id"],
+                    "artifact": _supplement_reference(
+                        item["path"], receipt_output, item["document"]
+                    ),
+                }
+                for item in supplemental_view_inputs
+            ],
+            "validation": {"all_hashes_recomputed": True, "all_schemas_valid": True, "historical_bytes_unchanged": True, "calculation_hash_valid": canonical["calculation"]["calculation_sha256"] == v5.canonical_hash(canonical["calculation"], "calculation_sha256"), "migration_hash_valid": migration["migration_sha256"] == v5.canonical_hash(migration, "migration_sha256"), "structure_review_hash_valid": canonical["review"]["review_sha256"] == structure_review_hash(canonical["review"], "review_sha256"), "supplemental_review_hash_valid": all(item["document"]["supplement_sha256"] == v5.canonical_hash(item["document"], "supplement_sha256") for item in supplemental_view_inputs), "supplemental_review_scope_exact": all(view["review"]["summary"]["review_required_path_ids"] == [] for view in [canonical, *counterfactuals]), "decimal_safe_projection_validation": True, "gate_outcomes_equal": True, "representation_provenance_complete": True},
             "receipt_sha256": "",
         }
         receipt["receipt_id"] = f"VAL-{v5.canonical_hash(receipt)[:12].upper()}"

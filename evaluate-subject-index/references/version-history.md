@@ -21,6 +21,17 @@ V7 also corrects locator-string architecture screening. A displayed range counts
 
 The V6-to-V7 migration preserves all prior bytes, may remove a sole structured atomic-threshold false positive only from the active projection, and stops on missing grouping, prose-dependent locator mapping, or newly exposed unreviewed cases. Counterfactual views are recalculated from their own artifacts and provenance. The approved values and thresholds are frozen methodological choices, not Oxford-fitted parameters; the Oxford-shaped locator example is a regression case only.
 
+Tooling patch `dimension-score-cli-v7.0.1` adds the missing resume path
+after that fail-closed stop. An authorized narrow follow-up is frozen as a
+separate `subject-index-v7-architecture-review-supplement-v1` artifact. The
+migration recalculates V6 from its original bytes first, then requires each
+canonical or counterfactual supplement to bind its exact V6 input, candidate,
+inventory, and historical structure audit and to cover every and only the
+mechanically unresolved trigger paths. It projects the decisions in memory,
+records the semantic scope explicitly, and binds the supplement in the review,
+calculation, migration, and receipt. It does not change V7 formulas,
+thresholds, mappings, or historical V6 artifacts.
+
 See [rubric-v7.md](rubric-v7.md), [locator-utility-v7.md](locator-utility-v7.md), [structure-audit-v7.md](structure-audit-v7.md), and [score-migration-v6-to-v7.md](score-migration-v6-to-v7.md).
 
 ## V6 — weighted locator relevance

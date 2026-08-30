@@ -5,6 +5,7 @@ V7 adds new schema identities and leaves every V4, V5, and V6 schema and reader 
 | V7 artifact | Schema identity | Contract |
 | --- | --- | --- |
 | Native structure audit | `structure-audit-v5` | Explicit structured architecture-review decisions |
+| Supplemental migration architecture review | `subject-index-v7-architecture-review-supplement-v1` | Exact unresolved-trigger decisions bound to frozen V6 candidate, inventory, and structure bytes |
 | Locator evidence projection | `locator-evidence-state-v3.schema.json` | Valid two-axis combined locator state |
 | Structure locator review | `subject-index-structure-locator-review-v1` | Display/range/atomic derivation, triggers, semantic evidence, and dispositions |
 | Dimension calculation | `subject-index-dimension-calculations-v3` | V7 utility ledger, corrected active structure projection, and all calculation provenance |
@@ -40,5 +41,12 @@ Every applicable historical architecture defect also has one `historical_defect_
 ## History and projections
 
 Historical artifact references retain their original schema identities and file hashes. Migration never rewrites them. The V7 receipt binds the migration, calculation, result, item assessments, web report, projection metadata, and structure review plus all historical counterparts. Each counterfactual view binds its own V6 input/config/candidate/inventory, recalculated V7 calculation and review, and original representation-provenance files.
+
+When a supplemental architecture review is present, its self-hash and file hash
+are separately bound for the canonical or counterfactual view. Semantic
+validation first reconstructs the base review without the supplement, requires
+the declared and actual decision paths to equal that exact unresolved set, and
+rejects historical-decision overrides or evidence IDs outside the affected
+structured candidate path.
 
 JSON numbers are compared through canonical decimal-safe serialization, so parsing a stored decimal as `Decimal` and reconstructing it as a finite float does not create false drift, while a numeric-value change still fails validation.

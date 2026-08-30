@@ -13,6 +13,14 @@ Use a `subject-index-v6-to-v7-migration-input-v1` manifest with SHA-256 referenc
 - V6 calculation, result, item assessments, web report, and projection metadata; and
 - one complete input/config/candidate/inventory/V6-calculation set for every representation-adjusted counterfactual view.
 
+When a prior run stops on newly exposed structure triggers, the canonical view
+and every affected counterfactual may additionally reference one
+`subject-index-v7-architecture-review-supplement-v1` artifact. The supplement
+binds the exact V6 dimension-calculation input, candidate, inventory,
+historical structure audit, evaluation, and audit mode. It is not part of V6
+recalculation and cannot replace any V6
+input.
+
 The manifest records the methodology repository, exact V6 base commit, and V7 implementation commit. The migration verifies the old projection chain, recalculates V6 from its inputs, and requires the candidate and inventory file hashes bound by the V6 evidence identity.
 
 ## Algorithm
@@ -20,7 +28,7 @@ The manifest records the methodology repository, exact V6 base commit, and V7 im
 1. Validate every input schema, file hash, self-hash, artifact reference, calculation projection, and V6 gate array.
 2. Recalculate V6 from the canonical frozen ledgers and require dimension/value identity.
 3. Derive displayed-locator grouping, range ownership/spans, and atomic assignments from the exact normalized candidate and inventory.
-4. Reject missing grouping, prose-dependent mapping, incomplete locator utility, or unreviewed newly triggered architecture cases.
+4. Reject missing grouping, prose-dependent mapping, incomplete locator utility, or unreviewed newly triggered architecture cases. If a supplemental review is supplied, first derive the unresolved trigger set without it and require the supplement to contain every and only those paths.
 5. Build the active structure correction in memory. Never rewrite `structure-audit-v3`, V4, or any other historical file.
 6. Recalculate V7 Page-reference Reliability. Recalculate Findability and Navigation only when a deterministic false-positive architecture correction changes its active node/defect projection. Require all other dimensions to remain value-identical.
 7. Rebuild V7 item assessments, projection metadata, result, and web report.
@@ -46,6 +54,22 @@ The active V7 projection records every removed or retained historical architectu
 If corrected counting triggers a path that has no frozen structured determination about conceptual heterogeneity and access impairment, the disposition is `review_required`. A trigger alone cannot create a defect. Full migration stops with `supplemental_architecture_review_required`; pilot output may remain explicitly unscored/suppressed under the normal evidence-completeness rules.
 
 A supplemental review is limited to architecture. It cannot revisit source pages, locator-support judgments, missing-access audits, or unrelated structure judgments.
+
+Freeze the follow-up as
+`subject-index-v7-architecture-review-supplement-v1`. Its decision rows use the
+same four booleans and status contract as `structure-audit-v5`. Evidence IDs are
+restricted to the affected frozen candidate path, record, inventory nodes,
+display records, ranges, and atomic assignments. The migration validates its
+self-hash, bindings, exact unresolved-trigger scope, unique review identities,
+and non-overlap with decisions already present in the historical structure
+audit. It then projects the decisions in memory for review derivation. The V6
+configuration, V6 calculation, and historical structure bytes remain
+unchanged.
+
+The supplement is semantic input authorized after the fail-closed stop; the
+migration still does not invent a decision. The migration record and receipt
+state whether such judgments were added, identify their narrow scope, and bind
+each canonical or counterfactual supplement separately.
 
 ## Counterfactual score views
 
