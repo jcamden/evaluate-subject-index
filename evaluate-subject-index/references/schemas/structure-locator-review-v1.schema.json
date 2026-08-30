@@ -31,7 +31,8 @@
         "candidate_sha256": {"$ref": "#/$defs/sha256"},
         "normalized_candidate_file_sha256": {"$ref": "#/$defs/sha256"},
         "item_inventory_file_sha256": {"$ref": "#/$defs/sha256"},
-        "structure_audit_file_sha256": {"$ref": "#/$defs/sha256"}
+        "structure_audit_file_sha256": {"$ref": "#/$defs/sha256"},
+        "supplemental_architecture_review_file_sha256": {"$ref": "#/$defs/sha256"}
       },
       "additionalProperties": false
     },

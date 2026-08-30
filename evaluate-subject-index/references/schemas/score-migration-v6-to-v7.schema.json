@@ -3,7 +3,7 @@
   "$id": "score-migration-v6-to-v7.schema.json",
   "title": "Hash-bound V6-to-V7 score-only migration",
   "type": "object",
-  "required": ["schema_version", "migration_id", "evaluation_id", "tool", "methodology", "from", "to", "frozen_evidence", "dimension_comparison", "precision_comparison", "gate_preservation", "structure_count_correction", "invariants", "migration_sha256"],
+  "required": ["schema_version", "migration_id", "evaluation_id", "tool", "methodology", "repository_state", "from", "to", "frozen_evidence", "dimension_comparison", "precision_comparison", "gate_preservation", "structure_count_correction", "invariants", "migration_sha256"],
   "properties": {
     "schema_version": {"const": "subject-index-score-migration-v6-to-v7-v1"},
     "migration_id": {"type": "string", "pattern": "^MIG-[A-F0-9]{12}$"},
@@ -24,6 +24,7 @@
       },
       "additionalProperties": false
     },
+    "repository_state": {"$ref": "v7-migration-input.schema.json#/$defs/repositoryState"},
     "from": {
       "type": "object",
       "required": ["rubric_version", "calculation_profile", "calculation", "evaluation_result", "item_assessments", "web_report", "projection_metadata", "total_score", "score_views"],
@@ -64,11 +65,23 @@
         "historical_input_artifacts": {"type": "array", "items": {"type": "object", "required": ["role", "path", "sha256", "schema_version", "disposition"], "properties": {"role": {"type": "string"}, "path": {"type": "string"}, "sha256": {"$ref": "#/$defs/sha256"}, "schema_version": {"type": "string"}, "disposition": {"const": "unchanged_byte_for_byte"}}, "additionalProperties": false}},
         "normalized_candidate": {"$ref": "#/$defs/historicalArtifact"},
         "item_inventory": {"$ref": "#/$defs/historicalArtifact"},
+        "supplemental_architecture_reviews": {"type": "array", "items": {"$ref": "#/$defs/viewSupplement"}},
         "source_pages_reopened": {"const": false},
         "prose_inference_used": {"const": false},
-        "semantic_judgments_added": {"const": false},
+        "semantic_judgments_added": {"type": "boolean"},
+        "semantic_judgment_scope": {"enum": ["none", "supplemental_architecture_review_only"]},
         "historical_artifacts_modified": {"const": false}
       },
+      "allOf": [
+        {
+          "if": {"properties": {"semantic_judgments_added": {"const": true}}, "required": ["semantic_judgments_added"]},
+          "then": {"required": ["semantic_judgment_scope", "supplemental_architecture_reviews"], "properties": {"semantic_judgment_scope": {"const": "supplemental_architecture_review_only"}, "supplemental_architecture_reviews": {"minItems": 1}}}
+        },
+        {
+          "if": {"properties": {"semantic_judgments_added": {"const": false}}, "required": ["semantic_judgments_added"]},
+          "then": {"properties": {"semantic_judgment_scope": {"const": "none"}, "supplemental_architecture_reviews": {"maxItems": 0}}}
+        }
+      ],
       "additionalProperties": false
     },
     "dimension_comparison": {
@@ -123,6 +136,7 @@
         "non_reliability_dimensions_unchanged_except_deterministic_structure_correction": {"const": true},
         "gates_unchanged": {"const": true},
         "representation_views_recalculated_from_own_inputs": {"const": true},
+        "supplemental_review_narrowly_scoped_and_hash_bound": {"const": true},
         "oxford_artifacts_modified": {"const": false},
         "formula_tuned_to_oxford_result": {"const": false}
       },
@@ -146,6 +160,15 @@
     },
     "reviewArtifact": {
       "allOf": [{"$ref": "#/$defs/artifact"}, {"required": ["review_sha256"], "properties": {"schema_version": {"const": "subject-index-structure-locator-review-v1"}, "review_sha256": {"$ref": "#/$defs/sha256"}}}]
+    },
+    "supplementArtifact": {
+      "allOf": [{"$ref": "#/$defs/artifact"}, {"required": ["supplement_id", "supplement_sha256"], "properties": {"schema_version": {"const": "subject-index-v7-architecture-review-supplement-v1"}, "supplement_id": {"type": "string", "pattern": "^ARCHSUP-[A-F0-9]{12}$"}, "supplement_sha256": {"$ref": "#/$defs/sha256"}}}]
+    },
+    "viewSupplement": {
+      "type": "object",
+      "required": ["view_id", "artifact"],
+      "properties": {"view_id": {"type": "string", "minLength": 1}, "artifact": {"$ref": "#/$defs/supplementArtifact"}},
+      "additionalProperties": false
     },
     "structurePathDisposition": {
       "type": "object",

@@ -54,6 +54,13 @@ The command verifies both self-hashes and all schemas, requires exact calculatio
 
 Create a schema-valid `subject-index-v6-to-v7-migration-input-v1` manifest containing exact hashes for the V6 calculation input, normalized candidate, item inventory, calculation, result, item assessments, web report, projection metadata, and every counterfactual view’s own inputs.
 
+After a fail-closed `review_required` result has received an authorized narrow
+architecture follow-up, add `supplemental_architecture_review` to the canonical
+view and to every affected counterfactual view. The referenced artifact must
+validate as `subject-index-v7-architecture-review-supplement-v1`; its sorted
+decision paths must equal the mechanically unresolved trigger set exactly.
+Omit the field when no supplemental decision is needed.
+
 ```bash
 python evaluate-subject-index/scripts/dimension_score_v7_cli.py migrate-v6-to-v7 \
   --manifest /path/to/v7-migration-input.json \
@@ -61,6 +68,11 @@ python evaluate-subject-index/scripts/dimension_score_v7_cli.py migrate-v6-to-v7
 ```
 
 Use a new empty output directory. The migration refuses to overwrite outputs, alter history, infer range grouping from prose, copy a counterfactual score without recalculation, invent a new architecture judgment, or proceed with a required unmeasured/ambiguous locator.
+
+The migration recalculates V6 from its original input before it reads a
+supplement. A supplement therefore cannot rebind, repair, or replace frozen V6
+evidence. Its exact file hash is carried into the V7 structure review,
+calculation, migration record, and validation receipt.
 
 ## Validate
 

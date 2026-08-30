@@ -641,6 +641,7 @@ def derive_structure_locator_review(
     inventory_file_sha256: str,
     structure_file_sha256: str,
     audit_mode: str,
+    supplemental_architecture_review_file_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Return the complete deterministic V7 review ledger.
 
@@ -659,6 +660,13 @@ def derive_structure_locator_review(
         ("structure_file_sha256", structure_file_sha256),
     ):
         _require(isinstance(value, str) and len(value) == 64, "invalid_structure_review_input", f"{label} must be a SHA-256 digest.")
+    if supplemental_architecture_review_file_sha256 is not None:
+        _require(
+            isinstance(supplemental_architecture_review_file_sha256, str)
+            and len(supplemental_architecture_review_file_sha256) == 64,
+            "invalid_structure_review_input",
+            "supplemental_architecture_review_file_sha256 must be a SHA-256 digest.",
+        )
     _require(audit_mode in {"full", "pilot"}, "invalid_structure_review_input", "audit_mode must be full or pilot.")
 
     records_by_path = _records_by_id(candidate.get("records"), "path_id", "candidate.records")
@@ -857,7 +865,14 @@ def derive_structure_locator_review(
             "normalized_candidate_file_sha256": candidate_file_sha256,
             "item_inventory_file_sha256": inventory_file_sha256,
             "structure_audit_file_sha256": structure_file_sha256,
-        },
+        }
+        | (
+            {
+                "supplemental_architecture_review_file_sha256": supplemental_architecture_review_file_sha256
+            }
+            if supplemental_architecture_review_file_sha256 is not None
+            else {}
+        ),
         "thresholds": {
             "long_displayed_locator_string": {"operator": ">", "displayed_locator_count": DISPLAYED_LOCATOR_THRESHOLD},
             "long_continuous_range": {"operator": ">", "inclusive_range_span": CONTINUOUS_RANGE_SPAN_THRESHOLD},

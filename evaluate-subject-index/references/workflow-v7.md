@@ -19,10 +19,11 @@ An unreviewed trigger blocks a full score. The permitted follow-up is a narrowly
 2. Recalculate V6 and require canonical decimal-safe equality.
 3. Derive display/range/atomic metrics from frozen normalized candidate and inventory groupings.
 4. Stop on missing grouping, prose-dependent locator mapping, or a newly exposed unreviewed architecture case.
-5. Apply any narrowly permitted false-positive structure correction only to an in-memory V7 ledger copy.
-6. Recalculate V7, including each counterfactual from its own inputs and representation provenance.
-7. Preserve V6 gates exactly and prove all non-target dimensions unchanged, except Findability arithmetic affected by a deterministic structure correction.
-8. Write separately versioned V7 projections, migration record, and a receipt binding both histories.
+5. After an authorized supplemental follow-up, bind its separate artifact and require its decision paths to equal every and only the unresolved triggers; project the decisions in memory without changing V6 inputs.
+6. Apply any narrowly permitted false-positive structure correction only to an in-memory V7 ledger copy.
+7. Recalculate V7, including each counterfactual from its own inputs, supplement when applicable, and representation provenance.
+8. Preserve V6 gates exactly and prove all non-target dimensions unchanged, except Findability arithmetic affected by a deterministic structure correction.
+9. Write separately versioned V7 projections, migration record, and a receipt binding both histories.
 
 Removing a sole false-positive atomic-threshold penalty is mechanical when both corrected triggers are false and no independent basis remains. Adding a missed architecture defect is semantic and therefore normally requires the supplemental review.
 

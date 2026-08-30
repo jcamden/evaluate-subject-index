@@ -252,6 +252,7 @@ def migration_manifest(root: Path, paths: dict[str, Path]) -> Path:
         "v6_web_report": {"path": paths["web"].name, "sha256": digest(paths["web"])},
         "v6_projection_metadata": {"path": paths["metadata"].name, "sha256": digest(paths["metadata"])},
     }
+    calculation = json.loads(paths["calculation"].read_text())
     write_json(
         manifest_path,
         {
@@ -261,11 +262,84 @@ def migration_manifest(root: Path, paths: dict[str, Path]) -> Path:
                 "base_commit": "1" * 40,
                 "implementation_commit": "2" * 40,
             },
+            "repository_state": {
+                "evaluation_repository": "https://github.com/example/evaluation",
+                "evaluation_base_commit": "3" * 40,
+                "benchmark_repository": "https://github.com/example/benchmark",
+                "benchmark_head_commit": "4" * 40,
+                "frozen_benchmark_commit": "5" * 40,
+                "frozen_benchmark_sha256": calculation["evidence_identity"][
+                    "benchmark_sha256"
+                ],
+            },
             "canonical": canonical,
             "counterfactuals": [],
         },
     )
     return manifest_path
+
+
+def supplemental_architecture_review(
+    root: Path, paths: dict[str, Path], path_ids: list[str]
+) -> Path:
+    config = json.loads(paths["config"].read_text())
+    structure_path = (
+        paths["config"].parent / config["inputs"]["structure_audit"]["path"]
+    ).resolve()
+    candidate = json.loads(paths["candidate"].read_text())
+    document = {
+        "schema_version": "subject-index-v7-architecture-review-supplement-v1",
+        "supplement_id": "",
+        "evaluation_id": config["evaluation_id"],
+        "audit_mode": config["audit_mode"],
+        "bindings": {
+            "candidate_sha256": candidate["candidate_sha256"],
+            "v6_dimension_calculation_input_file_sha256": digest(
+                paths["config"]
+            ),
+            "normalized_candidate_file_sha256": digest(paths["candidate"]),
+            "item_inventory_file_sha256": digest(paths["inventory"]),
+            "historical_structure_audit_file_sha256": digest(structure_path),
+        },
+        "review_scope": {
+            "rule_id": "STRUCT-V7-EXACT-UNRESOLVED-TRIGGER-SET",
+            "path_ids": sorted(path_ids),
+        },
+        "decisions": [
+            {
+                "review_id": f"ARCHREV-{path_id.removeprefix('PATH-')}",
+                "path_id": path_id,
+                "review_status": "reviewed_no_defect",
+                "conceptually_distinguishable_treatments": False,
+                "meaningful_subheadings_or_access_routes": False,
+                "material_scanning_or_retrieval_impairment": False,
+                "subdivision_is_conceptual_not_trivial": False,
+                "evidence_ids": [path_id],
+                "defect_ids": [],
+            }
+            for path_id in sorted(path_ids)
+        ],
+        "provenance": {
+            "authorization_scope": "supplemental_architecture_review_only",
+            "structured_architecture_evidence_only": True,
+            "source_pages_reopened": False,
+            "locator_support_reopened": False,
+            "missing_access_reopened": False,
+            "unrelated_structure_judgments_reopened": False,
+            "display_prose_used_for_grouping": False,
+            "historical_artifacts_modified": False,
+        },
+        "supplement_sha256": "",
+    }
+    document["supplement_id"] = (
+        f"ARCHSUP-{v5.canonical_hash(document)[:12].upper()}"
+    )
+    document["supplement_sha256"] = v5.canonical_hash(
+        document, "supplement_sha256"
+    )
+    path = root / "supplemental-architecture-review.v7.json"
+    write_json(path, document)
+    return path
 
 
 class V7ScoreOnlyMigrationTests(unittest.TestCase):
@@ -308,6 +382,10 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
             receipt = json.loads((first_dir / "validation-receipt.v7.json").read_text())
             self.assertEqual("subject-index-rubric-v7", calculation["rubric_version"])
             self.assertEqual("subject-index-score-migration-v6-to-v7-v1", migration["schema_version"])
+            self.assertEqual(
+                "3" * 40,
+                migration["repository_state"]["evaluation_base_commit"],
+            )
             self.assertTrue(migration["gate_preservation"]["outcomes_equal"])
             self.assertFalse(migration["frozen_evidence"]["prose_inference_used"])
             self.assertEqual("subject-index-item-assessments-v4", items["schema_version"])
@@ -665,6 +743,140 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
                 failure["error"]["details"]["review_required_path_ids"],
             )
             self.assertFalse((root / "v7" / "dimension-calculations.v7.json").exists())
+
+    def test_hash_bound_supplement_resolves_exact_unreviewed_trigger_set(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            documents = expanded_path_documents(7)
+            paths = prepare_v6_projection(root, documents)
+            manifest_path = migration_manifest(root, paths)
+            supplement_path = supplemental_architecture_review(
+                root, paths, ["PATH-0001"]
+            )
+            manifest = json.loads(manifest_path.read_text())
+            manifest["canonical"]["supplemental_architecture_review"] = {
+                "path": supplement_path.name,
+                "sha256": digest(supplement_path),
+            }
+            write_json(manifest_path, manifest)
+            frozen = {
+                key: hashlib.sha256(path.read_bytes()).hexdigest()
+                for key, path in paths.items()
+            }
+
+            first_dir = root / "v7-a"
+            second_dir = root / "v7-b"
+            run_cli(
+                "dimension_score_v7_cli.py",
+                "migrate-v6-to-v7",
+                "--manifest",
+                manifest_path,
+                "--output-directory",
+                first_dir,
+            )
+            run_cli(
+                "dimension_score_v7_cli.py",
+                "migrate-v6-to-v7",
+                "--manifest",
+                manifest_path,
+                "--output-directory",
+                second_dir,
+            )
+            self.assertEqual(
+                frozen,
+                {
+                    key: hashlib.sha256(path.read_bytes()).hexdigest()
+                    for key, path in paths.items()
+                },
+            )
+            for relative in sorted(
+                path.relative_to(first_dir) for path in first_dir.rglob("*.json")
+            ):
+                self.assertEqual(
+                    (first_dir / relative).read_bytes(),
+                    (second_dir / relative).read_bytes(),
+                    relative,
+                )
+
+            review = json.loads(
+                (first_dir / "structure-locator-review.v7.json").read_text()
+            )
+            path_review = next(
+                item
+                for item in review["path_reviews"]
+                if item["path_id"] == "PATH-0001"
+            )
+            self.assertEqual(
+                "reviewed_no_defect",
+                path_review["final_architecture_disposition"],
+            )
+            self.assertEqual([], review["summary"]["review_required_path_ids"])
+            self.assertEqual(
+                digest(supplement_path),
+                review["inputs"][
+                    "supplemental_architecture_review_file_sha256"
+                ],
+            )
+            calculation = json.loads(
+                (first_dir / "dimension-calculations.v7.json").read_text()
+            )
+            self.assertIn(
+                "supplemental_architecture_review",
+                [item["role"] for item in calculation["input_artifacts"]],
+            )
+            migration = json.loads(
+                (first_dir / "score-migration.v6-to-v7.json").read_text()
+            )
+            self.assertTrue(
+                migration["frozen_evidence"]["semantic_judgments_added"]
+            )
+            self.assertEqual(
+                "supplemental_architecture_review_only",
+                migration["frozen_evidence"]["semantic_judgment_scope"],
+            )
+            self.assertEqual(
+                ["canonical_as_delivered"],
+                [
+                    item["view_id"]
+                    for item in migration["frozen_evidence"][
+                        "supplemental_architecture_reviews"
+                    ]
+                ],
+            )
+            receipt = json.loads(
+                (first_dir / "validation-receipt.v7.json").read_text()
+            )
+            self.assertTrue(receipt["validation"]["supplemental_review_hash_valid"])
+            self.assertTrue(receipt["validation"]["supplemental_review_scope_exact"])
+
+    def test_supplement_refuses_incomplete_or_extra_trigger_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            documents = expanded_path_documents(7)
+            paths = prepare_v6_projection(root, documents)
+            manifest_path = migration_manifest(root, paths)
+            supplement_path = supplemental_architecture_review(
+                root, paths, ["PATH-0002"]
+            )
+            manifest = json.loads(manifest_path.read_text())
+            manifest["canonical"]["supplemental_architecture_review"] = {
+                "path": supplement_path.name,
+                "sha256": digest(supplement_path),
+            }
+            write_json(manifest_path, manifest)
+            failure = run_cli(
+                "dimension_score_v7_cli.py",
+                "migrate-v6-to-v7",
+                "--manifest",
+                manifest_path,
+                "--output-directory",
+                root / "v7",
+                expect_ok=False,
+            )
+            self.assertEqual(
+                "supplemental_architecture_review_scope_mismatch",
+                failure["error"]["code"],
+            )
 
 
 if __name__ == "__main__":
