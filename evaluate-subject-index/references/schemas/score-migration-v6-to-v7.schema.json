@@ -3,7 +3,7 @@
   "$id": "score-migration-v6-to-v7.schema.json",
   "title": "Hash-bound V6-to-V7 score-only migration",
   "type": "object",
-  "required": ["schema_version", "migration_id", "evaluation_id", "tool", "methodology", "from", "to", "frozen_evidence", "dimension_comparison", "precision_comparison", "gate_preservation", "structure_count_correction", "invariants", "migration_sha256"],
+  "required": ["schema_version", "migration_id", "evaluation_id", "tool", "methodology", "repository_state", "from", "to", "frozen_evidence", "dimension_comparison", "precision_comparison", "gate_preservation", "structure_count_correction", "invariants", "migration_sha256"],
   "properties": {
     "schema_version": {"const": "subject-index-score-migration-v6-to-v7-v1"},
     "migration_id": {"type": "string", "pattern": "^MIG-[A-F0-9]{12}$"},
@@ -24,6 +24,7 @@
       },
       "additionalProperties": false
     },
+    "repository_state": {"$ref": "v7-migration-input.schema.json#/$defs/repositoryState"},
     "from": {
       "type": "object",
       "required": ["rubric_version", "calculation_profile", "calculation", "evaluation_result", "item_assessments", "web_report", "projection_metadata", "total_score", "score_views"],

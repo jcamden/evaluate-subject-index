@@ -52,7 +52,7 @@ SUPPLEMENTAL_ARCHITECTURE_REVIEW_SCHEMA = (
     "subject-index-v7-architecture-review-supplement-v1"
 )
 TOOL_NAME = "dimension_score_v7_cli.py"
-TOOL_VERSION = "dimension-score-cli-v7.0.1"
+TOOL_VERSION = "dimension-score-cli-v7.0.2"
 METHODOLOGY_REPOSITORY = "https://github.com/jcamden/evaluate-subject-index"
 
 ZERO = Decimal(0)
@@ -1850,6 +1850,13 @@ def command_migrate(args: argparse.Namespace) -> None:
         old_items_path, old_items, _ = _resolve_manifest_artifact(manifest_path, canonical_refs["v6_item_assessments"], "canonical.v6_item_assessments")
         old_web_path, old_web, _ = _resolve_manifest_artifact(manifest_path, canonical_refs["v6_web_report"], "canonical.v6_web_report")
         old_metadata_path, old_metadata, _ = _resolve_manifest_artifact(manifest_path, canonical_refs["v6_projection_metadata"], "canonical.v6_projection_metadata")
+        repository_state = manifest["repository_state"]
+        v5.require(
+            repository_state["frozen_benchmark_sha256"]
+            == old_calc.get("evidence_identity", {}).get("benchmark_sha256"),
+            "frozen_benchmark_identity_mismatch",
+            "The manifest's frozen benchmark identity does not match the exact V6 calculation.",
+        )
         v6.validate_projection_artifacts(old_calc_path, old_result_path, old_web_path)
         v5.validate_schema_document(old_items, "item-assessments-v3.schema.json", "Historical V6 item assessments")
         v5.validate_schema_document(old_metadata, "v6-projection-metadata.schema.json", "Historical V6 projection metadata")
@@ -1957,6 +1964,7 @@ def command_migrate(args: argparse.Namespace) -> None:
             "evaluation_id": canonical["calculation"]["evaluation_id"],
             "tool": {"name": TOOL_NAME, "version": TOOL_VERSION},
             "methodology": deepcopy(manifest["methodology"]),
+            "repository_state": deepcopy(repository_state),
             "from": {
                 "rubric_version": "subject-index-rubric-v6",
                 "calculation_profile": "subject-index-dimension-calculation-v2",

@@ -3,7 +3,7 @@
   "$id": "v7-migration-input.schema.json",
   "title": "Hash-bound V6-to-V7 score-only migration input",
   "type": "object",
-  "required": ["schema_version", "methodology", "canonical", "counterfactuals"],
+  "required": ["schema_version", "methodology", "repository_state", "canonical", "counterfactuals"],
   "properties": {
     "schema_version": {"const": "subject-index-v6-to-v7-migration-input-v1"},
     "methodology": {
@@ -16,6 +16,7 @@
       },
       "additionalProperties": false
     },
+    "repository_state": {"$ref": "#/$defs/repositoryState"},
     "canonical": {
       "type": "object",
       "required": ["dimension_calculation_input", "normalized_candidate", "item_inventory", "v6_calculation", "v6_evaluation_result", "v6_item_assessments", "v6_web_report", "v6_projection_metadata"],
@@ -50,6 +51,19 @@
     }
   },
   "$defs": {
+    "repositoryState": {
+      "type": "object",
+      "required": ["evaluation_repository", "evaluation_base_commit", "benchmark_repository", "benchmark_head_commit", "frozen_benchmark_commit", "frozen_benchmark_sha256"],
+      "properties": {
+        "evaluation_repository": {"type": "string", "format": "uri"},
+        "evaluation_base_commit": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+        "benchmark_repository": {"type": "string", "format": "uri"},
+        "benchmark_head_commit": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+        "frozen_benchmark_commit": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+        "frozen_benchmark_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      },
+      "additionalProperties": false
+    },
     "artifact": {
       "type": "object",
       "required": ["path", "sha256"],

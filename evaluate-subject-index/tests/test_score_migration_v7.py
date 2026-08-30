@@ -252,6 +252,7 @@ def migration_manifest(root: Path, paths: dict[str, Path]) -> Path:
         "v6_web_report": {"path": paths["web"].name, "sha256": digest(paths["web"])},
         "v6_projection_metadata": {"path": paths["metadata"].name, "sha256": digest(paths["metadata"])},
     }
+    calculation = json.loads(paths["calculation"].read_text())
     write_json(
         manifest_path,
         {
@@ -260,6 +261,16 @@ def migration_manifest(root: Path, paths: dict[str, Path]) -> Path:
                 "repository": "https://github.com/jcamden/evaluate-subject-index",
                 "base_commit": "1" * 40,
                 "implementation_commit": "2" * 40,
+            },
+            "repository_state": {
+                "evaluation_repository": "https://github.com/example/evaluation",
+                "evaluation_base_commit": "3" * 40,
+                "benchmark_repository": "https://github.com/example/benchmark",
+                "benchmark_head_commit": "4" * 40,
+                "frozen_benchmark_commit": "5" * 40,
+                "frozen_benchmark_sha256": calculation["evidence_identity"][
+                    "benchmark_sha256"
+                ],
             },
             "canonical": canonical,
             "counterfactuals": [],
@@ -371,6 +382,10 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
             receipt = json.loads((first_dir / "validation-receipt.v7.json").read_text())
             self.assertEqual("subject-index-rubric-v7", calculation["rubric_version"])
             self.assertEqual("subject-index-score-migration-v6-to-v7-v1", migration["schema_version"])
+            self.assertEqual(
+                "3" * 40,
+                migration["repository_state"]["evaluation_base_commit"],
+            )
             self.assertTrue(migration["gate_preservation"]["outcomes_equal"])
             self.assertFalse(migration["frozen_evidence"]["prose_inference_used"])
             self.assertEqual("subject-index-item-assessments-v4", items["schema_version"])

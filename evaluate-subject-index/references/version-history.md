@@ -32,6 +32,12 @@ records the semantic scope explicitly, and binds the supplement in the review,
 calculation, migration, and receipt. It does not change V7 formulas,
 thresholds, mappings, or historical V6 artifacts.
 
+Tooling patch `dimension-score-cli-v7.0.2` additionally requires the migration
+manifest and record to preserve the exact evaluation base, benchmark head,
+frozen benchmark commit, and frozen benchmark SHA-256. The frozen benchmark
+hash must equal the identity already bound into the V6 calculation, preventing
+a later benchmark repository head from silently rebinding the evaluation.
+
 See [rubric-v7.md](rubric-v7.md), [locator-utility-v7.md](locator-utility-v7.md), [structure-audit-v7.md](structure-audit-v7.md), and [score-migration-v6-to-v7.md](score-migration-v6-to-v7.md).
 
 ## V6 — weighted locator relevance

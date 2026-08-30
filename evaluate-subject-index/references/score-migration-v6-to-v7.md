@@ -21,7 +21,7 @@ historical structure audit, evaluation, and audit mode. It is not part of V6
 recalculation and cannot replace any V6
 input.
 
-The manifest records the methodology repository, exact V6 base commit, and V7 implementation commit. The migration verifies the old projection chain, recalculates V6 from its inputs, and requires the candidate and inventory file hashes bound by the V6 evidence identity.
+The manifest records the methodology repository, exact V6 base commit, V7 implementation commit, evaluation repository/base commit, benchmark repository/current head, frozen benchmark commit, and frozen benchmark SHA-256. The migration verifies the old projection chain, recalculates V6 from its inputs, requires the candidate and inventory file hashes bound by the V6 evidence identity, and refuses a frozen benchmark SHA-256 that differs from the exact V6 calculation. A later benchmark head never silently rebinds the evaluation.
 
 ## Algorithm
 
