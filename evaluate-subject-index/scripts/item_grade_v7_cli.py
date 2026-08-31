@@ -250,6 +250,14 @@ def build_v7_assessments(
         "review_id": structure_review["review_id"],
         "review_sha256": structure_review["review_sha256"],
     }
+    if "locator_fit_compatibility" in calculation:
+        result["locator_fit_compatibility"] = deepcopy(
+            calculation["locator_fit_compatibility"]
+        )
+    if "locator_fit_supplement" in calculation:
+        result["locator_fit_supplement"] = deepcopy(
+            calculation["locator_fit_supplement"]
+        )
     legacy.rebuild_summary(result)
     result["summary"]["locator_utility_tiers"] = {
         "treatment": dict(sorted(Counter(item["treatment_category"] for item in assignments.values()).items())),

@@ -14,6 +14,8 @@ The treatment ceilings are 1.00 substantive, 0.70 mixed, 0.25 weak presence, and
 
 Weak presence never exceeds 0.25, even with exact or partial fit. No treatment or no path fit produces zero. Do not multiply the axes. Do not inspect rationale, evidence summaries, headings as prose, or other free text to obtain a more favorable mapping.
 
+`LOC_POS` records a reliability consequence, not a semantic fit cause. Historical missing-`defect_kind` compatibility is limited to valid `structure-audit-v3` code/severity evidence that selects exactly one existing category. It never invents a modern defect kind. Ambiguous, cosmetic, neutral, contradictory, or multiply classifiable evidence fails closed.
+
 Editorial Selectivity is separate: its existing substantive/mixed/weak-presence credits do not change. Strict substantive precision remains public. Caps and gates remain independent.
 
 ## Locator strings, ranges, and assignments
@@ -59,3 +61,5 @@ V6-to-V7 migration never reopens or reinterprets evidence. Exact frozen normaliz
 A false-positive historical penalty may be removed only when its exact structured root-cause family states that atomic assignments were used as the displayed-locator threshold, the atomic count exceeded six, both corrected triggers are false, and no independent architecture basis remains. History is not edited.
 
 A newly exposed trigger without a frozen structured semantic determination is `review_required`. Full scoring stops or suppresses the affected active score pending a narrowly scoped supplemental architecture review. No new defect is created from a threshold alone.
+
+An unresolved complete-path-fit set similarly blocks full migration. A hash-bound `subject-index-v7-locator-fit-supplement-v1` may carry separately authorized decisions for every and only that set. It supplies category names only; the calculator derives frozen `F`, `L=min(T,F)`, and grade values. Supplemental decisions are per-view, applied in memory, and cannot modify historical evidence or non-fit state.

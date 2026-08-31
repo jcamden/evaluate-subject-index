@@ -48,6 +48,8 @@ the supplement's decision set to equal the unresolved trigger set exactly,
 projects those decisions only in memory, and hash-binds the supplement in every
 affected score view. It never upgrades or rewrites the V3/V4 file in place.
 
+A `subject-index-v7-locator-fit-supplement-v1` is a different semantic input. It cannot add, remove, reinterpret, or replace a structure defect or architecture decision. Even when a decision cites an applicable historical structured defect ID, its sole effect is the affected locator's complete-path-fit category in memory; structure counts, dispositions, gates, and historical bytes remain unchanged.
+
 ## Migration dispositions
 
 | Disposition | Meaning |

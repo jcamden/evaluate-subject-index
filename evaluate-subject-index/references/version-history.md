@@ -38,6 +38,10 @@ frozen benchmark commit, and frozen benchmark SHA-256. The frozen benchmark
 hash must equal the identity already bound into the V6 calculation, preventing
 a later benchmark repository head from silently rebinding the evaluation.
 
+Tooling patch `dimension-score-cli-v7.0.3` adds two fail-closed migration-only compatibility mechanisms without changing any V7 value or formula. First, historical `structure-audit-v3` locator-bound defects that predate `defect_kind` may use `F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1` when validated code, severity, scope, binding, and all other structured fields select exactly one existing fit category. Minor remains 0.35, major 0.15, and critical zero. Cosmetic, neutral, unknown, incomplete, contradictory, or multiply classifiable states remain unresolved or invalid; bare `LOC_POS` remains consequence-only.
+
+Second, `subject-index-v7-locator-fit-supplement-v1` transports separately authorized category decisions for every and only the unresolved fit set derived after exact V6 recalculation. It is self-hashed and binds all per-view inputs and representation provenance. It contains no numerical credit or score, applies only to complete-path fit in memory, and is recorded throughout affected V7 provenance. Canonical and counterfactual views validate independently. Existing valid V7 artifact shapes remain schema-valid; new v7.0.3 migration and receipt output adds explicit locator-fit provenance. Synthetic fixtures alone defined and validate these rules; no evaluation result, locator distribution, candidate data, or expected score was used as a target.
+
 See [rubric-v7.md](rubric-v7.md), [locator-utility-v7.md](locator-utility-v7.md), [structure-audit-v7.md](structure-audit-v7.md), and [score-migration-v6-to-v7.md](score-migration-v6-to-v7.md).
 
 ## V6 — weighted locator relevance

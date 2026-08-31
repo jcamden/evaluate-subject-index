@@ -70,6 +70,35 @@
       },
       "additionalProperties": false
     },
+    "locator_fit_compatibility": {
+      "type": "object",
+      "required": ["rule", "classifications", "unresolved_before_supplement", "unresolved_after_supplement", "historical_defects_rewritten", "prose_inference_used"],
+      "properties": {
+        "rule": {"const": "F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1"},
+        "classifications": {"type": "array", "items": {"$ref": "#/$defs/compatibilityClassification"}},
+        "unresolved_before_supplement": {"type": "integer", "minimum": 0},
+        "unresolved_after_supplement": {"type": "integer", "minimum": 0},
+        "historical_defects_rewritten": {"const": false},
+        "prose_inference_used": {"const": false}
+      },
+      "additionalProperties": false
+    },
+    "locator_fit_supplement": {
+      "type": "object",
+      "required": ["schema_version", "supplement_id", "supplement_sha256", "file_sha256", "scope_rule_id", "unresolved_set_sha256", "decision_count", "application", "numerical_credit_supplied"],
+      "properties": {
+        "schema_version": {"const": "subject-index-v7-locator-fit-supplement-v1"},
+        "supplement_id": {"type": "string", "pattern": "^FITSUP-[A-F0-9]{12}$"},
+        "supplement_sha256": {"$ref": "#/$defs/sha256"},
+        "file_sha256": {"$ref": "#/$defs/sha256"},
+        "scope_rule_id": {"const": "FIT-V7-EXACT-UNRESOLVED-LOCATOR-SET-V1"},
+        "unresolved_set_sha256": {"$ref": "#/$defs/sha256"},
+        "decision_count": {"type": "integer", "minimum": 1},
+        "application": {"const": "complete_path_fit_only_in_memory"},
+        "numerical_credit_supplied": {"const": false}
+      },
+      "additionalProperties": false
+    },
     "dimensions": {
       "type": "array",
       "minItems": 6,
@@ -92,6 +121,32 @@
   "$defs": {
     "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "decimal": {"type": "string", "pattern": "^-?[0-9]+(?:\\.[0-9]+)?$"},
+    "compatibilityClassification": {
+      "type": "object",
+      "required": ["locator_id", "path_id", "compatibility_rule_id", "fit_category", "fit_rule_id", "applicable_structured_defect_ids", "prose_inference_used"],
+      "properties": {
+        "locator_id": {"type": "string", "pattern": "^LOC-"},
+        "path_id": {"type": "string", "pattern": "^PATH-"},
+        "compatibility_rule_id": {"const": "F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1"},
+        "fit_category": {"enum": ["material_mismatch", "severe_mismatch", "no_fit"]},
+        "fit_rule_id": {"enum": ["F-MINOR-MISMATCH-035", "F-MAJOR-MISMATCH-015", "F-NO-FIT-000"]},
+        "applicable_structured_defect_ids": {"type": "array", "items": {"type": "string", "pattern": "^DEFECT-"}, "uniqueItems": true},
+        "prose_inference_used": {"const": false}
+      },
+      "additionalProperties": false
+    },
+    "reliabilityCompatibilityClassification": {
+      "type": "object",
+      "required": ["locator_id", "fit_category", "fit_rule_id", "compatibility_rule_ids", "applicable_structured_defect_ids"],
+      "properties": {
+        "locator_id": {"type": "string", "pattern": "^LOC-"},
+        "fit_category": {"enum": ["material_mismatch", "severe_mismatch", "no_fit"]},
+        "fit_rule_id": {"enum": ["F-MINOR-MISMATCH-035", "F-MAJOR-MISMATCH-015", "F-NO-FIT-000"]},
+        "compatibility_rule_ids": {"type": "array", "items": {"const": "F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1"}, "minItems": 1, "maxItems": 1, "uniqueItems": true},
+        "applicable_structured_defect_ids": {"type": "array", "items": {"type": "string", "pattern": "^DEFECT-"}, "uniqueItems": true}
+      },
+      "additionalProperties": false
+    },
     "uncertaintyTriple": {
       "type": "object",
       "required": ["lower", "central", "upper"],
@@ -176,7 +231,11 @@
         "fit_score": {"enum": ["1", "0.7", "0.35", "0.15", "0", null]},
         "treatment_rule_id": {"type": "string", "pattern": "^T-[A-Z0-9-]+$"},
         "fit_rule_id": {"type": "string", "pattern": "^F-[A-Z0-9-]+$"},
-        "mapping_rule_id": {"type": "string", "pattern": "^T-[A-Z0-9-]+\\+F-[A-Z0-9-]+\\+MIN$"},
+        "mapping_rule_id": {"type": "string", "pattern": "^T-[A-Z0-9-]+\\+F-[A-Z0-9-]+(?:\\+F-COMPAT-[A-Z0-9-]+)?\\+MIN$"},
+        "fit_classification_source": {"enum": ["frozen_uninspectable_state", "structured_no_fit_precedence", "frozen_supported_judgment", "frozen_partially_supported_judgment", "frozen_absent_treatment", "modern_structured_fit_evidence", "legacy_code_severity_compatibility", "frozen_weak_treatment_only", "supplemental_locator_fit", "not_measured"]},
+        "compatibility_rule_ids": {"type": "array", "items": {"const": "F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1"}, "uniqueItems": true, "maxItems": 1},
+        "supplemental_fit_decision_id": {"type": ["string", "null"], "pattern": "^FITDEC-[A-F0-9]{12}$"},
+        "supplemental_fit_evidence_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
         "combined_credit": {"enum": ["1", "0.7", "0.35", "0.25", "0.15", "0", null]},
         "diagnostic_grade": {"enum": [100, 70, 35, 25, 15, 0, null]},
         "disposition": {"enum": ["assessable", "bounded", "not_measured"]},
@@ -202,6 +261,8 @@
         "counts_by_combined_credit_value": {"$ref": "#/$defs/combinedCreditCounts"},
         "locator_utility_assignments": {"type": "array", "items": {"$ref": "#/$defs/utilityAssignment"}},
         "mapping_rejections": {"type": "array", "maxItems": 0},
+        "compatibility_classifications": {"type": "array", "items": {"$ref": "#/$defs/reliabilityCompatibilityClassification"}},
+        "supplemental_fit_decision_count": {"type": "integer", "minimum": 0},
         "treatment_score_numerator": {"$ref": "#/$defs/decimal"},
         "treatment_score_denominator": {"type": "integer", "minimum": 0},
         "mean_treatment_score": {"$ref": "#/$defs/decimal"},

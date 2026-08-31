@@ -64,6 +64,24 @@ def defect(
     }
 
 
+def legacy_defect(
+    code: str,
+    severity: str | None,
+    *,
+    locator_id: str = "LOC-TEST",
+    defect_id: str = "DEFECT-LEGACY-TEST",
+) -> dict:
+    record = {
+        "defect_id": defect_id,
+        "code": code,
+        "summary": "Synthetic legacy display prose is not a classifier.",
+        "affected_ids": [locator_id],
+    }
+    if severity is not None:
+        record["severity"] = severity
+    return record
+
+
 def dimension(calculation: dict, dimension_id: str) -> dict:
     return next(item for item in calculation["dimensions"] if item["dimension_id"] == dimension_id)
 
@@ -77,8 +95,11 @@ class LocatorUtilityPolicyTests(unittest.TestCase):
         expected_combined: str | None,
         *,
         defects: list[dict] | None = None,
+        legacy_defects: list[dict] | None = None,
     ) -> dict:
-        assignment = assign_locator_utility(record, defects or []).as_dict()
+        assignment = assign_locator_utility(
+            record, defects or [], legacy_defects or []
+        ).as_dict()
         self.assertEqual(expected_treatment, assignment["treatment_score"])
         self.assertEqual(expected_fit, assignment["fit_score"])
         self.assertEqual(expected_combined, assignment["combined_credit"])
@@ -208,6 +229,7 @@ class LocatorUtilityPolicyTests(unittest.TestCase):
     def test_contradictory_and_ambiguous_states_fail_closed(self) -> None:
         cases = (
             state("supported", "passing_mention"),
+            state("supported", "substantive", codes=["CON"], severity="cosmetic"),
             state("partially_supported", "absent"),
             state("unsupported", "substantive", severity="major"),
             state("unsupported", "passing_mention", codes=["LOC_POS"], severity="minor"),
@@ -236,6 +258,169 @@ class LocatorUtilityPolicyTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(ValueError, "bare_loc_pos"):
             assign_locator_utility(ambiguous)
+
+    def test_unique_legacy_code_severity_projection_uses_frozen_fit_values(self) -> None:
+        cases = (
+            ("CON", "minor", "0.35", "material_mismatch", "F-MINOR-MISMATCH-035"),
+            ("STA", "major", "0.15", "severe_mismatch", "F-MAJOR-MISMATCH-015"),
+            ("CMP", "minor", "0.35", "material_mismatch", "F-MINOR-MISMATCH-035"),
+            ("HED", "major", "0.15", "severe_mismatch", "F-MAJOR-MISMATCH-015"),
+            ("SUB", "minor", "0.35", "material_mismatch", "F-MINOR-MISMATCH-035"),
+            ("SCP", "critical", "0", "no_fit", "F-NO-FIT-000"),
+        )
+        for code, severity, fit, category, rule in cases:
+            with self.subTest(code=code, severity=severity):
+                assignment = self.assert_utility(
+                    state(
+                        "unsupported",
+                        "substantive",
+                        codes=["LOC_POS"],
+                        severity="minor",
+                    ),
+                    "1",
+                    fit,
+                    fit,
+                    legacy_defects=[legacy_defect(code, severity)],
+                )
+                self.assertEqual(category, assignment["fit_category"])
+                self.assertEqual(rule, assignment["fit_rule_id"])
+                self.assertEqual(
+                    "legacy_code_severity_compatibility",
+                    assignment["fit_classification_source"],
+                )
+                self.assertEqual(
+                    ["F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1"],
+                    assignment["compatibility_rule_ids"],
+                )
+
+    def test_legacy_fit_neutral_invalid_and_ambiguous_states_fail_closed(self) -> None:
+        base = state(
+            "unsupported",
+            "substantive",
+            codes=["LOC_POS"],
+            severity="minor",
+        )
+        cases = (
+            [legacy_defect("CON", "cosmetic")],
+            [legacy_defect("MEC", "minor")],
+            [legacy_defect("SEL", "major")],
+            [legacy_defect("LOC_POS", "critical")],
+            [legacy_defect("UNKNOWN", "minor")],
+            [legacy_defect("CON", None)],
+            [legacy_defect("CON", "minor") | {"summary": None}],
+            [legacy_defect("CON", "minor") | {"affected_ids": None, "affected_item_ids": ["LOC-TEST"]}],
+            [
+                legacy_defect("CON", "minor"),
+                legacy_defect("HED", "minor"),
+            ],
+            [
+                legacy_defect("CON", "minor", defect_id="DEFECT-LEGACY-A"),
+                legacy_defect("STA", "major", defect_id="DEFECT-LEGACY-B"),
+            ],
+        )
+        for defects in cases:
+            with self.subTest(defects=defects), self.assertRaises(ValueError):
+                assign_locator_utility(base, legacy_defects=defects)
+
+        ambiguous_scope = copy.deepcopy(base)
+        ambiguous_scope.update(
+            judgment="uninspectable",
+            treatment_class="unavailable",
+            source_scope_status="ambiguous",
+        )
+        ambiguous_assignment = self.assert_utility(
+            ambiguous_scope,
+            None,
+            None,
+            None,
+            legacy_defects=[legacy_defect("SCP", "minor")],
+        )
+        self.assertEqual("uninspectable", ambiguous_assignment["fit_category"])
+        self.assertEqual([], ambiguous_assignment["compatibility_rule_ids"])
+
+        same_category = self.assert_utility(
+            base,
+            "1",
+            "0.35",
+            "0.35",
+            legacy_defects=[
+                legacy_defect("CON", "minor", defect_id="DEFECT-LEGACY-A"),
+                legacy_defect("HED", "minor", defect_id="DEFECT-LEGACY-B"),
+            ],
+        )
+        self.assertEqual("material_mismatch", same_category["fit_category"])
+
+        no_fit_precedence = self.assert_utility(
+            base,
+            "1",
+            "0",
+            "0",
+            legacy_defects=[
+                legacy_defect("CON", "minor")
+                | {"root_cause_family": "no_path_fit"}
+            ],
+        )
+        self.assertEqual("no_fit", no_fit_precedence["fit_category"])
+        self.assertEqual(
+            "structured_no_fit_precedence",
+            no_fit_precedence["fit_classification_source"],
+        )
+        self.assertEqual([], no_fit_precedence["compatibility_rule_ids"])
+
+    def test_positive_judgments_keep_their_existing_fit_treatment(self) -> None:
+        supported = self.assert_utility(
+            state("supported", "substantive"), "1", "1", "1"
+        )
+        partial = self.assert_utility(
+            state("partially_supported", "mixed", severity="minor"),
+            "0.7",
+            "0.7",
+            "0.7",
+            legacy_defects=[legacy_defect("CON", "minor")],
+        )
+        self.assertEqual("frozen_supported_judgment", supported["fit_classification_source"])
+        self.assertEqual(
+            "frozen_partially_supported_judgment",
+            partial["fit_classification_source"],
+        )
+        self.assertEqual([], partial["compatibility_rule_ids"])
+        for record in (
+            state("supported", "substantive"),
+            state("partially_supported", "mixed", severity="minor"),
+        ):
+            with self.subTest(record=record), self.assertRaisesRegex(
+                ValueError, "deterministic_locator"
+            ):
+                assign_locator_utility(
+                    record,
+                    supplemental_fit_decision={
+                        "decision_id": "FITDEC-000000000000",
+                        "fit_category": "no_fit",
+                        "evidence_ids": [record["locator_id"]],
+                    },
+                )
+
+    def test_legacy_projection_is_available_only_at_the_v3_history_boundary(self) -> None:
+        historical = {
+            "schema_version": "structure-audit-v3",
+            "defects": [legacy_defect("CON", "minor")],
+        }
+        modern = copy.deepcopy(historical)
+        modern["schema_version"] = "structure-audit-v4"
+        self.assertEqual(
+            historical["defects"], v7.historical_locator_fit_defects(historical)
+        )
+        self.assertEqual([], v7.historical_locator_fit_defects(modern))
+        with self.assertRaisesRegex(ValueError, "bare_loc_pos"):
+            assign_locator_utility(
+                state(
+                    "unsupported",
+                    "substantive",
+                    codes=["LOC_POS"],
+                    severity="minor",
+                ),
+                legacy_defects=v7.historical_locator_fit_defects(modern),
+            )
 
     def test_locator_evidence_schema_accepts_partial_weak_presence(self) -> None:
         schema = json.loads((SCHEMAS / "locator-evidence-state-v3.schema.json").read_text())
@@ -305,6 +490,17 @@ class V7ReliabilityIntegrationTests(unittest.TestCase):
         failures = v7.locator_state_requirements(ledgers, "full")
         self.assertEqual("required_locator_not_measured", failures[-1]["code"])
         self.assertFalse(v7.locator_state_requirements(ledgers, "pilot"))
+
+    def test_incomplete_full_audit_cannot_produce_a_calculation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            locator, missing, structure = base_documents()
+            locator["judgments"] = locator["judgments"][:-1]
+            config = calculation_files(root, locator, missing, structure)
+            loaded = v5.load_inputs(config)
+            with self.assertRaises(v5.CalculationError) as raised:
+                v7.calculate_loaded(loaded)
+            self.assertEqual("v7_inputs_insufficient", raised.exception.code)
 
     def test_non_reliability_dimensions_are_value_identical_to_v6(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

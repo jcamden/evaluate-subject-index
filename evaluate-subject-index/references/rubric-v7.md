@@ -11,7 +11,9 @@ V7 uses:
 - item-grading policy `subject-index-item-grading-v3`;
 - item artifact `subject-index-item-assessments-v4`;
 - web report `subject-index-web-report-v6`; and
-- migration `subject-index-score-migration-v6-to-v7-v1`.
+- migration `subject-index-score-migration-v6-to-v7-v1`;
+- supplemental fit input `subject-index-v7-locator-fit-supplement-v1`; and
+- tool patch `dimension-score-cli-v7.0.3`.
 
 V7 changes the per-locator precision input to Page-reference Reliability and corrects the counting unit used for locator-string architecture review. Benchmark construction, blindness, locator and missing-access judgments, expected-treatment recall, treatment-unit coalescing, weights, the other dimension formulas, Editorial Selectivity, density, caps, gates, uncertainty, rounding, defect ownership, and representation-adjustment provenance remain unchanged. Historical V4, V5, and V6 artifacts retain their original readers and identities.
 
@@ -69,6 +71,10 @@ The closed code inventory is:
 | `COV`, `LOC_NEG`, `XRF`, `DEN` | invalid on a locator-fit mapping and rejected |
 
 Fabrication/nonexistence/out-of-scope/scope-failure defect kinds and exact structured no-fit root-cause families override nominal fit. Minor and major are the only mismatch severities; a critical fit failure establishes no fit. A bare `LOC_POS`, unclassified material treatment, contradictory severity, or incompatible code/defect combination fails closed. Free text cannot repair an incomplete state.
+
+Historical `structure-audit-v3` defects that predate `defect_kind` may use `F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1` only when their validated locator binding, code, severity, scope, and all other structured fields converge on exactly one approved category. Minor, major, and critical retain the same 0.35, 0.15, and 0 mappings. Cosmetic, neutral, unknown, incomplete, or multiply classifiable legacy states remain unresolved or invalid. `LOC_POS` records a consequence, not its fit cause.
+
+If unsupplemented migration still has unresolved fit states, scoring stops. A separately authorized and exactly bound `subject-index-v7-locator-fit-supplement-v1` may carry one existing fit category for every and only those locators. It carries no numerical values and cannot change treatment, judgment, scope, defects, gates, or another dimension. The score-only migration does not inspect source pages or prose; it maps the authorized category through the frozen table and applies the unchanged minimum rule mechanically.
 
 ## Page-reference Reliability
 
@@ -141,12 +147,12 @@ Free-text explanation alone cannot create a defect or cap. A sustained discussio
 
 ## Required calculation provenance
 
-Every locator row records frozen judgment/treatment/scope, inspectability, codes, structured-defect IDs, locator and effective severity, both categories and scores, both rule IDs, the combined rule, (L_j), (G_j), disposition, exclusion/bound/rejection reason, and uncertainty endpoints. Reliability records complete counts by judgment, treatment class/tier, fit tier, and combined credit, all numerators/denominators, both precisions, recall, F1, caps, uncertainty, rounding, final rating, and points.
+Every locator row records frozen judgment/treatment/scope, inspectability, codes, structured-defect IDs, locator and effective severity, both categories and scores, both rule IDs, the combined rule, classification source and compatibility/supplement identities when applicable, (L_j), (G_j), disposition, exclusion/bound/rejection reason, and uncertainty endpoints. Reliability records complete counts by judgment, treatment class/tier, fit tier, and combined credit, all numerators/denominators, both precisions, recall, F1, caps, uncertainty, rounding, final rating, and points.
 
 Every locator-bearing path records delivered display IDs, display kind, range identity/endpoints/span, exact display-to-atomic binding, all expanded atomic IDs, the three counts, both triggers, independent architecture evidence, applicable defects, final disposition, and derivation/mapping rules. Runtime validation rejects range splitting, missing ownership, trigger-only defects, and unreviewed triggered cases treated as passing or failing.
 
 ## Migration
 
-`subject-index-score-migration-v6-to-v7-v1` is calculation-only and display-only. It preserves V6 evidence and projections as immutable history, requires exact normalized-candidate and inventory hashes, rejects prose inference, derives structure counts mechanically, recalculates representation-adjusted views from each view’s own inputs/provenance, preserves gates, and emits a receipt covering active and historical projections.
+`subject-index-score-migration-v6-to-v7-v1` is calculation-only and display-only. It preserves V6 evidence and projections as immutable history, requires exact normalized-candidate and inventory hashes, independently recalculates V6 before deriving compatibility or reading a fit supplement, rejects prose inference, derives structure counts mechanically, recalculates representation-adjusted views from each view’s own inputs/provenance and separately bound supplement, preserves gates, and emits a receipt covering active and historical projections.
 
 A sole historical defect with the exact structured atomic-threshold-only basis may be removed from the active V7 projection when corrected triggers are both false and no independent architecture evidence remains. A newly exposed trigger cannot invent a semantic judgment: it becomes `review_required`, and full scoring stops pending a narrow supplemental architecture review. Source pages, locator-support judgments, missing-access audits, and unrelated structure judgments are never reopened.

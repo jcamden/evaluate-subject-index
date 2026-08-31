@@ -6,6 +6,7 @@ V7 adds new schema identities and leaves every V4, V5, and V6 schema and reader 
 | --- | --- | --- |
 | Native structure audit | `structure-audit-v5` | Explicit structured architecture-review decisions |
 | Supplemental migration architecture review | `subject-index-v7-architecture-review-supplement-v1` | Exact unresolved-trigger decisions bound to frozen V6 candidate, inventory, and structure bytes |
+| Supplemental migration locator fit | `subject-index-v7-locator-fit-supplement-v1` | Every-and-only unresolved locator fit decision, bound to the exact per-view artifacts and authorization scope |
 | Locator evidence projection | `locator-evidence-state-v3.schema.json` | Valid two-axis combined locator state |
 | Structure locator review | `subject-index-structure-locator-review-v1` | Display/range/atomic derivation, triggers, semantic evidence, and dispositions |
 | Dimension calculation | `subject-index-dimension-calculations-v3` | V7 utility ledger, corrected active structure projection, and all calculation provenance |
@@ -19,7 +20,9 @@ V7 adds new schema identities and leaves every V4, V5, and V6 schema and reader 
 
 ## Locator utility invariants
 
-Every assessable row binds locator ID, frozen judgment/treatment/scope, inspectability, codes, structured defects, severity, treatment and fit categories/scores, rule IDs, `combined_credit`, and `diagnostic_grade`. Runtime validation rejects prose-dependent, contradictory, or incomplete mappings. The grade must equal `100 × combined_credit`; the dimension declares that grades are not arithmetic inputs.
+Every assessable row binds locator ID, frozen judgment/treatment/scope, inspectability, codes, structured defects, severity, treatment and fit categories/scores, rule IDs, classification source, any legacy compatibility rule or supplemental decision/evidence IDs, `combined_credit`, and `diagnostic_grade`. Runtime validation rejects prose-dependent, contradictory, or incomplete mappings. The grade must equal `100 × combined_credit`; the dimension declares that grades are not arithmetic inputs.
+
+The immutable locator-fit supplement schema permits only the five frozen category names. It has no property for numerical fit/treatment/combined credit, grade, dimension score, or total. Its bindings include the exact V6 calculation input, candidate, inventory, historical V6 calculation, complete audit artifact set, structure and chunk artifacts, optional V5 migration supplement, and representation provenance. Runtime validation reconstructs decision IDs, supplement ID/self-hash, ordering, exact unresolved scope, path identity, and evidence scope before any in-memory application.
 
 ## Structure-count invariants
 
@@ -41,6 +44,8 @@ Every applicable historical architecture defect also has one `historical_defect_
 ## History and projections
 
 Historical artifact references retain their original schema identities and file hashes. Migration never rewrites them. The V7 receipt binds the migration, calculation, result, item assessments, web report, projection metadata, and structure review plus all historical counterparts. Each counterfactual view binds its own V6 input/config/candidate/inventory, recalculated V7 calculation and review, and original representation-provenance files.
+
+Applied locator-fit supplement identities propagate through the calculation, item assessments, migration record, result, web report, projection metadata, and receipt. The migration records unresolved counts before/after, compatibility classifications made without supplementation, exact scope hash, per-view supplement reference, unchanged-history/non-fit confirmations, and the absence of manually supplied numerical credit or score. These additions are optional in the existing V7 projection schemas so valid pre-`v7.0.3` V7 artifacts retain schema compatibility; `v7.0.3` migration records require the new provenance block.
 
 When a supplemental architecture review is present, its self-hash and file hash
 are separately bound for the canonical or counterfactual view. Semantic
