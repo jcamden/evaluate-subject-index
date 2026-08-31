@@ -12,8 +12,8 @@
   "defects": [
     {
       "defect_id": "DEFECT-ZETA",
-      "dimension_owner": "mechanics_consistency",
-      "code": "MEC",
+      "dimension_owner": "findability_navigation",
+      "code": "HED",
       "severity": "minor",
       "defect_kind": "generic",
       "affected_item_ids": [
@@ -23,8 +23,8 @@
     },
     {
       "defect_id": "DEFECT-MIDDLE",
-      "dimension_owner": "mechanics_consistency",
-      "code": "MEC",
+      "dimension_owner": "findability_navigation",
+      "code": "HED",
       "severity": "cosmetic",
       "defect_kind": "generic",
       "affected_item_ids": [
@@ -35,8 +35,8 @@
     },
     {
       "defect_id": "DEFECT-BETA",
-      "dimension_owner": "mechanics_consistency",
-      "code": "MEC",
+      "dimension_owner": "findability_navigation",
+      "code": "HED",
       "severity": "minor",
       "defect_kind": "generic",
       "affected_item_ids": [
@@ -46,8 +46,8 @@
     },
     {
       "defect_id": "DEFECT-ALPHA",
-      "dimension_owner": "mechanics_consistency",
-      "code": "MEC",
+      "dimension_owner": "findability_navigation",
+      "code": "HED",
       "severity": "major",
       "defect_kind": "generic",
       "affected_item_ids": [

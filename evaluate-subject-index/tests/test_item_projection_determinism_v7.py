@@ -251,7 +251,7 @@ class V7ItemProjectionDeterminismTests(unittest.TestCase):
                 for item in first["path_assessments"]
                 if item["path_id"] == fixture["path_id"]
             )
-            path_component = component(path_record, "mechanics_consistency")
+            path_component = component(path_record, "findability_navigation")
             actual_caps = [
                 [item["defect_id"], item["severity"], item["maximum_score"]]
                 for item in path_component["severity_caps"]
@@ -262,7 +262,7 @@ class V7ItemProjectionDeterminismTests(unittest.TestCase):
                 *fixture["expected_defect_id_order"],
             ]
             self.assertEqual(expected_path_evidence, path_component["evidence_ids"])
-            popover_factor = factor(path_record, "mechanics_consistency")
+            popover_factor = factor(path_record, "findability_navigation")
             self.assertEqual(
                 path_component["severity_caps"], popover_factor["severity_caps"]
             )
@@ -275,7 +275,7 @@ class V7ItemProjectionDeterminismTests(unittest.TestCase):
                 for item in first["heading_node_assessments"]
                 if item["node_id"] == fixture["node_ids"][0]
             )
-            node_component = component(node_record, "mechanics_consistency")
+            node_component = component(node_record, "findability_navigation")
             self.assertEqual(
                 fixture["expected_node_defect_id_order"],
                 [item["defect_id"] for item in node_component["severity_caps"]],
@@ -311,7 +311,7 @@ class V7ItemProjectionDeterminismTests(unittest.TestCase):
                 [
                     item["defect_id"]
                     for item in component(
-                        path_record, "mechanics_consistency"
+                        path_record, "findability_navigation"
                     )["severity_caps"]
                 ],
             )
