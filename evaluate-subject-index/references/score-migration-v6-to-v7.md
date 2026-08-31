@@ -29,7 +29,7 @@ The manifest records the methodology repository, exact V6 base commit, V7 implem
 
 1. Validate every input schema, file hash, self-hash, artifact reference, calculation projection, and V6 gate array.
 2. Recalculate V6 from the canonical frozen ledgers and require dimension/value identity.
-3. Run unsupplemented V7 locator compatibility on the complete validated ledgers. Record unique historical code/severity projections, derive every unresolved locator with a stable public-safe reason code, and stop on invalid or contradictory state.
+3. Run unsupplemented V7 locator compatibility on the complete validated ledgers. Place every locator exactly once in `deterministically_compatible`, `unresolved_complete_path_fit`, or `invalid_or_contradictory_state`; record per-reason counts and structured classifier provenance; derive the sorted unresolved set and hash; expose no aggregate V7 score; and stop on any invalid state.
 4. Only after steps 1–3, read an optional locator-fit supplement. Require its declared scope and decisions to contain every and only the independently derived unresolved locator set, and validate all hashes, identities, ordering, path/locator bindings, evidence scope, and non-fit invariants. Without a complete supplement, no score is produced.
 5. Derive displayed-locator grouping, range ownership/spans, and atomic assignments from the exact normalized candidate and inventory.
 6. Reject missing grouping, prose-dependent mapping, or unreviewed newly triggered architecture cases. If a supplemental architecture review is supplied, first derive the unresolved trigger set without it and require the supplement to contain every and only those paths.
@@ -42,13 +42,31 @@ The manifest records the methodology repository, exact V6 base commit, V7 implem
 
 ## Historical locator-fit compatibility
 
-Historical top-level `structure-audit-v3` defects may predate `defect_kind`. Rule `F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1` tolerates that omission only when every other required structured field is valid and the approved V7 code/severity table selects exactly one category without prose. Locator-bound `SCP`, `CON`, `STA`, `CMP`, `HED`, or `SUB` evidence maps minor to material mismatch, major to severe mismatch, and critical to no fit. The historical defect is neither rewritten nor assigned an invented kind.
+Historical top-level `structure-audit-v3` defects may predate `defect_kind`. Rule `F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1` tolerates that omission only when every other required structured field is valid and the approved V7 code/severity table lets each record select one category without prose. Locator-bound `SCP`, `CON`, `STA`, `CMP`, `HED`, or `SUB` evidence maps minor to material mismatch, major to severe mismatch, and critical to no fit. Convergent records produce the same deterministic category as before; eligible inter-record disagreement follows the separate fit-only conflict rule. The historical defect is neither rewritten nor assigned an invented kind.
 
-Cosmetic evidence cannot support an adverse semantic classification. `MEC` and `SEL` remain fit-neutral; `LOC_POS` is a consequence, not a fit cause. Unknown codes, missing severity, ambiguous scope, conflicting categories, and all contradictory combinations remain invalid or unresolved. Current-contract defects do not become legacy-compatible by deleting `defect_kind`.
+Cosmetic evidence cannot support an adverse semantic classification. `MEC` and `SEL` remain fit-neutral; `LOC_POS` is a consequence, not a fit cause. Unknown codes, missing severity, ambiguous scope, and every state outside the narrow conflict rule below remain invalid or ordinarily unresolved under the existing rules. Current-contract defects do not become legacy-compatible by deleting `defect_kind`.
+
+### Fit-only conflict routing
+
+Rule `F-COMPAT-LEGACY-FIT-CONFLICT-TO-SUPPLEMENT-V1` converts no historical record and weakens no validator. It applies only when:
+
+1. every participating record is individually schema-valid;
+2. all records share the exact evaluation, candidate, audit mode, locator ID, and uniquely bound normalized complete-path ID;
+3. every participating code and severity is recognized by the existing V7 mappings;
+4. at least two otherwise valid classifiers, including a legacy compatibility classifier, independently imply different existing fit categories;
+5. the disagreement concerns only the derived complete-path-fit category;
+6. no prose inference is required or permitted; and
+7. exposing the disagreement requires no change to judgment, treatment, source scope, code, severity, defect, evidence, or any historical artifact.
+
+The result is `unresolved_complete_path_fit`, reason `legacy_structured_fit_classification_conflict_requires_adjudication`. The public unresolved record includes locator/path identity; each classifier's source-artifact role, stable record identity, structured basis, code/severity, and independently implied category/rule; the conflict rule; and explicit no-precedence, no-prose, supplement-eligible, and history-unchanged declarations. The classifier list and implied-category list are stably sorted. No favorable, adverse, newest, highest-severity, or lowest-severity precedence is used; classifications are not averaged; and no category is selected automatically.
+
+This is not a general contradiction waiver. Mismatched evaluation/candidate/audit/locator/path identities, one locator assigned to incompatible normalized paths, missing structured identities, malformed records, unknown codes or severities, impossible treatment or scope state, contradictory hashes or self-hashes, artifact alias/containment/link failures, non-fit override attempts, prose-only classification, and conflicts extending beyond fit remain invalid. They stop preflight and migration with structured errors and are excluded from the unresolved set and its hash.
 
 ## Supplemental locator fit
 
-The supplement declares sorted unresolved `LOC-*` IDs and exactly one sorted decision per locator, including the matching `PATH-*`, one existing fit category, scoped evidence IDs, authorization provenance, and confirmations that history and non-fit judgments are unchanged. It cannot contain `T`, `F`, `L`, a grade, a dimension score, a total, or fields that modify judgment, treatment, scope, defects, or gates. Its job is transport of a separately authorized semantic decision, not methodology inference.
+The supplement declares sorted unresolved `LOC-*` IDs and exactly one sorted decision per locator, including the matching `PATH-*`, one existing fit category, scoped evidence IDs, authorization provenance, and confirmations that history and non-fit judgments are unchanged. It cannot contain `T`, `F`, `L`, a grade, a dimension score, a total, or fields that modify judgment, treatment, scope, codes, severity, evidence, defects, or gates. Its job is transport of a separately authorized semantic decision, not methodology inference.
+
+For a conflict-routed locator, the authorized decision comes from direct semantic adjudication of the complete path at the cited destination. The decision resolves only the prospective V7 fit axis. It neither states nor implies that one historical classifier was correct, and every historical record remains byte-identical. Ordinary bare-`LOC_POS` unresolved states retain their separate reason and remain unmapped without the same exact-scope authorization process.
 
 Evidence IDs are restricted to the affected locator and path, their bound candidate/inventory records and nodes, applicable structured defects, owned displays/ranges, and source-evidence identifiers already present in bound ledgers. Missing, extra, duplicate, unsorted, deterministic-locator, out-of-scope-evidence, hash-drift, identity-drift, prose-dependent, and cross-view-reuse attempts fail closed. Decisions are applied only in memory.
 

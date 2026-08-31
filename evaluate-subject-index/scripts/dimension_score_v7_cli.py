@@ -24,6 +24,9 @@ import item_grade_cli as item_v6
 from item_grade_v7_cli import build_v7_assessments
 from locator_utility import (
     FIT_SCORES,
+    LEGACY_FIT_COMPATIBILITY_RULE_ID,
+    LEGACY_FIT_CONFLICT_REASON_CODE,
+    LEGACY_FIT_CONFLICT_RULE_ID,
     TREATMENT_SCORES,
     UNRESOLVED_REASON_MESSAGES,
     assign_locator_utility,
@@ -57,7 +60,7 @@ SUPPLEMENTAL_ARCHITECTURE_REVIEW_SCHEMA = (
 )
 LOCATOR_FIT_SUPPLEMENT_SCHEMA = "subject-index-v7-locator-fit-supplement-v1"
 TOOL_NAME = "dimension_score_v7_cli.py"
-TOOL_VERSION = "dimension-score-cli-v7.0.3"
+TOOL_VERSION = "dimension-score-cli-v7.0.4"
 METHODOLOGY_REPOSITORY = "https://github.com/jcamden/evaluate-subject-index"
 
 ZERO = Decimal(0)
@@ -121,7 +124,7 @@ def _unresolved_fit_record(
         }
     )
     reason_codes = list(analysis["unresolved_reason_codes"])
-    return {
+    result = {
         "locator_id": locator_id,
         "path_id": locator.get("path_id"),
         "reason_code": reason_codes[0]
@@ -145,6 +148,100 @@ def _unresolved_fit_record(
         "missing_classifier_category": "complete_path_fit_category",
         "prose_inference_permitted": False,
     }
+    if analysis.get("fit_conflict") is not None:
+        conflict = deepcopy(analysis["fit_conflict"])
+        result.update(conflict)
+        result["reason_code"] = LEGACY_FIT_CONFLICT_REASON_CODE
+        result["reason_codes"] = [LEGACY_FIT_CONFLICT_REASON_CODE]
+    return result
+
+
+def _deterministic_fit_record(
+    locator: Mapping[str, Any], assignment: Mapping[str, Any]
+) -> dict[str, Any]:
+    return {
+        "locator_id": assignment["locator_id"],
+        "path_id": locator.get("path_id"),
+        "fit_category": assignment["fit_category"],
+        "fit_classification_source": assignment["fit_classification_source"],
+        "compatibility_rule_ids": deepcopy(
+            assignment["compatibility_rule_ids"]
+        ),
+        "prose_inference_used": False,
+    }
+
+
+def _locator_path_identity_errors(
+    ledgers: Mapping[str, Any],
+    candidate: Mapping[str, Any] | None,
+    inventory: Mapping[str, Any] | None,
+) -> dict[str, list[str]]:
+    """Reject cross-artifact locator/path identity drift before set hashing."""
+
+    if candidate is None or inventory is None:
+        return {}
+
+    candidate_paths_by_locator: dict[str, set[str]] = {}
+    candidate_path_counts: Counter[str] = Counter()
+    for record in candidate.get("records", []):
+        if not isinstance(record, Mapping):
+            continue
+        path_id = record.get("path_id")
+        if not isinstance(path_id, str):
+            continue
+        candidate_path_counts[path_id] += 1
+        for assignment in record.get("locator_assignments", []):
+            if not isinstance(assignment, Mapping):
+                continue
+            locator_id = assignment.get("locator_id")
+            if isinstance(locator_id, str):
+                candidate_paths_by_locator.setdefault(locator_id, set()).add(
+                    path_id
+                )
+
+    inventory_paths_by_locator: dict[str, set[str]] = {}
+    for locator in inventory.get("locators", []):
+        if not isinstance(locator, Mapping):
+            continue
+        locator_id = locator.get("locator_id")
+        path_id = locator.get("path_id")
+        if isinstance(locator_id, str) and isinstance(path_id, str):
+            inventory_paths_by_locator.setdefault(locator_id, set()).add(path_id)
+    inventory_path_counts = Counter(
+        item.get("path_id")
+        for item in inventory.get("paths", [])
+        if isinstance(item, Mapping) and isinstance(item.get("path_id"), str)
+    )
+
+    errors: dict[str, list[str]] = {}
+    for locator in ledgers["locators"]:
+        locator_id = locator.get("locator_id")
+        path_id = locator.get("path_id")
+        if not isinstance(locator_id, str):
+            continue
+        locator_errors: list[str] = []
+        if not isinstance(path_id, str) or not path_id.startswith("PATH-"):
+            locator_errors.append("invalid:complete_path_identity")
+        else:
+            if candidate_paths_by_locator.get(locator_id) != {path_id}:
+                locator_errors.append(
+                    "inconsistent:normalized_candidate_locator_path_identity"
+                )
+            if inventory_paths_by_locator.get(locator_id) != {path_id}:
+                locator_errors.append(
+                    "inconsistent:item_inventory_locator_path_identity"
+                )
+            if candidate_path_counts[path_id] != 1:
+                locator_errors.append(
+                    "inconsistent:normalized_candidate_complete_path_identity"
+                )
+            if inventory_path_counts[path_id] != 1:
+                locator_errors.append(
+                    "inconsistent:item_inventory_complete_path_identity"
+                )
+        if locator_errors:
+            errors[locator_id] = sorted(set(locator_errors))
+    return errors
 
 
 def locator_fit_preflight(
@@ -152,16 +249,28 @@ def locator_fit_preflight(
     audit_mode: str,
     *,
     legacy_defects: Iterable[Mapping[str, Any]] = (),
+    candidate: Mapping[str, Any] | None = None,
+    inventory: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return deterministic unsupplemented fit compatibility and unresolved sets."""
 
     legacy_defects = list(legacy_defects)
     invalid: list[dict[str, Any]] = []
     unresolved: list[dict[str, Any]] = []
+    deterministic: list[dict[str, Any]] = []
     compatibility: list[dict[str, Any]] = []
+    path_identity_errors = _locator_path_identity_errors(
+        ledgers, candidate, inventory
+    )
     for locator in sorted(
         ledgers["locators"], key=lambda item: str(item.get("locator_id", ""))
     ):
+        locator_id = locator.get("locator_id")
+        if isinstance(locator_id, str) and locator_id in path_identity_errors:
+            invalid.append(
+                _mapping_failure(locator, path_identity_errors[locator_id])
+            )
+            continue
         analysis = locator_fit_state_analysis(
             locator, ledgers["defects"], legacy_defects
         )
@@ -184,6 +293,7 @@ def locator_fit_preflight(
         except ValueError as exc:
             invalid.append(_mapping_failure(locator, str(exc).split(";")))
             continue
+        deterministic.append(_deterministic_fit_record(locator, assignment))
         if assignment["fit_classification_source"] == "legacy_code_severity_compatibility":
             compatibility.append(
                 {
@@ -210,16 +320,70 @@ def locator_fit_preflight(
                 "prose_inference_permitted": False,
             }
         )
+    unresolved_reason_counts = dict(
+        sorted(
+            Counter(
+                reason
+                for item in unresolved
+                for reason in item["reason_codes"]
+            ).items()
+        )
+    )
+    deterministic_ids = {item["locator_id"] for item in deterministic}
+    unresolved_ids = {item["locator_id"] for item in unresolved}
+    invalid_ids = {
+        item["locator_id"]
+        for item in invalid
+        if isinstance(item.get("locator_id"), str)
+    }
+    v5.require(
+        not (deterministic_ids & unresolved_ids)
+        and not (deterministic_ids & invalid_ids)
+        and not (unresolved_ids & invalid_ids),
+        "locator_fit_preflight_group_overlap",
+        "Each frozen locator record must appear in exactly one V7 fit-preflight group.",
+    )
+    locator_invalid_count = sum(
+        item.get("code") == "inconsistent_or_incomplete_locator_utility_state"
+        for item in invalid
+    )
+    v5.require(
+        len(deterministic) + len(unresolved) + locator_invalid_count
+        == len(ledgers["locators"]),
+        "locator_fit_preflight_group_coverage_invalid",
+        "Every frozen locator record must appear exactly once in a V7 fit-preflight group.",
+    )
     return {
+        "schema_version": "subject-index-v7-locator-fit-preflight-v1",
+        "deterministically_compatible": deterministic,
+        "unresolved_complete_path_fit": unresolved,
+        "invalid_or_contradictory_state": invalid,
         "compatibility_classifications": compatibility,
-        "unresolved_locator_fit": unresolved,
-        "invalid_locator_states": invalid,
+        "group_counts": {
+            "deterministically_compatible": len(deterministic),
+            "unresolved_complete_path_fit": len(unresolved),
+            "invalid_or_contradictory_state": len(invalid),
+        },
+        "unresolved_reason_counts": unresolved_reason_counts,
         "unresolved_set_sha256": v5.canonical_hash(
             {"unresolved_locator_fit": unresolved}
         ),
+        "aggregate_v7_score_available": False,
+        "prose_inference_used": False,
+        "historical_artifacts_modified": False,
         "_locator_records_by_id": {
             item["locator_id"]: item for item in ledgers["locators"]
         },
+    }
+
+
+def public_locator_fit_preflight(report: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the strict public contract without in-memory locator objects."""
+
+    return {
+        key: deepcopy(value)
+        for key, value in report.items()
+        if not key.startswith("_")
     }
 
 
@@ -244,9 +408,9 @@ def locator_state_requirements(
             ),
             **item,
         }
-        for item in report["unresolved_locator_fit"]
+        for item in report["unresolved_complete_path_fit"]
     ]
-    return [*report["invalid_locator_states"], *unresolved]
+    return [*report["invalid_or_contradictory_state"], *unresolved]
 
 
 def raw_locator_state_requirements(
@@ -898,13 +1062,14 @@ def calculate_loaded(
         ledgers, audit_mode, legacy_defects=legacy_fit_defects
     )
     v5.require(
-        not fit_preflight["invalid_locator_states"],
+        not fit_preflight["invalid_or_contradictory_state"],
         "v7_inputs_insufficient",
         "The frozen ledgers contain invalid or contradictory V7 locator states.",
-        fit_preflight["invalid_locator_states"],
+        fit_preflight["invalid_or_contradictory_state"],
     )
     unresolved_ids = [
-        item["locator_id"] for item in fit_preflight["unresolved_locator_fit"]
+        item["locator_id"]
+        for item in fit_preflight["unresolved_complete_path_fit"]
     ]
     supplemental_decisions: dict[str, Mapping[str, Any]] = {}
     if locator_fit_supplement is None:
@@ -912,7 +1077,7 @@ def calculate_loaded(
             not unresolved_ids,
             "v7_inputs_insufficient",
             "The frozen ledgers contain unresolved complete-path-fit states.",
-            fit_preflight["unresolved_locator_fit"],
+            fit_preflight["unresolved_complete_path_fit"],
         )
         v5.require(
             locator_fit_supplement_artifact is None,
@@ -1076,15 +1241,25 @@ def calculate_loaded(
             "active_correction": deepcopy(ledgers["v7_structure_correction"]),
         }
     result["locator_fit_compatibility"] = {
-        "rule": "F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1",
+        "rule": LEGACY_FIT_COMPATIBILITY_RULE_ID,
+        "conflict_rule": LEGACY_FIT_CONFLICT_RULE_ID,
         "classifications": deepcopy(
             fit_preflight["compatibility_classifications"]
+        ),
+        "preflight_group_counts": deepcopy(fit_preflight["group_counts"]),
+        "unresolved_reason_counts_before_supplement": deepcopy(
+            fit_preflight["unresolved_reason_counts"]
+        ),
+        "unresolved_records_before_supplement": deepcopy(
+            fit_preflight["unresolved_complete_path_fit"]
         ),
         "unresolved_before_supplement": len(unresolved_ids),
         "unresolved_after_supplement": (
             0 if locator_fit_supplement is not None else len(unresolved_ids)
         ),
         "historical_defects_rewritten": False,
+        "classifier_precedence_applied": False,
+        "aggregate_score_exposed_during_preflight": False,
         "prose_inference_used": False,
     }
     if locator_fit_supplement is not None:
@@ -1206,6 +1381,7 @@ def command_preflight(args: argparse.Namespace) -> None:
                 "target_calculation_profile": CALCULATION_PROFILE,
                 "sufficient": False,
                 "missing_requirements": raw_missing,
+                "aggregate_v7_score_available": False,
                 "source_reopened": False,
                 "prose_inference_used": False,
                 "frozen_evidence_mutated": False,
@@ -1228,17 +1404,28 @@ def command_preflight(args: argparse.Namespace) -> None:
             )
             if ledgers is not None
             else {
+                "schema_version": "subject-index-v7-locator-fit-preflight-v1",
+                "deterministically_compatible": [],
+                "unresolved_complete_path_fit": [],
+                "invalid_or_contradictory_state": [],
                 "compatibility_classifications": [],
-                "unresolved_locator_fit": [],
-                "invalid_locator_states": [],
+                "group_counts": {
+                    "deterministically_compatible": 0,
+                    "unresolved_complete_path_fit": 0,
+                    "invalid_or_contradictory_state": 0,
+                },
+                "unresolved_reason_counts": {},
                 "unresolved_set_sha256": v5.canonical_hash(
                     {"unresolved_locator_fit": []}
                 ),
+                "aggregate_v7_score_available": False,
+                "prose_inference_used": False,
+                "historical_artifacts_modified": False,
             }
         )
         missing = [
             *base_missing,
-            *fit_report["invalid_locator_states"],
+            *fit_report["invalid_or_contradictory_state"],
             *(
                 {
                     "code": "unresolved_complete_path_fit",
@@ -1249,9 +1436,15 @@ def command_preflight(args: argparse.Namespace) -> None:
                     ),
                     **item,
                 }
-                for item in fit_report["unresolved_locator_fit"]
+                for item in fit_report["unresolved_complete_path_fit"]
             ),
         ]
+        public_fit_report = public_locator_fit_preflight(fit_report)
+        v5.validate_schema_document(
+            public_fit_report,
+            "v7-locator-fit-preflight.schema.json",
+            "V7 locator-fit preflight",
+        )
         result = {
             "command": "v7-calculation-sufficiency-preflight",
             "ok": True,
@@ -1260,15 +1453,8 @@ def command_preflight(args: argparse.Namespace) -> None:
             "target_calculation_profile": CALCULATION_PROFILE,
             "sufficient": not missing,
             "missing_requirements": missing,
-            "compatibility_classifications": fit_report[
-                "compatibility_classifications"
-            ],
-            "unresolved_locator_fit": fit_report[
-                "unresolved_locator_fit"
-            ],
-            "unresolved_set_sha256": fit_report[
-                "unresolved_set_sha256"
-            ],
+            "locator_fit_preflight": public_fit_report,
+            "aggregate_v7_score_available": False,
             "required_locator_fields": ["judgment", "treatment_class", "source_scope_status", "error_codes", "severity", "applicable_structured_defects"],
             "source_reopened": False,
             "prose_inference_used": False,
@@ -1731,7 +1917,7 @@ def _validate_locator_fit_supplement(
         "locator_fit_supplement_identity_mismatch",
         "The locator-fit supplement has a different evaluation, candidate, or audit-mode identity.",
     )
-    unresolved = fit_preflight["unresolved_locator_fit"]
+    unresolved = fit_preflight["unresolved_complete_path_fit"]
     unresolved_ids = [item["locator_id"] for item in unresolved]
     scope = supplement["scope"]
     decision_ids = [item["locator_id"] for item in supplement["decisions"]]
@@ -1787,8 +1973,30 @@ def _validate_locator_fit_supplement(
             "A supplemental decision may apply only to the matching unresolved unsupported locator.",
             locator_id,
         )
+        v5.require(
+            path_id in candidates_by_path and path_id in inventory_by_path,
+            "locator_fit_supplement_path_identity_mismatch",
+            "The unresolved locator's complete path must exist exactly in the bound candidate and inventory.",
+            {"locator_id": locator_id, "path_id": path_id},
+        )
         candidate_record = candidates_by_path[path_id]
         inventory_record = inventory_by_path[path_id]
+        v5.require(
+            any(
+                item.get("locator_id") == locator_id
+                for item in candidate_record.get("locator_assignments", [])
+                if isinstance(item, Mapping)
+            )
+            and any(
+                item.get("locator_id") == locator_id
+                and item.get("path_id") == path_id
+                for item in inventory.get("locators", [])
+                if isinstance(item, Mapping)
+            ),
+            "locator_fit_supplement_path_identity_mismatch",
+            "The supplemental locator and path must retain the exact normalized candidate and inventory assignment.",
+            {"locator_id": locator_id, "path_id": path_id},
+        )
         displays = [
             item
             for item in candidate_record["locator_displays"]
@@ -2086,12 +2294,14 @@ def _migrate_calculation_view(
         v6_ledgers,
         loaded["config"]["audit_mode"],
         legacy_defects=legacy_fit_defects,
+        candidate=candidate,
+        inventory=inventory,
     )
     v5.require(
-        not fit_preflight["invalid_locator_states"],
+        not fit_preflight["invalid_or_contradictory_state"],
         "v7_inputs_insufficient",
         "The unsupplemented V7 locator-fit preflight found invalid or contradictory states.",
-        fit_preflight["invalid_locator_states"],
+        fit_preflight["invalid_or_contradictory_state"],
     )
     locator_fit_supplement_path: Path | None = None
     locator_fit_supplement: dict[str, Any] | None = None
@@ -2133,15 +2343,18 @@ def _migrate_calculation_view(
         }
     else:
         v5.require(
-            not fit_preflight["unresolved_locator_fit"],
+            not fit_preflight["unresolved_complete_path_fit"],
             "v7_locator_fit_unresolved",
             "The V6-to-V7 migration cannot produce a score while complete-path-fit states remain unresolved.",
             {
                 "compatibility_classifications": fit_preflight[
                     "compatibility_classifications"
                 ],
-                "unresolved_locator_fit": fit_preflight[
-                    "unresolved_locator_fit"
+                "unresolved_complete_path_fit": fit_preflight[
+                    "unresolved_complete_path_fit"
+                ],
+                "unresolved_reason_counts": fit_preflight[
+                    "unresolved_reason_counts"
                 ],
                 "unresolved_set_sha256": fit_preflight[
                     "unresolved_set_sha256"
@@ -2250,10 +2463,17 @@ def _migrate_calculation_view(
         "locator_fit_preflight": {
             key: deepcopy(fit_preflight[key])
             for key in (
+                "schema_version",
+                "deterministically_compatible",
+                "unresolved_complete_path_fit",
+                "invalid_or_contradictory_state",
                 "compatibility_classifications",
-                "unresolved_locator_fit",
-                "invalid_locator_states",
+                "group_counts",
+                "unresolved_reason_counts",
                 "unresolved_set_sha256",
+                "aggregate_v7_score_available",
+                "prose_inference_used",
+                "historical_artifacts_modified",
             )
         },
         "locator_fit_supplement": locator_fit_supplement,
@@ -2880,15 +3100,36 @@ def command_migrate(args: argparse.Namespace) -> None:
                         "view_id": view_id,
                         "unresolved_set_count_before_supplementation": len(
                             view["locator_fit_preflight"][
-                                "unresolved_locator_fit"
+                                "unresolved_complete_path_fit"
                             ]
                         ),
                         "unresolved_set_count_after_supplementation": 0,
                         "unresolved_locator_ids": [
                             item["locator_id"]
                             for item in view["locator_fit_preflight"][
-                                "unresolved_locator_fit"
+                                "unresolved_complete_path_fit"
                             ]
+                        ],
+                        "unresolved_records_without_supplement": deepcopy(
+                            view["locator_fit_preflight"][
+                                "unresolved_complete_path_fit"
+                            ]
+                        ),
+                        "unresolved_reason_counts_without_supplement": deepcopy(
+                            view["locator_fit_preflight"][
+                                "unresolved_reason_counts"
+                            ]
+                        ),
+                        "preflight_group_counts": deepcopy(
+                            view["locator_fit_preflight"]["group_counts"]
+                        ),
+                        "conflict_routed_locator_ids": [
+                            item["locator_id"]
+                            for item in view["locator_fit_preflight"][
+                                "unresolved_complete_path_fit"
+                            ]
+                            if item["reason_code"]
+                            == LEGACY_FIT_CONFLICT_REASON_CODE
                         ],
                         "unresolved_set_sha256": view[
                             "locator_fit_preflight"
@@ -2923,6 +3164,11 @@ def command_migrate(args: argparse.Namespace) -> None:
         migration["invariants"].update(
             {
                 "locator_fit_supplement_applied_in_memory_only": True,
+                "legacy_fit_conflict_rule_id": LEGACY_FIT_CONFLICT_RULE_ID,
+                "legacy_fit_conflicts_routed_without_precedence": True,
+                "historical_fit_classifier_records_modified": False,
+                "invalid_states_supplement_eligible": False,
+                "bare_loc_pos_automatically_mapped": False,
                 "evaluation_specific_fit_rule_added": False,
                 "evaluation_result_used_as_target": False,
             }
@@ -2962,7 +3208,7 @@ def command_migrate(args: argparse.Namespace) -> None:
                 }
                 for item in locator_fit_view_inputs
             ],
-            "validation": {"all_hashes_recomputed": True, "all_schemas_valid": True, "historical_bytes_unchanged": True, "calculation_hash_valid": canonical["calculation"]["calculation_sha256"] == v5.canonical_hash(canonical["calculation"], "calculation_sha256"), "migration_hash_valid": migration["migration_sha256"] == v5.canonical_hash(migration, "migration_sha256"), "structure_review_hash_valid": canonical["review"]["review_sha256"] == structure_review_hash(canonical["review"], "review_sha256"), "supplemental_review_hash_valid": all(item["document"]["supplement_sha256"] == v5.canonical_hash(item["document"], "supplement_sha256") for item in supplemental_view_inputs), "supplemental_review_scope_exact": all(view["review"]["summary"]["review_required_path_ids"] == [] for view in [canonical, *counterfactuals]), "locator_fit_supplement_hash_valid": all(item["document"]["supplement_sha256"] == v5.canonical_hash(item["document"], "supplement_sha256") for item in locator_fit_view_inputs), "locator_fit_supplement_scope_exact": all(view["calculation"]["locator_fit_compatibility"]["unresolved_after_supplement"] == 0 for _, view in migrated_views), "locator_fit_supplement_non_fit_fields_unchanged": True, "locator_fit_supplement_contains_no_manual_numerical_credit_or_score": True, "decimal_safe_projection_validation": True, "gate_outcomes_equal": True, "representation_provenance_complete": True},
+            "validation": {"all_hashes_recomputed": True, "all_schemas_valid": True, "historical_bytes_unchanged": True, "calculation_hash_valid": canonical["calculation"]["calculation_sha256"] == v5.canonical_hash(canonical["calculation"], "calculation_sha256"), "migration_hash_valid": migration["migration_sha256"] == v5.canonical_hash(migration, "migration_sha256"), "structure_review_hash_valid": canonical["review"]["review_sha256"] == structure_review_hash(canonical["review"], "review_sha256"), "supplemental_review_hash_valid": all(item["document"]["supplement_sha256"] == v5.canonical_hash(item["document"], "supplement_sha256") for item in supplemental_view_inputs), "supplemental_review_scope_exact": all(view["review"]["summary"]["review_required_path_ids"] == [] for view in [canonical, *counterfactuals]), "locator_fit_supplement_hash_valid": all(item["document"]["supplement_sha256"] == v5.canonical_hash(item["document"], "supplement_sha256") for item in locator_fit_view_inputs), "locator_fit_supplement_scope_exact": all(view["calculation"]["locator_fit_compatibility"]["unresolved_after_supplement"] == 0 for _, view in migrated_views), "locator_fit_supplement_non_fit_fields_unchanged": True, "locator_fit_supplement_contains_no_manual_numerical_credit_or_score": True, "legacy_fit_conflict_routing_valid": True, "legacy_fit_conflict_provenance_complete": True, "invalid_states_excluded_from_unresolved_set": True, "aggregate_score_absent_during_preflight_and_adjudication": True, "decimal_safe_projection_validation": True, "gate_outcomes_equal": True, "representation_provenance_complete": True},
             "receipt_sha256": "",
         }
         receipt["receipt_id"] = f"VAL-{v5.canonical_hash(receipt)[:12].upper()}"

@@ -118,6 +118,12 @@ FIT_SCORES = {
 LEGACY_FIT_COMPATIBILITY_RULE_ID = (
     "F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1"
 )
+LEGACY_FIT_CONFLICT_RULE_ID = (
+    "F-COMPAT-LEGACY-FIT-CONFLICT-TO-SUPPLEMENT-V1"
+)
+LEGACY_FIT_CONFLICT_REASON_CODE = (
+    "legacy_structured_fit_classification_conflict_requires_adjudication"
+)
 SUPPLEMENTAL_FIT_RULE_IDS = {
     "exact_fit": "F-SUPPLEMENTAL-EXACT-100",
     "material_partial_fit": "F-SUPPLEMENTAL-PARTIAL-070",
@@ -134,6 +140,9 @@ UNRESOLVED_REASON_MESSAGES = {
     ),
     "fit_evidence_without_classifying_severity": (
         "Fit-relevant evidence with none or cosmetic severity cannot select a complete-path-fit category."
+    ),
+    LEGACY_FIT_CONFLICT_REASON_CODE: (
+        "Individually valid structured classifiers, including legacy compatibility evidence, imply different complete-path-fit categories; no classifier has precedence, so separate semantic adjudication is required."
     ),
 }
 
@@ -299,6 +308,188 @@ def _fit_category_for_severity(severity: Any) -> str | None:
     }.get(str(severity))
 
 
+def _fit_rule_for_category(category: str) -> str:
+    return {
+        "exact_fit": "F-WEAK-TREATMENT-ONLY-100",
+        "material_mismatch": "F-MINOR-MISMATCH-035",
+        "severe_mismatch": "F-MAJOR-MISMATCH-015",
+        "no_fit": "F-NO-FIT-000",
+    }[category]
+
+
+def _structured_fit_classifier(
+    *,
+    source_artifact_role: str,
+    stable_record_id: str,
+    classifier_basis: str,
+    bound_locator_id: str,
+    path_id: Any,
+    error_codes: Iterable[str],
+    severity: str | None,
+    fit_category: str,
+    binding_basis: str,
+    compatibility_rule_id: str | None = None,
+    source_unit_id: Any = None,
+) -> dict[str, Any]:
+    """Build public-safe, deterministic provenance for one fit classifier."""
+
+    classifier = {
+        "source_artifact_role": source_artifact_role,
+        "stable_record_id": stable_record_id,
+        "classifier_basis": classifier_basis,
+        "bound_locator_id": bound_locator_id,
+        "path_id": path_id,
+        "binding_basis": binding_basis,
+        "error_codes": sorted(set(error_codes)),
+        "severity": severity,
+        "implied_fit_category": fit_category,
+        "implied_fit_rule_id": _fit_rule_for_category(fit_category),
+        "compatibility_rule_id": compatibility_rule_id,
+        "prose_inference_used": False,
+    }
+    if isinstance(source_unit_id, str) and source_unit_id:
+        classifier["source_unit_id"] = source_unit_id
+    return classifier
+
+
+def _structured_fit_classifiers(
+    record: Mapping[str, Any],
+    matched_defects: Iterable[Mapping[str, Any]],
+    legacy_classifications: Iterable[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Project independently valid structured classifiers without precedence.
+
+    The locator-audit record contributes at most one unsupported-state
+    classifier.  Current-contract defects retain their existing strongest-
+    severity behavior when no legacy classifier participates.  This inventory
+    is used only to detect disagreement involving the narrow legacy boundary.
+    """
+
+    locator_id = str(record["locator_id"])
+    path_id = record.get("path_id")
+    classifiers: list[dict[str, Any]] = []
+    locator_codes = set(record.get("error_codes", []))
+    direct_fit_codes = sorted(locator_codes & FIT_RELEVANT_CODES)
+    judgment = record.get("judgment")
+    treatment = record.get("treatment_class")
+    if judgment == "unsupported":
+        direct_category = (
+            _fit_category_for_severity(record.get("severity"))
+            if direct_fit_codes
+            else None
+        )
+        if direct_category is not None:
+            classifiers.append(
+                _structured_fit_classifier(
+                    source_artifact_role="locator_audit",
+                    stable_record_id=locator_id,
+                    classifier_basis="locator_code_severity",
+                    bound_locator_id=locator_id,
+                    path_id=path_id,
+                    error_codes=direct_fit_codes,
+                    severity=str(record.get("severity")),
+                    fit_category=direct_category,
+                    binding_basis="direct_locator_and_path_identity",
+                    source_unit_id=record.get("_source_unit_id"),
+                )
+            )
+        elif (
+            treatment in WEAK_PRESENCE_CLASSES
+            and not direct_fit_codes
+            and not (locator_codes & CONSEQUENCE_ONLY_CODES)
+        ):
+            classifiers.append(
+                _structured_fit_classifier(
+                    source_artifact_role="locator_audit",
+                    stable_record_id=locator_id,
+                    classifier_basis="unsupported_weak_treatment_fit_indication",
+                    bound_locator_id=locator_id,
+                    path_id=path_id,
+                    error_codes=locator_codes,
+                    severity=None,
+                    fit_category="exact_fit",
+                    binding_basis="direct_locator_and_path_identity",
+                    source_unit_id=record.get("_source_unit_id"),
+                )
+            )
+
+    for defect in matched_defects:
+        if not (
+            defect.get("code") in FIT_RELEVANT_CODES
+            or defect.get("defect_kind") in FIT_RELEVANT_DEFECT_KINDS
+        ):
+            continue
+        category = _fit_category_for_severity(defect.get("severity"))
+        if category is None:
+            continue
+        classifiers.append(
+            _structured_fit_classifier(
+                source_artifact_role="scoring_context_defect",
+                stable_record_id=str(defect["defect_id"]),
+                classifier_basis="current_defect_code_severity",
+                bound_locator_id=locator_id,
+                path_id=path_id,
+                error_codes=(str(defect.get("code")),),
+                severity=str(defect.get("severity")),
+                fit_category=category,
+                binding_basis="unique_locator_id_to_path_identity",
+            )
+        )
+
+    for classification in legacy_classifications:
+        category = str(classification["fit_category"])
+        classifiers.append(
+            _structured_fit_classifier(
+                source_artifact_role="historical_structure_audit",
+                stable_record_id=str(classification["defect_id"]),
+                classifier_basis="legacy_code_severity_compatibility",
+                bound_locator_id=locator_id,
+                path_id=path_id,
+                error_codes=(str(classification["code"]),),
+                severity=str(classification["severity"]),
+                fit_category=category,
+                binding_basis="unique_locator_id_to_path_identity",
+                compatibility_rule_id=LEGACY_FIT_COMPATIBILITY_RULE_ID,
+            )
+        )
+
+    return sorted(
+        classifiers,
+        key=lambda item: (
+            item["source_artifact_role"],
+            item["stable_record_id"],
+            item["classifier_basis"],
+            item["implied_fit_category"],
+        ),
+    )
+
+
+def _legacy_fit_conflict(
+    classifiers: Iterable[Mapping[str, Any]],
+) -> dict[str, Any] | None:
+    classifiers = [dict(item) for item in classifiers]
+    categories = sorted(
+        {str(item["implied_fit_category"]) for item in classifiers}
+    )
+    has_legacy_classifier = any(
+        item.get("compatibility_rule_id") == LEGACY_FIT_COMPATIBILITY_RULE_ID
+        for item in classifiers
+    )
+    if not has_legacy_classifier or len(categories) < 2:
+        return None
+    return {
+        "conflict_rule_id": LEGACY_FIT_CONFLICT_RULE_ID,
+        "reason_code": LEGACY_FIT_CONFLICT_REASON_CODE,
+        "conflict_scope": "derived_complete_path_fit_category_only",
+        "structured_classifiers": classifiers,
+        "independently_implied_fit_categories": categories,
+        "classifier_precedence_applied": False,
+        "supplement_eligible": True,
+        "prose_inference_used": False,
+        "historical_records_modified": False,
+    }
+
+
 def _hard_state_errors(
     record: Mapping[str, Any],
     defects: Iterable[Mapping[str, Any]] = (),
@@ -408,7 +599,11 @@ def _hard_state_errors(
             ]
             if (category := _fit_category_for_severity(severity_value)) is not None
         }
-        if legacy_categories and len(legacy_categories | existing_categories) != 1:
+        if (
+            judgment != "unsupported"
+            and legacy_categories
+            and len(legacy_categories | existing_categories) != 1
+        ):
             errors.append("inconsistent:multiple_fit_classifications_possible")
         if judgment == "supported" and (fit_codes or fit_defects or legacy_fit_defects):
             non_cosmetic = (
@@ -460,6 +655,8 @@ def locator_fit_state_analysis(
             "hard_errors": sorted(set(hard_errors)),
             "unresolved_reason_codes": [],
             "legacy_compatibility_classifications": [],
+            "structured_fit_classifiers": [],
+            "fit_conflict": None,
             "applicable_legacy_defect_ids": [],
         }
 
@@ -498,6 +695,16 @@ def locator_fit_state_analysis(
     legacy_classifications = _legacy_compatibility_classifications(
         locator_id, scope, legacy_matched
     )
+    structured_fit_classifiers = _structured_fit_classifiers(
+        record, modern_fit_defects, legacy_classifications
+    )
+    fit_conflict = (
+        _legacy_fit_conflict(structured_fit_classifiers)
+        if judgment == "unsupported"
+        and not invalid_destination
+        and not no_fit_root
+        else None
+    )
     direct_fit_severities = [str(record.get("severity"))] if fit_codes else []
     modern_fit_severities = [
         str(defect.get("severity")) for defect in modern_fit_defects
@@ -523,7 +730,9 @@ def locator_fit_state_analysis(
     )
 
     unresolved: list[str] = []
-    if (
+    if fit_conflict is not None:
+        unresolved.append(LEGACY_FIT_CONFLICT_REASON_CODE)
+    elif (
         judgment == "unsupported"
         and treatment in PARTIAL_TREATMENT_CLASSES
         and not invalid_destination
@@ -542,6 +751,8 @@ def locator_fit_state_analysis(
         "hard_errors": [],
         "unresolved_reason_codes": sorted(set(unresolved)),
         "legacy_compatibility_classifications": legacy_classifications,
+        "structured_fit_classifiers": structured_fit_classifiers,
+        "fit_conflict": fit_conflict,
         "applicable_legacy_defect_ids": sorted(
             str(item["defect_id"]) for item in legacy_matched
         ),
@@ -565,6 +776,9 @@ def combined_state_errors(
         ),
         "fit_evidence_without_classifying_severity": (
             "ambiguous:unsupported_fit_failure_requires_minor_major_or_critical_severity"
+        ),
+        LEGACY_FIT_CONFLICT_REASON_CODE: (
+            "ambiguous:legacy_structured_fit_classification_conflict_requires_adjudication"
         ),
     }
     return sorted(
@@ -706,6 +920,7 @@ def assign_locator_utility(
                 "bare_loc_pos_without_fit_cause": "ambiguous:bare_loc_pos_does_not_establish_complete_path_fit",
                 "unsupported_material_treatment_without_fit_classifier": "incomplete:unsupported_material_treatment_requires_classifying_fit_or_no_fit_state",
                 "fit_evidence_without_classifying_severity": "ambiguous:unsupported_fit_failure_requires_minor_major_or_critical_severity",
+                LEGACY_FIT_CONFLICT_REASON_CODE: "ambiguous:legacy_structured_fit_classification_conflict_requires_adjudication",
             }[reason]
             for reason in unresolved
         ))
@@ -766,6 +981,11 @@ def assign_locator_utility(
         supplemental_evidence_ids = tuple(
             sorted(str(item) for item in supplemental_fit_decision.get("evidence_ids", []))
         )
+        if analysis.get("fit_conflict") is not None:
+            compatibility_rule_ids = (
+                LEGACY_FIT_COMPATIBILITY_RULE_ID,
+                LEGACY_FIT_CONFLICT_RULE_ID,
+            )
     elif uninspectable:
         fit_category = "uninspectable"
         fit_score = None
