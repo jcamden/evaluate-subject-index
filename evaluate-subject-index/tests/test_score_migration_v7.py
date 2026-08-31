@@ -6,6 +6,7 @@ import json
 import sys
 import tempfile
 import unittest
+from decimal import Decimal
 from pathlib import Path
 
 
@@ -614,6 +615,14 @@ def legacy_fit_conflict_documents(
     return documents, historical
 
 
+def absent_legacy_fit_conflict_documents() -> tuple[
+    tuple[dict, dict, dict], list[dict]
+]:
+    documents, historical = legacy_fit_conflict_documents()
+    documents[0]["judgments"][0]["treatment_class"] = "absent"
+    return documents, historical
+
+
 def counterfactual_manifest(
     root: Path,
     canonical: dict[str, Path],
@@ -1084,7 +1093,7 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
                 (first_dir / "score-migration.v6-to-v7.json").read_text()
             )
             self.assertEqual(
-                "dimension-score-cli-v7.0.4", migration["tool"]["version"]
+                "dimension-score-cli-v7.0.5", migration["tool"]["version"]
             )
             view = migration["locator_fit_supplementation"]["views"][0]
             self.assertEqual(
@@ -1116,6 +1125,247 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
             self.assertTrue(
                 receipt["validation"][
                     "aggregate_score_absent_during_preflight_and_adjudication"
+                ]
+            )
+            self.assertEqual(frozen_locator, documents[0]["judgments"][0])
+            self.assertEqual(frozen_defects, historical_defects)
+
+    def test_absent_fit_conflict_preflight_and_migration_use_v705_schema_alignment(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            documents, historical_defects = absent_legacy_fit_conflict_documents()
+            frozen_locator = copy.deepcopy(documents[0]["judgments"][0])
+            frozen_defects = copy.deepcopy(historical_defects)
+            paths = prepare_v6_projection(
+                root,
+                documents,
+                legacy_structure_defects=historical_defects,
+            )
+
+            command_preflight = run_cli(
+                "dimension_score_v7_cli.py",
+                "preflight",
+                "--input",
+                paths["config"],
+            )
+            self.assertFalse(command_preflight["sufficient"])
+            self.assertFalse(command_preflight["aggregate_v7_score_available"])
+            public_preflight = command_preflight["locator_fit_preflight"]
+            self.assertEqual(
+                {
+                    "deterministically_compatible": 3,
+                    "unresolved_complete_path_fit": 1,
+                    "invalid_or_contradictory_state": 0,
+                },
+                public_preflight["group_counts"],
+            )
+            self.assertEqual([], public_preflight["invalid_or_contradictory_state"])
+            unresolved = public_preflight["unresolved_complete_path_fit"]
+            self.assertEqual(1, len(unresolved))
+            self.assertEqual(frozen_locator["locator_id"], unresolved[0]["locator_id"])
+            self.assertEqual(frozen_locator["path_id"], unresolved[0]["path_id"])
+            self.assertEqual("unsupported", unresolved[0]["present_judgment"])
+            self.assertEqual("absent", unresolved[0]["treatment_class"])
+            self.assertEqual("indexable", unresolved[0]["source_scope_status"])
+            self.assertEqual(
+                "legacy_structured_fit_classification_conflict_requires_adjudication",
+                unresolved[0]["reason_code"],
+            )
+            self.assertEqual(
+                "F-COMPAT-LEGACY-FIT-CONFLICT-TO-SUPPLEMENT-V1",
+                unresolved[0]["conflict_rule_id"],
+            )
+            self.assertEqual(2, len(unresolved[0]["structured_classifiers"]))
+            self.assertEqual(
+                public_preflight["unresolved_set_sha256"],
+                v5.canonical_hash({"unresolved_locator_fit": unresolved}),
+            )
+            v5.validate_schema_document(
+                public_preflight,
+                "v7-locator-fit-preflight.schema.json",
+                "Synthetic absent migration preflight",
+            )
+
+            prohibited_preflight_keys = {
+                "fit_credit",
+                "treatment_credit",
+                "fit_score",
+                "treatment_score",
+                "combined_credit",
+                "diagnostic_grade",
+                "grade",
+                "dimension_score",
+                "total_score",
+            }
+
+            def all_keys(value: object) -> set[str]:
+                if isinstance(value, dict):
+                    return set(value) | set().union(
+                        *(all_keys(item) for item in value.values())
+                    )
+                if isinstance(value, list):
+                    return set().union(*(all_keys(item) for item in value))
+                return set()
+
+            self.assertFalse(prohibited_preflight_keys & all_keys(public_preflight))
+
+            manifest_path = migration_manifest(root, paths)
+            failure = run_cli(
+                "dimension_score_v7_cli.py",
+                "migrate-v6-to-v7",
+                "--manifest",
+                manifest_path,
+                "--output-directory",
+                root / "v7-unsupplemented",
+                expect_ok=False,
+            )
+            self.assertEqual("v7_locator_fit_unresolved", failure["error"]["code"])
+            self.assertNotIn(
+                failure["error"]["code"],
+                {"input_schema_validation_failed", "v7_inputs_insufficient"},
+            )
+            self.assertEqual(
+                "absent",
+                failure["error"]["details"]["unresolved_complete_path_fit"][0][
+                    "treatment_class"
+                ],
+            )
+
+            supplement_path, supplement_preflight, supplement = locator_fit_supplement(
+                root,
+                paths,
+                categories={frozen_locator["locator_id"]: "material_partial_fit"},
+            )
+            self.assertEqual(
+                public_preflight["unresolved_set_sha256"],
+                supplement_preflight["unresolved_set_sha256"],
+            )
+            self.assertEqual(
+                [frozen_locator["locator_id"]],
+                supplement["scope"]["unresolved_locator_ids"],
+            )
+            self.assertEqual(1, len(supplement["decisions"]))
+            self.assertEqual(
+                "material_partial_fit", supplement["decisions"][0]["fit_category"]
+            )
+            prohibited_supplement_keys = prohibited_preflight_keys | {
+                "page_treatment_credit",
+                "historical_judgment",
+            }
+            self.assertFalse(prohibited_supplement_keys & all_keys(supplement))
+            v5.validate_schema_document(
+                supplement,
+                "v7-locator-fit-supplement.schema.json",
+                "Synthetic absent conflict supplement",
+            )
+
+            manifest = json.loads(manifest_path.read_text())
+            manifest["canonical"]["locator_fit_supplement"] = {
+                "path": supplement_path.name,
+                "sha256": digest(supplement_path),
+            }
+            write_json(manifest_path, manifest)
+            frozen_hashes = {key: digest(path) for key, path in paths.items()}
+
+            first_dir = root / "v7-absent-a"
+            second_dir = root / "v7-absent-b"
+            for output in (first_dir, second_dir):
+                run_cli(
+                    "dimension_score_v7_cli.py",
+                    "migrate-v6-to-v7",
+                    "--manifest",
+                    manifest_path,
+                    "--output-directory",
+                    output,
+                )
+            self.assertEqual(
+                frozen_hashes, {key: digest(path) for key, path in paths.items()}
+            )
+            first_files = sorted(
+                path.relative_to(first_dir)
+                for path in first_dir.rglob("*")
+                if path.is_file()
+            )
+            second_files = sorted(
+                path.relative_to(second_dir)
+                for path in second_dir.rglob("*")
+                if path.is_file()
+            )
+            self.assertEqual(first_files, second_files)
+            for relative in first_files:
+                self.assertEqual(
+                    (first_dir / relative).read_bytes(),
+                    (second_dir / relative).read_bytes(),
+                    relative,
+                )
+
+            calculation = json.loads(
+                (first_dir / "dimension-calculations.v7.json").read_text()
+            )
+            reliability = next(
+                item
+                for item in calculation["dimensions"]
+                if item["dimension_id"] == "page_reference_reliability"
+            )
+            assignment = next(
+                item
+                for item in reliability["reliability_provenance"][
+                    "locator_utility_assignments"
+                ]
+                if item["locator_id"] == frozen_locator["locator_id"]
+            )
+            self.assertEqual("unsupported", assignment["judgment"])
+            self.assertEqual("absent", assignment["treatment_class"])
+            self.assertEqual("indexable", assignment["source_scope_status"])
+            self.assertEqual(frozen_locator["error_codes"], assignment["error_codes"])
+            self.assertEqual(frozen_locator["severity"], assignment["locator_severity"])
+            self.assertEqual("0", assignment["treatment_score"])
+            self.assertEqual("material_partial_fit", assignment["fit_category"])
+            self.assertEqual("0.7", assignment["fit_score"])
+            self.assertEqual("0", assignment["combined_credit"])
+            self.assertEqual(0, assignment["diagnostic_grade"])
+            self.assertEqual(
+                min(
+                    Decimal(assignment["treatment_score"]),
+                    Decimal(assignment["fit_score"]),
+                ),
+                Decimal(assignment["combined_credit"]),
+            )
+            self.assertEqual(
+                [
+                    "F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1",
+                    "F-COMPAT-LEGACY-FIT-CONFLICT-TO-SUPPLEMENT-V1",
+                ],
+                assignment["compatibility_rule_ids"],
+            )
+
+            migration = json.loads(
+                (first_dir / "score-migration.v6-to-v7.json").read_text()
+            )
+            self.assertEqual(
+                "dimension-score-cli-v7.0.5", migration["tool"]["version"]
+            )
+            migration_view = migration["locator_fit_supplementation"]["views"][0]
+            self.assertEqual(
+                "absent",
+                migration_view["unresolved_records_without_supplement"][0][
+                    "treatment_class"
+                ],
+            )
+            self.assertEqual(
+                [frozen_locator["locator_id"]],
+                migration_view["conflict_routed_locator_ids"],
+            )
+            receipt = json.loads(
+                (first_dir / "validation-receipt.v7.json").read_text()
+            )
+            self.assertTrue(receipt["validation"]["all_schemas_valid"])
+            self.assertTrue(
+                receipt["validation"]["locator_fit_supplement_scope_exact"]
+            )
+            self.assertTrue(
+                receipt["validation"][
+                    "locator_fit_supplement_non_fit_fields_unchanged"
                 ]
             )
             self.assertEqual(frozen_locator, documents[0]["judgments"][0])
@@ -1689,6 +1939,21 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
             migration = json.loads(
                 (output / "score-migration.v6-to-v7.json").read_text()
             )
+            for historical_version in (
+                "dimension-score-cli-v7.0.3",
+                "dimension-score-cli-v7.0.4",
+                "dimension-score-cli-v7.0.5",
+            ):
+                historical_migration = copy.deepcopy(migration)
+                historical_migration["tool"]["version"] = historical_version
+                historical_migration["migration_sha256"] = v5.canonical_hash(
+                    historical_migration, "migration_sha256"
+                )
+                v5.validate_schema_document(
+                    historical_migration,
+                    "score-migration-v6-to-v7.schema.json",
+                    f"Synthetic {historical_version} migration contract",
+                )
             migration["tool"]["version"] = "dimension-score-cli-v7.0.2"
             migration.pop("locator_fit_supplementation", None)
             migration["frozen_evidence"].pop(
