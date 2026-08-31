@@ -119,7 +119,7 @@
         "reason_code": {"$ref": "#/$defs/reasonCode"},
         "reason_codes": {"type": "array", "items": {"$ref": "#/$defs/reasonCode"}, "minItems": 1, "uniqueItems": true},
         "present_judgment": {"const": "unsupported"},
-        "treatment_class": {"enum": ["substantive", "mixed", "passing_mention", "attribution_only", "citation_only", "incidental_example"]},
+        "treatment_class": {"enum": ["substantive", "mixed", "passing_mention", "attribution_only", "citation_only", "incidental_example", "absent"]},
         "source_scope_status": {"const": "indexable"},
         "structured_codes": {
           "type": "array",
@@ -139,6 +139,15 @@
         "historical_records_modified": {"const": false}
       },
       "allOf": [
+        {
+          "if": {"properties": {"treatment_class": {"const": "absent"}}, "required": ["treatment_class"]},
+          "then": {
+            "properties": {
+              "reason_code": {"const": "legacy_structured_fit_classification_conflict_requires_adjudication"},
+              "reason_codes": {"const": ["legacy_structured_fit_classification_conflict_requires_adjudication"]}
+            }
+          }
+        },
         {
           "if": {"properties": {"reason_code": {"const": "legacy_structured_fit_classification_conflict_requires_adjudication"}}, "required": ["reason_code"]},
           "then": {"required": ["conflict_rule_id", "conflict_scope", "structured_classifiers", "independently_implied_fit_categories", "classifier_precedence_applied", "supplement_eligible", "prose_inference_used", "historical_records_modified"]},

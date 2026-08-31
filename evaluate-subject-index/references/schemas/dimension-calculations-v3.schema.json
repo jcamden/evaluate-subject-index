@@ -71,6 +71,7 @@
       "additionalProperties": false
     },
     "locator_fit_compatibility": {
+      "description": "Score-free compatibility provenance. Unresolved records preserve every frozen non-fit field verbatim, including a legally reachable absent treatment class; unavailable treatment remains deterministic and cannot enter this group.",
       "type": "object",
       "required": ["rule", "classifications", "unresolved_before_supplement", "unresolved_after_supplement", "historical_defects_rewritten", "prose_inference_used"],
       "properties": {

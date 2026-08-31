@@ -372,6 +372,240 @@ class LocatorUtilityPolicyTests(unittest.TestCase):
         self.assertEqual(frozen_record, record)
         self.assertEqual(frozen_historical, historical)
 
+    def test_absent_legacy_fit_conflict_is_schema_valid_and_keeps_zero_treatment(self) -> None:
+        record = state(
+            "unsupported",
+            "absent",
+            codes=["CON"],
+            severity="minor",
+            locator_id="LOC-SYNTHETIC-ABSENT-CONFLICT",
+        ) | {"path_id": "PATH-SYNTHETIC-ABSENT-CONFLICT"}
+        historical = [
+            legacy_defect(
+                "STA",
+                "major",
+                locator_id=record["locator_id"],
+                defect_id="DEFECT-SYNTHETIC-ABSENT-CONFLICT",
+            )
+        ]
+        frozen_record = copy.deepcopy(record)
+        frozen_historical = copy.deepcopy(historical)
+
+        analysis = locator_fit_state_analysis(
+            record, legacy_defects=historical
+        )
+        self.assertEqual([], analysis["hard_errors"])
+        self.assertEqual(
+            [LEGACY_FIT_CONFLICT_REASON_CODE],
+            analysis["unresolved_reason_codes"],
+        )
+        conflict = analysis["fit_conflict"]
+        self.assertEqual(LEGACY_FIT_CONFLICT_RULE_ID, conflict["conflict_rule_id"])
+        self.assertEqual(
+            ["material_mismatch", "severe_mismatch"],
+            conflict["independently_implied_fit_categories"],
+        )
+        self.assertEqual(2, len(conflict["structured_classifiers"]))
+        for classifier in conflict["structured_classifiers"]:
+            self.assertEqual(record["locator_id"], classifier["bound_locator_id"])
+            self.assertEqual(record["path_id"], classifier["path_id"])
+            self.assertTrue(classifier["source_artifact_role"])
+            self.assertTrue(classifier["stable_record_id"])
+            self.assertTrue(classifier["classifier_basis"])
+            self.assertTrue(classifier["binding_basis"])
+            self.assertIn(
+                classifier["implied_fit_category"],
+                {"material_mismatch", "severe_mismatch"},
+            )
+            self.assertFalse(classifier["prose_inference_used"])
+
+        ledgers = reliability_ledgers([record])
+        first = v7.public_locator_fit_preflight(
+            v7.locator_fit_preflight(
+                ledgers, "full", legacy_defects=historical
+            )
+        )
+        second = v7.public_locator_fit_preflight(
+            v7.locator_fit_preflight(
+                copy.deepcopy(ledgers),
+                "full",
+                legacy_defects=copy.deepcopy(historical),
+            )
+        )
+        self.assertEqual(first, second)
+        self.assertEqual(
+            {
+                "deterministically_compatible": 0,
+                "unresolved_complete_path_fit": 1,
+                "invalid_or_contradictory_state": 0,
+            },
+            first["group_counts"],
+        )
+        self.assertEqual([], first["invalid_or_contradictory_state"])
+        unresolved = first["unresolved_complete_path_fit"]
+        self.assertEqual(1, len(unresolved))
+        self.assertEqual(record["locator_id"], unresolved[0]["locator_id"])
+        self.assertEqual("unsupported", unresolved[0]["present_judgment"])
+        self.assertEqual("absent", unresolved[0]["treatment_class"])
+        self.assertEqual("indexable", unresolved[0]["source_scope_status"])
+        self.assertEqual(
+            LEGACY_FIT_CONFLICT_REASON_CODE, unresolved[0]["reason_code"]
+        )
+        self.assertEqual(
+            v5.canonical_hash({"unresolved_locator_fit": unresolved}),
+            first["unresolved_set_sha256"],
+        )
+        v5.validate_schema_document(
+            first,
+            "v7-locator-fit-preflight.schema.json",
+            "Synthetic absent legacy-fit conflict preflight",
+        )
+
+        prohibited_preflight_keys = {
+            "fit_credit",
+            "treatment_credit",
+            "fit_score",
+            "treatment_score",
+            "combined_credit",
+            "diagnostic_grade",
+            "grade",
+            "dimension_score",
+            "total_score",
+        }
+
+        def nested_keys(value: object) -> set[str]:
+            if isinstance(value, dict):
+                return set(value) | set().union(
+                    *(nested_keys(item) for item in value.values())
+                )
+            if isinstance(value, list):
+                return set().union(*(nested_keys(item) for item in value))
+            return set()
+
+        self.assertFalse(prohibited_preflight_keys & nested_keys(first))
+        self.assertFalse(first["aggregate_v7_score_available"])
+
+        assignment = assign_locator_utility(
+            record,
+            legacy_defects=historical,
+            supplemental_fit_decision={
+                "decision_id": "FITDEC-ABSENT000001",
+                "fit_category": "material_partial_fit",
+                "evidence_ids": [record["locator_id"]],
+            },
+        ).as_dict()
+        self.assertEqual("absent", assignment["treatment_class"])
+        self.assertEqual("0", assignment["treatment_score"])
+        self.assertEqual("material_partial_fit", assignment["fit_category"])
+        self.assertEqual("0.7", assignment["fit_score"])
+        self.assertEqual("0", assignment["combined_credit"])
+        self.assertEqual(0, assignment["diagnostic_grade"])
+        self.assertEqual(
+            [LEGACY_FIT_COMPATIBILITY_RULE_ID, LEGACY_FIT_CONFLICT_RULE_ID],
+            assignment["compatibility_rule_ids"],
+        )
+        self.assertEqual(frozen_record, record)
+        self.assertEqual(frozen_historical, historical)
+
+    def test_absent_without_conflict_and_unavailable_keep_existing_routes(self) -> None:
+        ordinary_absent = state(
+            "unsupported",
+            "absent",
+            codes=["LOC_POS"],
+            severity="major",
+            locator_id="LOC-SYNTHETIC-ABSENT-DETERMINISTIC",
+        ) | {"path_id": "PATH-SYNTHETIC-ABSENT-DETERMINISTIC"}
+        absent_report = v7.public_locator_fit_preflight(
+            v7.locator_fit_preflight(
+                reliability_ledgers([ordinary_absent]), "full"
+            )
+        )
+        self.assertEqual(
+            {
+                "deterministically_compatible": 1,
+                "unresolved_complete_path_fit": 0,
+                "invalid_or_contradictory_state": 0,
+            },
+            absent_report["group_counts"],
+        )
+        self.assertEqual(
+            "frozen_absent_treatment",
+            absent_report["deterministically_compatible"][0][
+                "fit_classification_source"
+            ],
+        )
+        v5.validate_schema_document(
+            absent_report,
+            "v7-locator-fit-preflight.schema.json",
+            "Synthetic ordinary absent preflight",
+        )
+
+        unavailable = state(
+            "uninspectable",
+            "unavailable",
+            scope="indexable",
+            locator_id="LOC-SYNTHETIC-UNAVAILABLE",
+        ) | {"path_id": "PATH-SYNTHETIC-UNAVAILABLE"}
+        jsonschema.validate(
+            unavailable,
+            json.loads(
+                (SCHEMAS / "locator-evidence-state-v3.schema.json").read_text()
+            ),
+        )
+        unavailable_analysis = locator_fit_state_analysis(unavailable)
+        self.assertEqual([], unavailable_analysis["hard_errors"])
+        self.assertEqual([], unavailable_analysis["unresolved_reason_codes"])
+        self.assertIsNone(unavailable_analysis["fit_conflict"])
+        unavailable_report = v7.public_locator_fit_preflight(
+            v7.locator_fit_preflight(
+                reliability_ledgers([unavailable]), "full"
+            )
+        )
+        self.assertEqual(
+            {
+                "deterministically_compatible": 1,
+                "unresolved_complete_path_fit": 0,
+                "invalid_or_contradictory_state": 0,
+            },
+            unavailable_report["group_counts"],
+        )
+        self.assertEqual(
+            "frozen_uninspectable_state",
+            unavailable_report["deterministically_compatible"][0][
+                "fit_classification_source"
+            ],
+        )
+        v5.validate_schema_document(
+            unavailable_report,
+            "v7-locator-fit-preflight.schema.json",
+            "Synthetic unavailable deterministic preflight",
+        )
+
+        invalid_unavailable = state(
+            "unsupported",
+            "unavailable",
+            codes=["CON"],
+            severity="minor",
+            locator_id="LOC-SYNTHETIC-UNAVAILABLE-INVALID",
+        ) | {"path_id": "PATH-SYNTHETIC-UNAVAILABLE-INVALID"}
+        invalid_analysis = locator_fit_state_analysis(
+            invalid_unavailable,
+            legacy_defects=[
+                legacy_defect(
+                    "STA",
+                    "major",
+                    locator_id=invalid_unavailable["locator_id"],
+                    defect_id="DEFECT-SYNTHETIC-UNAVAILABLE-INVALID",
+                )
+            ],
+        )
+        self.assertIn(
+            "inconsistent:unavailable_treatment_requires_uninspectable",
+            invalid_analysis["hard_errors"],
+        )
+        self.assertEqual([], invalid_analysis["unresolved_reason_codes"])
+        self.assertIsNone(invalid_analysis["fit_conflict"])
+
     def test_treatment_indication_and_valid_legacy_classifier_conflict_narrowly(self) -> None:
         record = state(
             "unsupported", "passing_mention", severity="minor"

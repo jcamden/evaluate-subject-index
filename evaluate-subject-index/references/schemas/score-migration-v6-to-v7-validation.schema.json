@@ -19,7 +19,7 @@
       "required": ["all_hashes_recomputed", "all_schemas_valid", "historical_bytes_unchanged", "calculation_hash_valid", "migration_hash_valid", "structure_review_hash_valid", "decimal_safe_projection_validation", "gate_outcomes_equal", "representation_provenance_complete"],
       "properties": {
         "all_hashes_recomputed": {"const": true},
-        "all_schemas_valid": {"const": true},
+        "all_schemas_valid": {"description": "Every emitted and embedded contract, including the public locator-fit preflight and its unresolved records, validated against the applicable Draft 2020-12 schema.", "const": true},
         "historical_bytes_unchanged": {"const": true},
         "calculation_hash_valid": {"const": true},
         "migration_hash_valid": {"const": true},
