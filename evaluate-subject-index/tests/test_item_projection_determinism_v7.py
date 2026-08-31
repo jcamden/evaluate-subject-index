@@ -19,6 +19,7 @@ sys.path.insert(0, str(TESTS))
 
 import dimension_score_cli as v5  # noqa: E402
 import dimension_score_v6_cli as v6  # noqa: E402
+import dimension_score_v7_cli as v7  # noqa: E402
 import item_grade_cli as item_grades  # noqa: E402
 from test_dimension_scoring_v5 import (  # noqa: E402
     base_documents,
@@ -388,34 +389,44 @@ class V7ItemProjectionDeterminismTests(unittest.TestCase):
                 "dimension-calculations.v7.json": (
                     "calculation_id",
                     "calculation_sha256",
+                    v5.canonical_hash,
                 ),
                 "structure-locator-review.v7.json": (
                     "review_id",
                     "review_sha256",
+                    v7.structure_review_hash,
                 ),
                 "score-migration.v6-to-v7.json": (
                     "migration_id",
                     "migration_sha256",
+                    v5.canonical_hash,
                 ),
                 "projection-metadata.v7.json": (
                     None,
                     "projection_metadata_sha256",
+                    v5.canonical_hash,
                 ),
                 "validation-receipt.v7.json": (
                     "receipt_id",
                     "receipt_sha256",
+                    v5.canonical_hash,
                 ),
             }
             identities = []
             for output_root in output_roots:
                 identity_snapshot = {}
-                for filename, (identity_field, hash_field) in self_hash_fields.items():
+                for filename, (
+                    identity_field,
+                    hash_field,
+                    hash_function,
+                ) in self_hash_fields.items():
                     document = json.loads(
                         (output_root / filename).read_text(encoding="utf-8")
                     )
                     self.assertEqual(
                         document[hash_field],
-                        v5.canonical_hash(document, hash_field),
+                        hash_function(document, hash_field),
+                        filename,
                     )
                     identity_snapshot[hash_field] = document[hash_field]
                     if identity_field is not None:
