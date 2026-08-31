@@ -29,7 +29,8 @@
         "v6_item_assessments": {"$ref": "#/$defs/artifact"},
         "v6_web_report": {"$ref": "#/$defs/artifact"},
         "v6_projection_metadata": {"$ref": "#/$defs/artifact"},
-        "supplemental_architecture_review": {"$ref": "#/$defs/artifact"}
+        "supplemental_architecture_review": {"$ref": "#/$defs/artifact"},
+        "locator_fit_supplement": {"$ref": "#/$defs/artifact"}
       },
       "additionalProperties": false
     },
@@ -44,7 +45,8 @@
           "normalized_candidate": {"$ref": "#/$defs/artifact"},
           "item_inventory": {"$ref": "#/$defs/artifact"},
           "v6_calculation": {"$ref": "#/$defs/artifact"},
-          "supplemental_architecture_review": {"$ref": "#/$defs/artifact"}
+          "supplemental_architecture_review": {"$ref": "#/$defs/artifact"},
+          "locator_fit_supplement": {"$ref": "#/$defs/artifact"}
         },
         "additionalProperties": false
       }

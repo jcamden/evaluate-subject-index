@@ -17,6 +17,7 @@ sys.path.insert(0, str(TESTS))
 
 import dimension_score_cli as v5  # noqa: E402
 import dimension_score_v6_cli as v6  # noqa: E402
+import dimension_score_v7_cli as v7  # noqa: E402
 from test_dimension_scoring_v5 import (  # noqa: E402
     base_documents,
     calculation_files,
@@ -342,6 +343,259 @@ def supplemental_architecture_review(
     return path
 
 
+def finalize_locator_fit_supplement(document: dict) -> dict:
+    document = copy.deepcopy(document)
+    for decision in document["decisions"]:
+        decision["decision_id"] = ""
+        decision["decision_id"] = (
+            f"FITDEC-{v5.canonical_hash(decision)[:12].upper()}"
+        )
+    document["supplement_id"] = ""
+    document["supplement_sha256"] = ""
+    document["supplement_id"] = (
+        f"FITSUP-{v5.canonical_hash(document)[:12].upper()}"
+    )
+    document["supplement_sha256"] = v5.canonical_hash(
+        document, "supplement_sha256"
+    )
+    return document
+
+
+def locator_fit_supplement(
+    root: Path,
+    paths: dict[str, Path],
+    *,
+    filename: str = "locator-fit-supplement.v7.json",
+    categories: dict[str, str] | None = None,
+    representation_provenance: list[dict] | None = None,
+) -> tuple[Path, dict, dict]:
+    loaded = v7.load_v7_inputs(paths["config"])
+    ledgers, missing = v5.preflight_loaded(loaded)
+    if ledgers is None or missing:
+        raise AssertionError(f"synthetic V6 inputs are incomplete: {missing}")
+    fit_preflight = v7.locator_fit_preflight(
+        ledgers,
+        loaded["config"]["audit_mode"],
+        legacy_defects=v7.historical_locator_fit_defects(loaded["structure"]),
+    )
+    identities = sorted(
+        (
+            {
+                "role": item["role"],
+                "schema_version": item["schema_version"],
+                "file_sha256": item["sha256"],
+            }
+            for item in loaded["input_artifacts"]
+        ),
+        key=lambda item: (item["role"], item["file_sha256"]),
+    )
+
+    def selected(prefix: str) -> list[dict]:
+        return [item for item in identities if item["role"].startswith(prefix)]
+
+    def exact(role: str) -> dict:
+        matches = [item for item in identities if item["role"] == role]
+        if len(matches) != 1:
+            raise AssertionError(f"expected one {role}, found {matches}")
+        return matches[0]
+
+    migration_supplements = [
+        item for item in identities if item["role"] == "migration_supplement"
+    ]
+    provenance_bindings = sorted(
+        (
+            {
+                "role": item["role"],
+                "schema_version": item["schema_version"],
+                "file_sha256": digest(item["path"]),
+            }
+            for item in representation_provenance or []
+        ),
+        key=lambda item: (item["role"], item["file_sha256"]),
+    )
+    old_calculation = json.loads(paths["calculation"].read_text())
+    candidate = json.loads(paths["candidate"].read_text())
+    categories = categories or {}
+    decisions = [
+        {
+            "decision_id": "",
+            "locator_id": item["locator_id"],
+            "path_id": item["path_id"],
+            "fit_category": categories.get(item["locator_id"], "material_partial_fit"),
+            "evidence_ids": [item["locator_id"]],
+        }
+        for item in fit_preflight["unresolved_locator_fit"]
+    ]
+    document = finalize_locator_fit_supplement(
+        {
+            "schema_version": "subject-index-v7-locator-fit-supplement-v1",
+            "supplement_id": "",
+            "evaluation_id": loaded["config"]["evaluation_id"],
+            "candidate_identity": {
+                "candidate_id": candidate["candidate_id"],
+                "candidate_sha256": candidate["candidate_sha256"],
+            },
+            "audit_mode": loaded["config"]["audit_mode"],
+            "bindings": {
+                "v6_dimension_calculation_input_file_sha256": digest(paths["config"]),
+                "normalized_candidate_file_sha256": digest(paths["candidate"]),
+                "item_inventory_file_sha256": digest(paths["inventory"]),
+                "historical_v6_calculation_file_sha256": digest(paths["calculation"]),
+                "historical_v6_calculation_sha256": old_calculation[
+                    "calculation_sha256"
+                ],
+                "locator_audit_artifacts": selected("locator_audit["),
+                "missing_access_audit_artifacts": selected(
+                    "missing_access_audit["
+                ),
+                "historical_structure_audit": exact("structure_audit"),
+                "chunk_manifest": exact("chunk_manifest"),
+                "migration_supplement": (
+                    migration_supplements[0] if migration_supplements else None
+                ),
+                "representation_correction_provenance_artifacts": provenance_bindings,
+                "calculation_input_artifact_set_sha256": v5.canonical_hash(
+                    {"artifacts": identities}
+                ),
+            },
+            "scope": {
+                "rule_id": "FIT-V7-EXACT-UNRESOLVED-LOCATOR-SET-V1",
+                "unresolved_locator_ids": [
+                    item["locator_id"]
+                    for item in fit_preflight["unresolved_locator_fit"]
+                ],
+                "unresolved_set_sha256": fit_preflight["unresolved_set_sha256"],
+            },
+            "decisions": decisions,
+            "provenance": {
+                "authorization_id": "AUTH-SYNTHETIC-LOCATOR-FIT",
+                "authorization_scope": "supplemental_complete_path_fit_only",
+                "decision_origin": "separately_authorized_semantic_adjudication",
+                "supplement_transports_authorized_decisions_only": True,
+                "score_only_migration_inspected_source_pages": False,
+                "score_only_migration_used_prose": False,
+                "historical_artifacts_modified": False,
+                "page_treatment_modified": False,
+                "judgment_modified": False,
+                "treatment_class_modified": False,
+                "source_scope_status_modified": False,
+                "defects_modified": False,
+                "gates_modified": False,
+                "non_fit_dimensions_modified": False,
+                "numerical_fit_credit_supplied": False,
+                "combined_credit_supplied": False,
+                "grade_supplied": False,
+                "dimension_score_supplied": False,
+                "total_score_supplied": False,
+            },
+            "supplement_sha256": "",
+        }
+    )
+    path = root / filename
+    write_json(path, document)
+    return path, fit_preflight, document
+
+
+def bare_loc_pos_documents(*, count: int = 1) -> tuple[dict, dict, dict]:
+    documents = base_documents()
+    for judgment in documents[0]["judgments"][:count]:
+        judgment.update(
+            judgment="unsupported",
+            treatment_class="substantive",
+            error_codes=["LOC_POS"],
+            severity="minor",
+            rationale="Synthetic prose must never select the fit category.",
+            evidence_summary="Synthetic display text is deliberately non-classifying.",
+        )
+    return documents
+
+
+def counterfactual_manifest(
+    root: Path,
+    canonical: dict[str, Path],
+    adjusted: dict[str, Path],
+) -> tuple[Path, dict]:
+    provenance_path = root / "representation-correction-ledger.json"
+    provenance = {
+        "role": "character_fidelity_correction_ledger",
+        "schema_version": "synthetic-representation-correction-v1",
+        "path": provenance_path,
+    }
+    write_json(
+        provenance_path,
+        {
+            "schema_version": provenance["schema_version"],
+            "status": "frozen",
+            "candidate_interpretation_reopened": False,
+        },
+    )
+    metadata = json.loads(canonical["metadata"].read_text())
+    adjusted_calculation = json.loads(adjusted["calculation"].read_text())
+    metadata["counterfactual_score_views"] = [
+        {
+            "view_id": "representation_adjusted",
+            "label": "Representation adjusted",
+            "calculation": {
+                "schema_version": "subject-index-dimension-calculations-v2",
+                "artifact_path": v5.portable_relative_reference(
+                    adjusted["calculation"],
+                    canonical["metadata"],
+                    label="V6 counterfactual calculation",
+                ),
+                "sha256": digest(adjusted["calculation"]),
+                "calculation_sha256": adjusted_calculation["calculation_sha256"],
+                "rubric_version": "subject-index-rubric-v6",
+                "calculation_profile": "subject-index-dimension-calculation-v2",
+            },
+            "provenance_artifacts": [
+                {
+                    "role": provenance["role"],
+                    "schema_version": provenance["schema_version"],
+                    "artifact_path": v5.portable_relative_reference(
+                        provenance_path,
+                        canonical["metadata"],
+                        label="V6 counterfactual provenance",
+                    ),
+                    "sha256": digest(provenance_path),
+                }
+            ],
+        }
+    ]
+    v6.write_json(canonical["metadata"], metadata)
+    result, web = v6.build_projections(
+        canonical["calculation"],
+        canonical["items"],
+        canonical["metadata"],
+        canonical["result"],
+        canonical["web"],
+    )
+    v6.write_json(canonical["result"], result)
+    v6.write_json(canonical["web"], web)
+    v6.validate_projection_artifacts(
+        canonical["calculation"], canonical["result"], canonical["web"]
+    )
+    manifest_path = migration_manifest(root, canonical)
+    manifest = json.loads(manifest_path.read_text())
+
+    def reference(path: Path) -> dict:
+        return {
+            "path": path.relative_to(root).as_posix(),
+            "sha256": digest(path),
+        }
+
+    manifest["counterfactuals"] = [
+        {
+            "view_id": "representation_adjusted",
+            "dimension_calculation_input": reference(adjusted["config"]),
+            "normalized_candidate": reference(adjusted["candidate"]),
+            "item_inventory": reference(adjusted["inventory"]),
+            "v6_calculation": reference(adjusted["calculation"]),
+        }
+    ]
+    write_json(manifest_path, manifest)
+    return manifest_path, provenance
+
+
 class V7ScoreOnlyMigrationTests(unittest.TestCase):
     def test_full_migration_chain_is_hash_bound_and_deterministic(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -446,6 +700,20 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
                 evidence_summary="Prose would select a favorable nonzero fit tier.",
             )
             paths = prepare_v6_projection(root, documents)
+            preflight = run_cli(
+                "dimension_score_v7_cli.py",
+                "preflight",
+                "--input",
+                paths["config"],
+            )
+            self.assertFalse(preflight["sufficient"])
+            self.assertEqual(
+                "bare_loc_pos_without_fit_cause",
+                preflight["unresolved_locator_fit"][0]["reason_code"],
+            )
+            self.assertNotIn(
+                "rationale", json.dumps(preflight["unresolved_locator_fit"])
+            )
             manifest = migration_manifest(root, paths)
             failure = run_cli(
                 "dimension_score_v7_cli.py",
@@ -456,12 +724,530 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
                 root / "v7",
                 expect_ok=False,
             )
-            self.assertEqual("v7_inputs_insufficient", failure["error"]["code"])
-            self.assertIn(
-                "ambiguous:bare_loc_pos_does_not_establish_complete_path_fit",
-                json.dumps(failure["error"]["details"]),
+            self.assertEqual("v7_locator_fit_unresolved", failure["error"]["code"])
+            unresolved = failure["error"]["details"]["unresolved_locator_fit"]
+            self.assertEqual(1, len(unresolved))
+            self.assertEqual(
+                "bare_loc_pos_without_fit_cause", unresolved[0]["reason_code"]
             )
+            self.assertEqual("complete_path_fit_category", unresolved[0]["missing_classifier_category"])
+            public_details = json.dumps(failure["error"]["details"])
+            self.assertNotIn("Prose claims", public_details)
+            self.assertNotIn("favorable nonzero", public_details)
+            self.assertNotIn("rationale", public_details)
             self.assertFalse((root / "v7" / "dimension-calculations.v7.json").exists())
+
+    def test_hash_bound_locator_fit_supplement_resolves_exact_set_in_memory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            documents = bare_loc_pos_documents()
+            frozen_locator = copy.deepcopy(documents[0]["judgments"][0])
+            paths = prepare_v6_projection(root, documents)
+            manifest_path = migration_manifest(root, paths)
+            supplement_path, preflight, supplement = locator_fit_supplement(
+                root, paths
+            )
+            manifest = json.loads(manifest_path.read_text())
+            manifest["canonical"]["locator_fit_supplement"] = {
+                "path": supplement_path.name,
+                "sha256": digest(supplement_path),
+            }
+            write_json(manifest_path, manifest)
+            frozen_hashes = {
+                key: digest(path) for key, path in paths.items()
+            }
+
+            first_dir = root / "v7-a"
+            second_dir = root / "v7-b"
+            run_cli(
+                "dimension_score_v7_cli.py",
+                "migrate-v6-to-v7",
+                "--manifest",
+                manifest_path,
+                "--output-directory",
+                first_dir,
+            )
+            run_cli(
+                "dimension_score_v7_cli.py",
+                "migrate-v6-to-v7",
+                "--manifest",
+                manifest_path,
+                "--output-directory",
+                second_dir,
+            )
+            self.assertEqual(
+                frozen_hashes, {key: digest(path) for key, path in paths.items()}
+            )
+            relative_files = sorted(
+                path.relative_to(first_dir) for path in first_dir.rglob("*.json")
+            )
+            for relative in relative_files:
+                self.assertEqual(
+                    (first_dir / relative).read_bytes(),
+                    (second_dir / relative).read_bytes(),
+                    relative,
+                )
+
+            calculation = json.loads(
+                (first_dir / "dimension-calculations.v7.json").read_text()
+            )
+            reliability = next(
+                item
+                for item in calculation["dimensions"]
+                if item["dimension_id"] == "page_reference_reliability"
+            )
+            assignment = next(
+                item
+                for item in reliability["reliability_provenance"][
+                    "locator_utility_assignments"
+                ]
+                if item["locator_id"] == frozen_locator["locator_id"]
+            )
+            self.assertEqual("1", assignment["treatment_score"])
+            self.assertEqual("0.7", assignment["fit_score"])
+            self.assertEqual("0.7", assignment["combined_credit"])
+            self.assertEqual(70, assignment["diagnostic_grade"])
+            self.assertEqual(
+                "supplemental_locator_fit", assignment["fit_classification_source"]
+            )
+            for field in (
+                "judgment",
+                "treatment_class",
+                "source_scope_status",
+                "error_codes",
+            ):
+                self.assertEqual(frozen_locator[field], assignment[field])
+            self.assertEqual(
+                len(preflight["unresolved_locator_fit"]),
+                calculation["locator_fit_compatibility"][
+                    "unresolved_before_supplement"
+                ],
+            )
+            self.assertEqual(
+                0,
+                calculation["locator_fit_compatibility"][
+                    "unresolved_after_supplement"
+                ],
+            )
+            self.assertEqual(
+                supplement["supplement_sha256"],
+                calculation["locator_fit_supplement"]["supplement_sha256"],
+            )
+
+            items = json.loads(
+                (first_dir / "item-assessments.v7.json").read_text()
+            )
+            migration = json.loads(
+                (first_dir / "score-migration.v6-to-v7.json").read_text()
+            )
+            result = json.loads(
+                (first_dir / "evaluation-result.v7.json").read_text()
+            )
+            web = json.loads((first_dir / "web-report.v7.json").read_text())
+            metadata = json.loads(
+                (first_dir / "projection-metadata.v7.json").read_text()
+            )
+            receipt = json.loads(
+                (first_dir / "validation-receipt.v7.json").read_text()
+            )
+            self.assertEqual(
+                supplement["supplement_id"],
+                items["locator_fit_supplement"]["supplement_id"],
+            )
+            self.assertEqual(
+                supplement["supplement_id"],
+                result["locator_fit_supplement"]["supplement_id"],
+            )
+            self.assertEqual(
+                supplement["supplement_id"],
+                web["locator_fit_supplement"]["supplement_id"],
+            )
+            self.assertEqual(
+                supplement["supplement_id"],
+                metadata["canonical_locator_fit_supplement"]["supplement_id"],
+            )
+            supplementation = migration["locator_fit_supplementation"]
+            self.assertTrue(supplementation["supplemental_judgments_added"])
+            self.assertEqual("complete_path_fit_only", supplementation["scope"])
+            self.assertEqual(1, supplementation["views"][0]["unresolved_set_count_before_supplementation"])
+            self.assertEqual(0, supplementation["views"][0]["unresolved_set_count_after_supplementation"])
+            self.assertTrue(supplementation["historical_artifacts_unchanged"])
+            self.assertTrue(supplementation["non_fit_judgments_unchanged"])
+            self.assertFalse(supplementation["numerical_fit_credit_manually_supplied"])
+            self.assertEqual(
+                "supplemental_locator_fit_only",
+                migration["frozen_evidence"]["semantic_judgment_scope"],
+            )
+            self.assertEqual(
+                supplement["supplement_id"],
+                receipt["supplemental_locator_fit_supplements"][0]["artifact"][
+                    "supplement_id"
+                ],
+            )
+            self.assertTrue(receipt["validation"]["locator_fit_supplement_hash_valid"])
+            self.assertTrue(receipt["validation"]["locator_fit_supplement_scope_exact"])
+            self.assertEqual(
+                supplement["supplement_sha256"],
+                v5.canonical_hash(supplement, "supplement_sha256"),
+            )
+            self.assertEqual(
+                calculation["calculation_sha256"],
+                v5.canonical_hash(calculation, "calculation_sha256"),
+            )
+            self.assertEqual(
+                migration["migration_sha256"],
+                v5.canonical_hash(migration, "migration_sha256"),
+            )
+            self.assertEqual(
+                receipt["receipt_sha256"],
+                v5.canonical_hash(receipt, "receipt_sha256"),
+            )
+
+    def test_locator_fit_supplement_exact_set_and_order_failures(self) -> None:
+        cases = ("missing", "extra", "duplicate", "reordered", "deterministic")
+        for case in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                documents = bare_loc_pos_documents(count=2)
+                paths = prepare_v6_projection(root, documents)
+                manifest_path = migration_manifest(root, paths)
+                supplement_path, preflight, supplement = locator_fit_supplement(
+                    root, paths
+                )
+                self.assertEqual(2, len(preflight["unresolved_locator_fit"]))
+                deterministic = next(
+                    item
+                    for item in documents[0]["judgments"]
+                    if item["locator_id"]
+                    not in supplement["scope"]["unresolved_locator_ids"]
+                )
+                if case == "missing":
+                    supplement["decisions"] = supplement["decisions"][:-1]
+                elif case == "extra":
+                    supplement["decisions"].append(
+                        {
+                            "decision_id": "",
+                            "locator_id": "LOC-EXTRA-SYNTHETIC",
+                            "path_id": supplement["decisions"][0]["path_id"],
+                            "fit_category": "exact_fit",
+                            "evidence_ids": [supplement["decisions"][0]["path_id"]],
+                        }
+                    )
+                elif case == "duplicate":
+                    duplicate = copy.deepcopy(supplement["decisions"][0])
+                    duplicate["fit_category"] = "no_fit"
+                    supplement["decisions"].insert(1, duplicate)
+                elif case == "reordered":
+                    supplement["decisions"].reverse()
+                else:
+                    supplement["decisions"].append(
+                        {
+                            "decision_id": "",
+                            "locator_id": deterministic["locator_id"],
+                            "path_id": deterministic["path_id"],
+                            "fit_category": "exact_fit",
+                            "evidence_ids": [deterministic["locator_id"]],
+                        }
+                    )
+                    supplement["decisions"].sort(
+                        key=lambda item: item["locator_id"]
+                    )
+                supplement = finalize_locator_fit_supplement(supplement)
+                write_json(supplement_path, supplement)
+                manifest = json.loads(manifest_path.read_text())
+                manifest["canonical"]["locator_fit_supplement"] = {
+                    "path": supplement_path.name,
+                    "sha256": digest(supplement_path),
+                }
+                write_json(manifest_path, manifest)
+                failure = run_cli(
+                    "dimension_score_v7_cli.py",
+                    "migrate-v6-to-v7",
+                    "--manifest",
+                    manifest_path,
+                    "--output-directory",
+                    root / "v7",
+                    expect_ok=False,
+                )
+                expected = (
+                    "locator_fit_supplement_decision_order_invalid"
+                    if case in {"duplicate", "reordered"}
+                    else "locator_fit_supplement_scope_mismatch"
+                )
+                self.assertEqual(expected, failure["error"]["code"])
+
+    def test_locator_fit_supplement_schema_rejects_manual_numerical_values(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = prepare_v6_projection(root, bare_loc_pos_documents())
+            _, _, supplement = locator_fit_supplement(root, paths)
+            for field in (
+                "fit_credit",
+                "page_treatment_credit",
+                "combined_credit",
+                "grade",
+                "dimension_score",
+                "total_score",
+            ):
+                with self.subTest(field=field):
+                    invalid = copy.deepcopy(supplement)
+                    invalid["decisions"][0][field] = 1
+                    invalid = finalize_locator_fit_supplement(invalid)
+                    with self.assertRaises(v5.CalculationError):
+                        v5.validate_schema_document(
+                            invalid,
+                            "v7-locator-fit-supplement.schema.json",
+                            "Synthetic invalid locator-fit supplement",
+                        )
+            for field, value in (
+                ("judgment", "supported"),
+                ("treatment_class", "substantive"),
+                ("source_scope_status", "indexable"),
+                ("defects", []),
+                ("gates", []),
+                ("page_treatment", "substantive"),
+                ("rationale", "Prose cannot classify fit."),
+            ):
+                with self.subTest(field=field):
+                    invalid = copy.deepcopy(supplement)
+                    invalid["decisions"][0][field] = value
+                    invalid = finalize_locator_fit_supplement(invalid)
+                    with self.assertRaises(v5.CalculationError):
+                        v5.validate_schema_document(
+                            invalid,
+                            "v7-locator-fit-supplement.schema.json",
+                            "Synthetic non-fit override attempt",
+                        )
+
+    def test_locator_fit_supplement_rejects_out_of_scope_evidence_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = prepare_v6_projection(root, bare_loc_pos_documents())
+            manifest_path = migration_manifest(root, paths)
+            supplement_path, _, supplement = locator_fit_supplement(root, paths)
+            supplement["decisions"][0]["evidence_ids"] = [
+                "LOC-OUTSIDE-AFFECTED-PATH"
+            ]
+            supplement = finalize_locator_fit_supplement(supplement)
+            write_json(supplement_path, supplement)
+            manifest = json.loads(manifest_path.read_text())
+            manifest["canonical"]["locator_fit_supplement"] = {
+                "path": supplement_path.name,
+                "sha256": digest(supplement_path),
+            }
+            write_json(manifest_path, manifest)
+            failure = run_cli(
+                "dimension_score_v7_cli.py",
+                "migrate-v6-to-v7",
+                "--manifest",
+                manifest_path,
+                "--output-directory",
+                root / "v7",
+                expect_ok=False,
+            )
+            self.assertEqual(
+                "locator_fit_supplement_evidence_scope_mismatch",
+                failure["error"]["code"],
+            )
+
+    def test_migration_paths_aliases_and_substitution_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary, tempfile.TemporaryDirectory() as outside_temporary:
+            root = Path(temporary)
+            outside = Path(outside_temporary)
+            paths = prepare_v6_projection(root, bare_loc_pos_documents())
+            manifest_path = migration_manifest(root, paths)
+            supplement_path, preflight, supplement = locator_fit_supplement(
+                root, paths
+            )
+
+            for case in ("absolute", "traversal", "symlink_escape"):
+                with self.subTest(case=case):
+                    manifest = json.loads(manifest_path.read_text())
+                    if case == "absolute":
+                        manifest["canonical"]["normalized_candidate"]["path"] = str(
+                            paths["candidate"].resolve()
+                        )
+                    elif case == "traversal":
+                        manifest["canonical"]["normalized_candidate"]["path"] = (
+                            "../candidate-index.json"
+                        )
+                    else:
+                        escaped = outside / "candidate-index.json"
+                        escaped.write_bytes(paths["candidate"].read_bytes())
+                        link = root / "escaped-candidate.json"
+                        link.symlink_to(escaped)
+                        manifest["canonical"]["normalized_candidate"] = {
+                            "path": link.name,
+                            "sha256": digest(escaped),
+                        }
+                    write_json(manifest_path, manifest)
+                    failure = run_cli(
+                        "dimension_score_v7_cli.py",
+                        "migrate-v6-to-v7",
+                        "--manifest",
+                        manifest_path,
+                        "--output-directory",
+                        root / f"v7-{case}",
+                        expect_ok=False,
+                    )
+                    self.assertIn(
+                        failure["error"]["code"],
+                        {
+                            "input_schema_validation_failed",
+                            "nonportable_artifact_path",
+                            "migration_input_artifact_escape",
+                        },
+                    )
+                    manifest_path = migration_manifest(root, paths)
+
+            manifest = json.loads(manifest_path.read_text())
+            manifest["canonical"]["locator_fit_supplement"] = {
+                "path": supplement_path.name,
+                "sha256": digest(supplement_path),
+            }
+            write_json(manifest_path, manifest)
+            substituted = copy.deepcopy(supplement)
+            substituted["provenance"]["authorization_id"] = "AUTH-SUBSTITUTED"
+            substituted = finalize_locator_fit_supplement(substituted)
+            write_json(supplement_path, substituted)
+            failure = run_cli(
+                "dimension_score_v7_cli.py",
+                "migrate-v6-to-v7",
+                "--manifest",
+                manifest_path,
+                "--output-directory",
+                root / "v7-substitution",
+                expect_ok=False,
+            )
+            self.assertEqual("input_hash_mismatch", failure["error"]["code"])
+
+            loaded = v7.load_v7_inputs(paths["config"])
+            ledgers, missing = v5.preflight_loaded(loaded)
+            self.assertIsNotNone(ledgers)
+            self.assertFalse(missing)
+            candidate = json.loads(paths["candidate"].read_text())
+            inventory = json.loads(paths["inventory"].read_text())
+            old_calculation = json.loads(paths["calculation"].read_text())
+            hard_link = root / "hard-link-alias.json"
+            hard_link.hardlink_to(paths["config"])
+            with self.assertRaises(v5.CalculationError) as raised:
+                v7._validate_locator_fit_supplement(
+                    supplement,
+                    supplement_path=hard_link,
+                    loaded=loaded,
+                    config_path=paths["config"],
+                    candidate=candidate,
+                    candidate_path=paths["candidate"],
+                    inventory=inventory,
+                    inventory_path=paths["inventory"],
+                    old_calculation=old_calculation,
+                    old_calculation_path=paths["calculation"],
+                    fit_preflight=preflight,
+                    representation_provenance_artifacts=[],
+                )
+            self.assertEqual(
+                "locator_fit_supplement_aliases_historical_artifact",
+                raised.exception.code,
+            )
+
+    def test_pre_v703_v7_artifact_shapes_remain_schema_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = prepare_v6_projection(root)
+            manifest = migration_manifest(root, paths)
+            output = root / "v7"
+            run_cli(
+                "dimension_score_v7_cli.py",
+                "migrate-v6-to-v7",
+                "--manifest",
+                manifest,
+                "--output-directory",
+                output,
+            )
+            calculation = json.loads(
+                (output / "dimension-calculations.v7.json").read_text()
+            )
+            calculation.pop("locator_fit_compatibility", None)
+            calculation.pop("locator_fit_supplement", None)
+            reliability = next(
+                item
+                for item in calculation["dimensions"]
+                if item["dimension_id"] == "page_reference_reliability"
+            )
+            reliability["reliability_provenance"].pop(
+                "compatibility_classifications", None
+            )
+            reliability["reliability_provenance"].pop(
+                "supplemental_fit_decision_count", None
+            )
+            for assignment in reliability["reliability_provenance"][
+                "locator_utility_assignments"
+            ]:
+                for field in (
+                    "fit_classification_source",
+                    "compatibility_rule_ids",
+                    "supplemental_fit_decision_id",
+                    "supplemental_fit_evidence_ids",
+                ):
+                    assignment.pop(field, None)
+            calculation["calculation_sha256"] = v5.canonical_hash(
+                calculation, "calculation_sha256"
+            )
+
+            items = json.loads((output / "item-assessments.v7.json").read_text())
+            result = json.loads((output / "evaluation-result.v7.json").read_text())
+            web = json.loads((output / "web-report.v7.json").read_text())
+            for document in (items, result, web):
+                document.pop("locator_fit_compatibility", None)
+                document.pop("locator_fit_supplement", None)
+            metadata = json.loads(
+                (output / "projection-metadata.v7.json").read_text()
+            )
+            migration = json.loads(
+                (output / "score-migration.v6-to-v7.json").read_text()
+            )
+            migration["tool"]["version"] = "dimension-score-cli-v7.0.2"
+            migration.pop("locator_fit_supplementation", None)
+            migration["frozen_evidence"].pop(
+                "supplemental_locator_fit_supplements", None
+            )
+            for field in (
+                "locator_fit_supplement_applied_in_memory_only",
+                "evaluation_specific_fit_rule_added",
+                "evaluation_result_used_as_target",
+            ):
+                migration["invariants"].pop(field, None)
+            migration["migration_sha256"] = v5.canonical_hash(
+                migration, "migration_sha256"
+            )
+            receipt = json.loads(
+                (output / "validation-receipt.v7.json").read_text()
+            )
+            receipt.pop("supplemental_locator_fit_supplements", None)
+            for field in (
+                "locator_fit_supplement_hash_valid",
+                "locator_fit_supplement_scope_exact",
+                "locator_fit_supplement_non_fit_fields_unchanged",
+                "locator_fit_supplement_contains_no_manual_numerical_credit_or_score",
+            ):
+                receipt["validation"].pop(field, None)
+            receipt["receipt_sha256"] = v5.canonical_hash(
+                receipt, "receipt_sha256"
+            )
+
+            for document, schema in (
+                (calculation, "dimension-calculations-v3.schema.json"),
+                (items, "item-assessments-v4.schema.json"),
+                (result, "evaluation-result-v8.schema.json"),
+                (web, "web-report-v6.schema.json"),
+                (metadata, "v7-projection-metadata.schema.json"),
+                (migration, "score-migration-v6-to-v7.schema.json"),
+                (receipt, "score-migration-v6-to-v7-validation.schema.json"),
+            ):
+                with self.subTest(schema=schema):
+                    v5.validate_schema_document(
+                        document, schema, f"Synthetic pre-v7.0.3 {schema}"
+                    )
 
     def test_representation_adjusted_view_is_recalculated_from_own_inputs_and_provenance(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -601,6 +1387,99 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
             self.assertEqual(
                 [provenance_hash],
                 receipt["counterfactual_projections"][0]["provenance_sha256"],
+            )
+
+    def test_canonical_and_counterfactual_fit_supplements_are_independently_bound(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            canonical = prepare_v6_projection(root, bare_loc_pos_documents())
+            adjusted_root = root / "adjusted"
+            adjusted_root.mkdir()
+            adjusted_documents = bare_loc_pos_documents()
+            adjusted_documents[0]["judgments"][0]["treatment_class"] = "mixed"
+            adjusted = prepare_v6_projection(adjusted_root, adjusted_documents)
+            manifest_path, provenance = counterfactual_manifest(
+                root, canonical, adjusted
+            )
+            canonical_supplement, _, canonical_document = locator_fit_supplement(
+                root,
+                canonical,
+                filename="canonical-locator-fit-supplement.v7.json",
+            )
+            adjusted_supplement, _, adjusted_document = locator_fit_supplement(
+                root,
+                adjusted,
+                filename="adjusted-locator-fit-supplement.v7.json",
+                representation_provenance=[provenance],
+            )
+            self.assertNotEqual(
+                canonical_document["bindings"], adjusted_document["bindings"]
+            )
+            manifest = json.loads(manifest_path.read_text())
+            manifest["canonical"]["locator_fit_supplement"] = {
+                "path": canonical_supplement.relative_to(root).as_posix(),
+                "sha256": digest(canonical_supplement),
+            }
+            manifest["counterfactuals"][0]["locator_fit_supplement"] = {
+                "path": canonical_supplement.relative_to(root).as_posix(),
+                "sha256": digest(canonical_supplement),
+            }
+            write_json(manifest_path, manifest)
+            failure = run_cli(
+                "dimension_score_v7_cli.py",
+                "migrate-v6-to-v7",
+                "--manifest",
+                manifest_path,
+                "--output-directory",
+                root / "v7-cross-view-reuse",
+                expect_ok=False,
+            )
+            self.assertEqual(
+                "locator_fit_supplement_binding_mismatch",
+                failure["error"]["code"],
+            )
+
+            manifest["counterfactuals"][0]["locator_fit_supplement"] = {
+                "path": adjusted_supplement.relative_to(root).as_posix(),
+                "sha256": digest(adjusted_supplement),
+            }
+            write_json(manifest_path, manifest)
+            output = root / "v7-independent"
+            response = run_cli(
+                "dimension_score_v7_cli.py",
+                "migrate-v6-to-v7",
+                "--manifest",
+                manifest_path,
+                "--output-directory",
+                output,
+            )
+            self.assertEqual(1, response["counterfactual_view_count"])
+            migration = json.loads(
+                (output / "score-migration.v6-to-v7.json").read_text()
+            )
+            refs = migration["frozen_evidence"][
+                "supplemental_locator_fit_supplements"
+            ]
+            self.assertEqual(
+                ["canonical_as_delivered", "representation_adjusted"],
+                [item["view_id"] for item in refs],
+            )
+            self.assertEqual(
+                [
+                    canonical_document["supplement_id"],
+                    adjusted_document["supplement_id"],
+                ],
+                [item["artifact"]["supplement_id"] for item in refs],
+            )
+            web = json.loads((output / "web-report.v7.json").read_text())
+            counterfactual = web["score_views"]["views"][1]
+            self.assertEqual(
+                adjusted_document["supplement_id"],
+                counterfactual["locator_fit_supplement"]["supplement_id"],
+            )
+            self.assertEqual(
+                "separate_evidentiary_correction_not_methodology_effect",
+                counterfactual["causal_attribution"],
             )
 
     def test_atomic_threshold_false_positive_is_removed_only_from_active_v7_projection(self) -> None:

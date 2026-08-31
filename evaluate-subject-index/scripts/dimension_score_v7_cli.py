@@ -25,9 +25,13 @@ from item_grade_v7_cli import build_v7_assessments
 from locator_utility import (
     FIT_SCORES,
     TREATMENT_SCORES,
+    UNRESOLVED_REASON_MESSAGES,
     assign_locator_utility,
     combined_state_errors,
+    historical_locator_fit_defects,
+    locator_fit_state_analysis,
     not_measured_assignment,
+    relevant_structured_defects,
 )
 from structure_locator_review import (
     StructureReviewError,
@@ -51,8 +55,9 @@ VALIDATION_RECEIPT_SCHEMA = "subject-index-score-migration-v6-to-v7-validation-v
 SUPPLEMENTAL_ARCHITECTURE_REVIEW_SCHEMA = (
     "subject-index-v7-architecture-review-supplement-v1"
 )
+LOCATOR_FIT_SUPPLEMENT_SCHEMA = "subject-index-v7-locator-fit-supplement-v1"
 TOOL_NAME = "dimension_score_v7_cli.py"
-TOOL_VERSION = "dimension-score-cli-v7.0.2"
+TOOL_VERSION = "dimension-score-cli-v7.0.3"
 METHODOLOGY_REPOSITORY = "https://github.com/jcamden/evaluate-subject-index"
 
 ZERO = Decimal(0)
@@ -83,6 +88,7 @@ def _mapping_failure(locator: Mapping[str, Any], errors: Iterable[str]) -> dict[
         "path": f"locator:{locator.get('locator_id', '<missing>')}",
         "message": "V7 requires an unambiguous structured treatment and complete-path-fit mapping.",
         "locator_id": locator.get("locator_id"),
+        "path_id": locator.get("path_id"),
         "frozen_state": {
             field: deepcopy(locator.get(field))
             for field in (
@@ -98,23 +104,104 @@ def _mapping_failure(locator: Mapping[str, Any], errors: Iterable[str]) -> dict[
     }
 
 
-def locator_state_requirements(
-    ledgers: dict[str, Any], audit_mode: str
-) -> list[dict[str, Any]]:
-    """Return precise V7 mapping failures without consulting prose."""
+def _unresolved_fit_record(
+    locator: Mapping[str, Any],
+    analysis: Mapping[str, Any],
+    defects: Iterable[Mapping[str, Any]],
+) -> dict[str, Any]:
+    locator_id = str(locator["locator_id"])
+    relevant_defects = relevant_structured_defects(locator_id, defects)
+    defect_ids = sorted(
+        {
+            *(
+                str(item["defect_id"])
+                for item in relevant_defects
+            ),
+            *analysis["applicable_legacy_defect_ids"],
+        }
+    )
+    reason_codes = list(analysis["unresolved_reason_codes"])
+    return {
+        "locator_id": locator_id,
+        "path_id": locator.get("path_id"),
+        "reason_code": reason_codes[0]
+        if len(reason_codes) == 1
+        else "multiple_fit_classifiers_possible",
+        "reason_codes": reason_codes,
+        "present_judgment": locator.get("judgment"),
+        "treatment_class": locator.get("treatment_class"),
+        "source_scope_status": locator.get("source_scope_status"),
+        "structured_codes": sorted(
+            {
+                *locator.get("error_codes", []),
+                *(
+                    str(item["code"])
+                    for item in relevant_defects
+                    if isinstance(item.get("code"), str)
+                ),
+            }
+        ),
+        "applicable_structured_defect_ids": defect_ids,
+        "missing_classifier_category": "complete_path_fit_category",
+        "prose_inference_permitted": False,
+    }
 
-    missing: list[dict[str, Any]] = []
-    for locator in sorted(ledgers["locators"], key=lambda item: str(item.get("locator_id", ""))):
-        errors = combined_state_errors(locator, ledgers["defects"])
-        if not errors:
-            try:
-                assign_locator_utility(locator, ledgers["defects"])
-            except ValueError as exc:
-                errors = str(exc).split(";")
-        if errors:
-            missing.append(_mapping_failure(locator, errors))
+
+def locator_fit_preflight(
+    ledgers: dict[str, Any],
+    audit_mode: str,
+    *,
+    legacy_defects: Iterable[Mapping[str, Any]] = (),
+) -> dict[str, Any]:
+    """Return deterministic unsupplemented fit compatibility and unresolved sets."""
+
+    legacy_defects = list(legacy_defects)
+    invalid: list[dict[str, Any]] = []
+    unresolved: list[dict[str, Any]] = []
+    compatibility: list[dict[str, Any]] = []
+    for locator in sorted(
+        ledgers["locators"], key=lambda item: str(item.get("locator_id", ""))
+    ):
+        analysis = locator_fit_state_analysis(
+            locator, ledgers["defects"], legacy_defects
+        )
+        if analysis["hard_errors"]:
+            invalid.append(_mapping_failure(locator, analysis["hard_errors"]))
+            continue
+        if analysis["unresolved_reason_codes"]:
+            unresolved.append(
+                _unresolved_fit_record(
+                    locator,
+                    analysis,
+                    [*ledgers["defects"], *legacy_defects],
+                )
+            )
+            continue
+        try:
+            assignment = assign_locator_utility(
+                locator, ledgers["defects"], legacy_defects
+            ).as_dict()
+        except ValueError as exc:
+            invalid.append(_mapping_failure(locator, str(exc).split(";")))
+            continue
+        if assignment["fit_classification_source"] == "legacy_code_severity_compatibility":
+            compatibility.append(
+                {
+                    "locator_id": assignment["locator_id"],
+                    "path_id": locator.get("path_id"),
+                    "compatibility_rule_id": assignment[
+                        "compatibility_rule_ids"
+                    ][0],
+                    "fit_category": assignment["fit_category"],
+                    "fit_rule_id": assignment["fit_rule_id"],
+                    "applicable_structured_defect_ids": assignment[
+                        "applicable_structured_defect_ids"
+                    ],
+                    "prose_inference_used": False,
+                }
+            )
     if audit_mode == "full" and ledgers["locator_not_measured"]:
-        missing.append(
+        invalid.append(
             {
                 "code": "required_locator_not_measured",
                 "path": "locator_not_measured",
@@ -123,7 +210,43 @@ def locator_state_requirements(
                 "prose_inference_permitted": False,
             }
         )
-    return missing
+    return {
+        "compatibility_classifications": compatibility,
+        "unresolved_locator_fit": unresolved,
+        "invalid_locator_states": invalid,
+        "unresolved_set_sha256": v5.canonical_hash(
+            {"unresolved_locator_fit": unresolved}
+        ),
+        "_locator_records_by_id": {
+            item["locator_id"]: item for item in ledgers["locators"]
+        },
+    }
+
+
+def locator_state_requirements(
+    ledgers: dict[str, Any],
+    audit_mode: str,
+    *,
+    legacy_defects: Iterable[Mapping[str, Any]] = (),
+) -> list[dict[str, Any]]:
+    """Return precise V7 mapping failures without consulting prose."""
+
+    report = locator_fit_preflight(
+        ledgers, audit_mode, legacy_defects=legacy_defects
+    )
+    unresolved = [
+        {
+            "code": "unresolved_complete_path_fit",
+            "path": f"locator:{item['locator_id']}",
+            "message": "; ".join(
+                UNRESOLVED_REASON_MESSAGES[reason]
+                for reason in item["reason_codes"]
+            ),
+            **item,
+        }
+        for item in report["unresolved_locator_fit"]
+    ]
+    return [*report["invalid_locator_states"], *unresolved]
 
 
 def raw_locator_state_requirements(
@@ -292,18 +415,35 @@ def preflight_loaded(
     ledgers, missing = v5.preflight_loaded(loaded)
     if ledgers is None:
         return None, missing
+    legacy_defects = historical_locator_fit_defects(loaded["structure"])
     missing = [
         *missing,
-        *locator_state_requirements(ledgers, loaded["config"]["audit_mode"]),
+        *locator_state_requirements(
+            ledgers,
+            loaded["config"]["audit_mode"],
+            legacy_defects=legacy_defects,
+        ),
     ]
     return (ledgers if not missing else None), missing
 
 
-def utility_assignments(ledgers: dict[str, Any]) -> list[dict[str, Any]]:
+def utility_assignments(
+    ledgers: dict[str, Any],
+    *,
+    legacy_defects: Iterable[Mapping[str, Any]] = (),
+    supplemental_decisions: Mapping[str, Mapping[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     assignments: list[dict[str, Any]] = []
+    legacy_defects = list(legacy_defects)
+    supplemental_decisions = supplemental_decisions or {}
     for locator in sorted(ledgers["locators"], key=lambda item: item["locator_id"]):
         try:
-            assignment = assign_locator_utility(locator, ledgers["defects"])
+            assignment = assign_locator_utility(
+                locator,
+                ledgers["defects"],
+                legacy_defects,
+                supplemental_decisions.get(locator["locator_id"]),
+            )
         except ValueError as exc:
             raise v5.CalculationError(
                 "inconsistent_locator_utility_state",
@@ -339,8 +479,18 @@ def _uncertainty_triple(
     }
 
 
-def calculate_reliability(ledgers: dict[str, Any], audit_mode: str) -> dict[str, Any]:
-    assignments = utility_assignments(ledgers)
+def calculate_reliability(
+    ledgers: dict[str, Any],
+    audit_mode: str,
+    *,
+    legacy_defects: Iterable[Mapping[str, Any]] = (),
+    supplemental_decisions: Mapping[str, Mapping[str, Any]] | None = None,
+) -> dict[str, Any]:
+    assignments = utility_assignments(
+        ledgers,
+        legacy_defects=legacy_defects,
+        supplemental_decisions=supplemental_decisions,
+    )
     by_id = {item["locator_id"]: item for item in assignments}
     measured_locators = [
         item for item in ledgers["locators"] if item.get("judgment") in {"supported", "partially_supported", "unsupported"}
@@ -667,6 +817,23 @@ def calculate_reliability(ledgers: dict[str, Any], audit_mode: str) -> dict[str,
         "counts_by_combined_credit_value": combined_counts,
         "locator_utility_assignments": assignments,
         "mapping_rejections": [],
+        "compatibility_classifications": [
+            {
+                "locator_id": item["locator_id"],
+                "fit_category": item["fit_category"],
+                "fit_rule_id": item["fit_rule_id"],
+                "compatibility_rule_ids": item["compatibility_rule_ids"],
+                "applicable_structured_defect_ids": item[
+                    "applicable_structured_defect_ids"
+                ],
+            }
+            for item in assignments
+            if item["compatibility_rule_ids"]
+        ],
+        "supplemental_fit_decision_count": sum(
+            item["supplemental_fit_decision_id"] is not None
+            for item in assignments
+        ),
         "treatment_score_numerator": v5.decimal_text(treatment_numerator),
         "treatment_score_denominator": assessable,
         "mean_treatment_score": v5.decimal_text(mean_treatment),
@@ -710,8 +877,11 @@ def calculate_loaded(
     structure_review: dict[str, Any] | None = None,
     structure_review_artifact: dict[str, Any] | None = None,
     supplemental_architecture_review_artifact: dict[str, Any] | None = None,
+    legacy_fit_defects: Iterable[Mapping[str, Any]] | None = None,
+    locator_fit_supplement: Mapping[str, Any] | None = None,
+    locator_fit_supplement_artifact: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    ledgers, missing = preflight_loaded(loaded)
+    ledgers, missing = v5.preflight_loaded(loaded)
     v5.require(
         ledgers is not None and not missing,
         "v7_inputs_insufficient",
@@ -719,7 +889,60 @@ def calculate_loaded(
         missing,
     )
     audit_mode = loaded["config"]["audit_mode"]
+    legacy_fit_defects = list(
+        historical_locator_fit_defects(loaded["structure"])
+        if legacy_fit_defects is None
+        else legacy_fit_defects
+    )
+    fit_preflight = locator_fit_preflight(
+        ledgers, audit_mode, legacy_defects=legacy_fit_defects
+    )
+    v5.require(
+        not fit_preflight["invalid_locator_states"],
+        "v7_inputs_insufficient",
+        "The frozen ledgers contain invalid or contradictory V7 locator states.",
+        fit_preflight["invalid_locator_states"],
+    )
+    unresolved_ids = [
+        item["locator_id"] for item in fit_preflight["unresolved_locator_fit"]
+    ]
+    supplemental_decisions: dict[str, Mapping[str, Any]] = {}
+    if locator_fit_supplement is None:
+        v5.require(
+            not unresolved_ids,
+            "v7_inputs_insufficient",
+            "The frozen ledgers contain unresolved complete-path-fit states.",
+            fit_preflight["unresolved_locator_fit"],
+        )
+        v5.require(
+            locator_fit_supplement_artifact is None,
+            "unexpected_locator_fit_supplement_artifact",
+            "A locator-fit supplement artifact cannot be bound without its validated semantic input.",
+        )
+    else:
+        v5.require(
+            locator_fit_supplement_artifact is not None
+            and locator_fit_supplement_artifact.get("schema_version")
+            == LOCATOR_FIT_SUPPLEMENT_SCHEMA,
+            "locator_fit_supplement_binding_mismatch",
+            "A supplemental locator-fit input requires its exact validated artifact binding.",
+        )
+        supplemental_decisions = {
+            item["locator_id"]: item
+            for item in locator_fit_supplement["decisions"]
+        }
+        v5.require(
+            sorted(supplemental_decisions) == unresolved_ids,
+            "locator_fit_supplement_scope_mismatch",
+            "The supplemental decisions must equal the independently derived unresolved locator set.",
+            {
+                "expected": unresolved_ids,
+                "actual": sorted(supplemental_decisions),
+            },
+        )
     calculation_artifacts = deepcopy(loaded["input_artifacts"])
+    if locator_fit_supplement_artifact is not None:
+        calculation_artifacts.append(deepcopy(locator_fit_supplement_artifact))
     if structure_review is not None:
         v5.require(
             structure_review_artifact is not None,
@@ -770,7 +993,12 @@ def calculate_loaded(
         v5.calculate_coverage(ledgers, audit_mode),
         v5.calculate_selectivity(ledgers, audit_mode),
         v5.calculate_concept(ledgers, audit_mode),
-        calculate_reliability(ledgers, audit_mode),
+        calculate_reliability(
+            ledgers,
+            audit_mode,
+            legacy_defects=legacy_fit_defects,
+            supplemental_decisions=supplemental_decisions,
+        ),
         v5.calculate_findability(ledgers, audit_mode),
         v5.calculate_mechanics(ledgers, audit_mode),
     ]
@@ -792,6 +1020,11 @@ def calculate_loaded(
             if (
                 role == "supplemental_architecture_review"
                 and dimension["dimension_id"] == "findability_navigation"
+            ):
+                include = True
+            if (
+                role == "supplemental_locator_fit"
+                and dimension["dimension_id"] == "page_reference_reliability"
             ):
                 include = True
             if include and artifact not in selected:
@@ -841,6 +1074,32 @@ def calculate_loaded(
             "thresholds": deepcopy(structure_review["thresholds"]),
             "summary": deepcopy(structure_review["summary"]),
             "active_correction": deepcopy(ledgers["v7_structure_correction"]),
+        }
+    result["locator_fit_compatibility"] = {
+        "rule": "F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1",
+        "classifications": deepcopy(
+            fit_preflight["compatibility_classifications"]
+        ),
+        "unresolved_before_supplement": len(unresolved_ids),
+        "unresolved_after_supplement": (
+            0 if locator_fit_supplement is not None else len(unresolved_ids)
+        ),
+        "historical_defects_rewritten": False,
+        "prose_inference_used": False,
+    }
+    if locator_fit_supplement is not None:
+        result["locator_fit_supplement"] = {
+            "schema_version": locator_fit_supplement["schema_version"],
+            "supplement_id": locator_fit_supplement["supplement_id"],
+            "supplement_sha256": locator_fit_supplement["supplement_sha256"],
+            "file_sha256": locator_fit_supplement_artifact["sha256"],
+            "scope_rule_id": locator_fit_supplement["scope"]["rule_id"],
+            "unresolved_set_sha256": locator_fit_supplement["scope"][
+                "unresolved_set_sha256"
+            ],
+            "decision_count": len(locator_fit_supplement["decisions"]),
+            "application": "complete_path_fit_only_in_memory",
+            "numerical_credit_supplied": False,
         }
     result["calculation_sha256"] = v5.canonical_hash(result, "calculation_sha256")
     return result
@@ -958,7 +1217,41 @@ def command_preflight(args: argparse.Namespace) -> None:
                 result["artifact_written"] = str(output_path)
             v5.emit(result)
         loaded = load_v7_inputs(config_path)
-        _, missing = preflight_loaded(loaded)
+        ledgers, base_missing = v5.preflight_loaded(loaded)
+        fit_report = (
+            locator_fit_preflight(
+                ledgers,
+                loaded["config"]["audit_mode"],
+                legacy_defects=historical_locator_fit_defects(
+                    loaded["structure"]
+                ),
+            )
+            if ledgers is not None
+            else {
+                "compatibility_classifications": [],
+                "unresolved_locator_fit": [],
+                "invalid_locator_states": [],
+                "unresolved_set_sha256": v5.canonical_hash(
+                    {"unresolved_locator_fit": []}
+                ),
+            }
+        )
+        missing = [
+            *base_missing,
+            *fit_report["invalid_locator_states"],
+            *(
+                {
+                    "code": "unresolved_complete_path_fit",
+                    "path": f"locator:{item['locator_id']}",
+                    "message": "; ".join(
+                        UNRESOLVED_REASON_MESSAGES[reason]
+                        for reason in item["reason_codes"]
+                    ),
+                    **item,
+                }
+                for item in fit_report["unresolved_locator_fit"]
+            ),
+        ]
         result = {
             "command": "v7-calculation-sufficiency-preflight",
             "ok": True,
@@ -967,6 +1260,15 @@ def command_preflight(args: argparse.Namespace) -> None:
             "target_calculation_profile": CALCULATION_PROFILE,
             "sufficient": not missing,
             "missing_requirements": missing,
+            "compatibility_classifications": fit_report[
+                "compatibility_classifications"
+            ],
+            "unresolved_locator_fit": fit_report[
+                "unresolved_locator_fit"
+            ],
+            "unresolved_set_sha256": fit_report[
+                "unresolved_set_sha256"
+            ],
             "required_locator_fields": ["judgment", "treatment_class", "source_scope_status", "error_codes", "severity", "applicable_structured_defects"],
             "source_reopened": False,
             "prose_inference_used": False,
@@ -1095,6 +1397,22 @@ def scorecard_projection(calculation: Mapping[str, Any], *, web: bool = False) -
 def _resolve_manifest_artifact(
     manifest_path: Path, reference: Mapping[str, Any], label: str
 ) -> tuple[Path, dict[str, Any], dict[str, Any]]:
+    stored_path = reference.get("path") if isinstance(reference, Mapping) else None
+    v5.require_portable_relative_path(stored_path, label=f"{label}.path")
+    v5.require(
+        ".." not in Path(str(stored_path)).parts,
+        "nonportable_artifact_path",
+        f"{label}.path must not traverse outside the migration-input directory.",
+        {"path": stored_path},
+    )
+    root = manifest_path.resolve().parent
+    resolved = (root / Path(str(stored_path))).resolve()
+    v5.require(
+        resolved.is_relative_to(root),
+        "migration_input_artifact_escape",
+        f"{label}.path escapes the migration-input directory, including through a symlink.",
+        {"path": stored_path, "resolved": str(resolved), "root": str(root)},
+    )
     return v5.resolve_input(manifest_path, dict(reference), label)
 
 
@@ -1220,6 +1538,283 @@ def _validate_supplemental_architecture_review(
                     evidence_ids - allowed_evidence_ids
                 ),
             },
+        )
+
+
+def _bound_artifact_identity(artifact: Mapping[str, Any]) -> dict[str, Any]:
+    role = artifact.get("role")
+    schema_version = artifact.get("schema_version")
+    sha256 = artifact.get("sha256")
+    v5.require(
+        isinstance(role, str)
+        and role
+        and isinstance(schema_version, str)
+        and schema_version
+        and isinstance(sha256, str)
+        and len(sha256) == 64,
+        "locator_fit_supplement_binding_mismatch",
+        "Every locator-fit binding requires a role, schema identity, and exact file SHA-256.",
+        deepcopy(dict(artifact)),
+    )
+    return {
+        "role": role,
+        "schema_version": schema_version,
+        "file_sha256": sha256,
+    }
+
+
+def _expected_locator_fit_bindings(
+    *,
+    loaded: Mapping[str, Any],
+    config_path: Path,
+    candidate_path: Path,
+    inventory_path: Path,
+    old_calculation: Mapping[str, Any],
+    old_calculation_path: Path,
+    representation_provenance_artifacts: Iterable[Mapping[str, Any]],
+) -> dict[str, Any]:
+    identities = sorted(
+        (_bound_artifact_identity(item) for item in loaded["input_artifacts"]),
+        key=lambda item: (item["role"], item["file_sha256"]),
+    )
+
+    def select(prefix: str) -> list[dict[str, Any]]:
+        return [item for item in identities if item["role"].startswith(prefix)]
+
+    def exactly(role: str) -> dict[str, Any]:
+        matches = [item for item in identities if item["role"] == role]
+        v5.require(
+            len(matches) == 1,
+            "locator_fit_supplement_binding_mismatch",
+            f"The exact {role} artifact binding is required.",
+        )
+        return matches[0]
+
+    migration_supplements = [
+        item for item in identities if item["role"] == "migration_supplement"
+    ]
+    v5.require(
+        len(migration_supplements) <= 1,
+        "locator_fit_supplement_binding_mismatch",
+        "At most one historical migration supplement may affect a score view.",
+    )
+    provenance = sorted(
+        (
+            _bound_artifact_identity(item)
+            for item in representation_provenance_artifacts
+        ),
+        key=lambda item: (item["role"], item["file_sha256"]),
+    )
+    return {
+        "v6_dimension_calculation_input_file_sha256": v5.sha256_file(config_path),
+        "normalized_candidate_file_sha256": v5.sha256_file(candidate_path),
+        "item_inventory_file_sha256": v5.sha256_file(inventory_path),
+        "historical_v6_calculation_file_sha256": v5.sha256_file(
+            old_calculation_path
+        ),
+        "historical_v6_calculation_sha256": old_calculation[
+            "calculation_sha256"
+        ],
+        "locator_audit_artifacts": select("locator_audit["),
+        "missing_access_audit_artifacts": select("missing_access_audit["),
+        "historical_structure_audit": exactly("structure_audit"),
+        "chunk_manifest": exactly("chunk_manifest"),
+        "migration_supplement": (
+            migration_supplements[0] if migration_supplements else None
+        ),
+        "representation_correction_provenance_artifacts": provenance,
+        "calculation_input_artifact_set_sha256": v5.canonical_hash(
+            {"artifacts": identities}
+        ),
+    }
+
+
+def _load_locator_fit_supplement(path: Path, *, label: str) -> dict[str, Any]:
+    document = v5.load_json(path, label)
+    v5.validate_schema_document(
+        document, "v7-locator-fit-supplement.schema.json", label
+    )
+    v5.require(
+        document.get("supplement_sha256")
+        == v5.canonical_hash(document, "supplement_sha256"),
+        "locator_fit_supplement_hash_mismatch",
+        "The supplemental locator-fit self-hash does not reconstruct.",
+    )
+    identity_seed = deepcopy(document)
+    identity_seed["supplement_id"] = ""
+    identity_seed["supplement_sha256"] = ""
+    v5.require(
+        document.get("supplement_id")
+        == f"FITSUP-{v5.canonical_hash(identity_seed)[:12].upper()}",
+        "locator_fit_supplement_id_mismatch",
+        "The supplemental locator-fit identity does not reconstruct.",
+    )
+    decisions = document["decisions"]
+    locator_ids = [item["locator_id"] for item in decisions]
+    decision_ids = [item["decision_id"] for item in decisions]
+    v5.require(
+        locator_ids == sorted(locator_ids)
+        and len(locator_ids) == len(set(locator_ids))
+        and len(decision_ids) == len(set(decision_ids)),
+        "locator_fit_supplement_decision_order_invalid",
+        "Locator-fit decisions must be unique and ordered by locator ID.",
+    )
+    for decision in decisions:
+        seed = deepcopy(decision)
+        seed["decision_id"] = ""
+        v5.require(
+            decision["decision_id"]
+            == f"FITDEC-{v5.canonical_hash(seed)[:12].upper()}",
+            "locator_fit_supplement_decision_id_mismatch",
+            "A supplemental locator-fit decision identity does not reconstruct.",
+            decision["locator_id"],
+        )
+        v5.require(
+            decision["evidence_ids"] == sorted(decision["evidence_ids"]),
+            "locator_fit_supplement_evidence_order_invalid",
+            "Supplemental locator-fit evidence IDs must use stable sorted order.",
+            decision["locator_id"],
+        )
+    for field in (
+        "locator_audit_artifacts",
+        "missing_access_audit_artifacts",
+        "representation_correction_provenance_artifacts",
+    ):
+        values = document["bindings"][field]
+        v5.require(
+            values
+            == sorted(values, key=lambda item: (item["role"], item["file_sha256"])),
+            "locator_fit_supplement_binding_order_invalid",
+            f"{field} must use stable role/hash ordering.",
+        )
+    return document
+
+
+def _validate_locator_fit_supplement(
+    supplement: Mapping[str, Any],
+    *,
+    supplement_path: Path,
+    loaded: Mapping[str, Any],
+    config_path: Path,
+    candidate: Mapping[str, Any],
+    candidate_path: Path,
+    inventory: Mapping[str, Any],
+    inventory_path: Path,
+    old_calculation: Mapping[str, Any],
+    old_calculation_path: Path,
+    fit_preflight: Mapping[str, Any],
+    representation_provenance_artifacts: Iterable[Mapping[str, Any]],
+) -> None:
+    expected_bindings = _expected_locator_fit_bindings(
+        loaded=loaded,
+        config_path=config_path,
+        candidate_path=candidate_path,
+        inventory_path=inventory_path,
+        old_calculation=old_calculation,
+        old_calculation_path=old_calculation_path,
+        representation_provenance_artifacts=representation_provenance_artifacts,
+    )
+    v5.require(
+        supplement["bindings"] == expected_bindings,
+        "locator_fit_supplement_binding_mismatch",
+        "The locator-fit supplement must bind every exact artifact whose bytes affect the unresolved set.",
+        {"expected": expected_bindings, "actual": supplement["bindings"]},
+    )
+    v5.require(
+        supplement.get("evaluation_id") == loaded["config"]["evaluation_id"]
+        and supplement.get("audit_mode") == loaded["config"]["audit_mode"]
+        and supplement.get("candidate_identity")
+        == {
+            "candidate_id": candidate["candidate_id"],
+            "candidate_sha256": candidate["candidate_sha256"],
+        },
+        "locator_fit_supplement_identity_mismatch",
+        "The locator-fit supplement has a different evaluation, candidate, or audit-mode identity.",
+    )
+    unresolved = fit_preflight["unresolved_locator_fit"]
+    unresolved_ids = [item["locator_id"] for item in unresolved]
+    scope = supplement["scope"]
+    decision_ids = [item["locator_id"] for item in supplement["decisions"]]
+    v5.require(
+        scope["unresolved_locator_ids"] == unresolved_ids
+        and decision_ids == unresolved_ids
+        and scope["unresolved_set_sha256"]
+        == fit_preflight["unresolved_set_sha256"],
+        "locator_fit_supplement_scope_mismatch",
+        "The supplement must contain every and only the independently derived unresolved locator set.",
+        {
+            "expected_locator_ids": unresolved_ids,
+            "declared_locator_ids": scope["unresolved_locator_ids"],
+            "decision_locator_ids": decision_ids,
+            "expected_unresolved_set_sha256": fit_preflight[
+                "unresolved_set_sha256"
+            ],
+            "declared_unresolved_set_sha256": scope[
+                "unresolved_set_sha256"
+            ],
+        },
+    )
+    protected_paths = {
+        config_path,
+        candidate_path,
+        inventory_path,
+        old_calculation_path,
+        *loaded["input_paths"],
+    }
+    v5.require(
+        not v5.aliases_existing_file(supplement_path, protected_paths),
+        "locator_fit_supplement_aliases_historical_artifact",
+        "A locator-fit supplement cannot alias a historical input through a path, symlink, or hard link.",
+    )
+
+    unresolved_by_id = {item["locator_id"]: item for item in unresolved}
+    locators_by_id = fit_preflight["_locator_records_by_id"]
+    candidates_by_path = {
+        item["path_id"]: item for item in candidate.get("records", [])
+    }
+    inventory_by_path = {
+        item["path_id"]: item for item in inventory.get("paths", [])
+    }
+    for decision in supplement["decisions"]:
+        locator_id = decision["locator_id"]
+        unresolved_record = unresolved_by_id[locator_id]
+        locator = locators_by_id[locator_id]
+        path_id = unresolved_record["path_id"]
+        v5.require(
+            locator.get("judgment") == "unsupported"
+            and decision["path_id"] == path_id,
+            "locator_fit_supplement_override_forbidden",
+            "A supplemental decision may apply only to the matching unresolved unsupported locator.",
+            locator_id,
+        )
+        candidate_record = candidates_by_path[path_id]
+        inventory_record = inventory_by_path[path_id]
+        displays = [
+            item
+            for item in candidate_record["locator_displays"]
+            if locator_id in item["locator_ids"]
+        ]
+        allowed_evidence_ids = {
+            locator_id,
+            path_id,
+            candidate_record["record_id"],
+            inventory_record["record_id"],
+            *inventory_record["node_ids"],
+            *unresolved_record["applicable_structured_defect_ids"],
+            *locator.get("evidence_ids", []),
+            *(item["display_id"] for item in displays),
+            *(
+                item["range_id"]
+                for item in displays
+                if item.get("range_id") is not None
+            ),
+        }
+        unexpected = set(decision["evidence_ids"]) - allowed_evidence_ids
+        v5.require(
+            not unexpected,
+            "locator_fit_supplement_evidence_scope_mismatch",
+            "A locator-fit decision cites evidence outside its affected locator, path, record, inventory nodes, applicable defects, or bound source-evidence IDs.",
+            {"locator_id": locator_id, "unexpected_evidence_ids": sorted(unexpected)},
         )
 
 
@@ -1437,7 +2032,11 @@ def _migrate_calculation_view(
     calculation_output: Path,
     migration_context: dict[str, Any] | None,
     label: str,
+    representation_provenance_artifacts: Iterable[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
+    representation_provenance_artifacts = list(
+        representation_provenance_artifacts
+    )
     config_path, _, _ = _resolve_manifest_artifact(
         manifest_path, references["dimension_calculation_input"], f"{label}.dimension_calculation_input"
     )
@@ -1475,6 +2074,80 @@ def _migrate_calculation_view(
         for path, artifact in zip(loaded["input_paths"], loaded["input_artifacts"])
         if artifact["role"] == "structure_audit"
     )
+    legacy_fit_defects = historical_locator_fit_defects(loaded["structure"])
+    v6_ledgers, v6_missing = v5.preflight_loaded(loaded)
+    v5.require(
+        v6_ledgers is not None and not v6_missing,
+        "v7_inputs_insufficient",
+        "The exact V6 ledgers must validate before locator-fit compatibility is derived.",
+        v6_missing,
+    )
+    fit_preflight = locator_fit_preflight(
+        v6_ledgers,
+        loaded["config"]["audit_mode"],
+        legacy_defects=legacy_fit_defects,
+    )
+    v5.require(
+        not fit_preflight["invalid_locator_states"],
+        "v7_inputs_insufficient",
+        "The unsupplemented V7 locator-fit preflight found invalid or contradictory states.",
+        fit_preflight["invalid_locator_states"],
+    )
+    locator_fit_supplement_path: Path | None = None
+    locator_fit_supplement: dict[str, Any] | None = None
+    locator_fit_supplement_artifact: dict[str, Any] | None = None
+    if "locator_fit_supplement" in references:
+        # The supplement bytes are intentionally not read until V6 has been
+        # independently recalculated and the unsupplemented unresolved set is
+        # complete.
+        locator_fit_supplement_path, _, _ = _resolve_manifest_artifact(
+            manifest_path,
+            references["locator_fit_supplement"],
+            f"{label}.locator_fit_supplement",
+        )
+        locator_fit_supplement = _load_locator_fit_supplement(
+            locator_fit_supplement_path,
+            label=f"{label} supplemental locator fit",
+        )
+        _validate_locator_fit_supplement(
+            locator_fit_supplement,
+            supplement_path=locator_fit_supplement_path,
+            loaded=loaded,
+            config_path=config_path,
+            candidate=candidate,
+            candidate_path=candidate_path,
+            inventory=inventory,
+            inventory_path=inventory_path,
+            old_calculation=old_calculation,
+            old_calculation_path=old_calc_path,
+            fit_preflight=fit_preflight,
+            representation_provenance_artifacts=representation_provenance_artifacts,
+        )
+        locator_fit_supplement_artifact = {
+            "role": "supplemental_locator_fit",
+            "path": os.path.relpath(
+                locator_fit_supplement_path, calculation_output.parent
+            ).replace(os.sep, "/"),
+            "sha256": v5.sha256_file(locator_fit_supplement_path),
+            "schema_version": locator_fit_supplement["schema_version"],
+        }
+    else:
+        v5.require(
+            not fit_preflight["unresolved_locator_fit"],
+            "v7_locator_fit_unresolved",
+            "The V6-to-V7 migration cannot produce a score while complete-path-fit states remain unresolved.",
+            {
+                "compatibility_classifications": fit_preflight[
+                    "compatibility_classifications"
+                ],
+                "unresolved_locator_fit": fit_preflight[
+                    "unresolved_locator_fit"
+                ],
+                "unresolved_set_sha256": fit_preflight[
+                    "unresolved_set_sha256"
+                ],
+            },
+        )
     base_review = derive_structure_locator_review(
         candidate,
         inventory,
@@ -1548,6 +2221,9 @@ def _migrate_calculation_view(
         structure_review=review,
         structure_review_artifact=review_artifact,
         supplemental_architecture_review_artifact=supplemental_artifact,
+        legacy_fit_defects=legacy_fit_defects,
+        locator_fit_supplement=locator_fit_supplement,
+        locator_fit_supplement_artifact=locator_fit_supplement_artifact,
     )
     if migration_context is not None:
         calculation["migration_context"] = deepcopy(migration_context)
@@ -1571,6 +2247,18 @@ def _migrate_calculation_view(
         "supplemental_architecture_review": supplemental_document,
         "supplemental_architecture_review_path": supplemental_path,
         "supplemental_architecture_review_artifact": supplemental_artifact,
+        "locator_fit_preflight": {
+            key: deepcopy(fit_preflight[key])
+            for key in (
+                "compatibility_classifications",
+                "unresolved_locator_fit",
+                "invalid_locator_states",
+                "unresolved_set_sha256",
+            )
+        },
+        "locator_fit_supplement": locator_fit_supplement,
+        "locator_fit_supplement_path": locator_fit_supplement_path,
+        "locator_fit_supplement_artifact": locator_fit_supplement_artifact,
     }
 
 
@@ -1612,6 +2300,24 @@ def _supplement_reference(
     }
 
 
+def _locator_fit_supplement_reference(
+    path: Path, container: Path, document: Mapping[str, Any]
+) -> dict[str, Any]:
+    return {
+        **_artifact_reference(
+            path,
+            container,
+            schema_version=LOCATOR_FIT_SUPPLEMENT_SCHEMA,
+        ),
+        "supplement_id": document["supplement_id"],
+        "supplement_sha256": document["supplement_sha256"],
+        "unresolved_set_sha256": document["scope"][
+            "unresolved_set_sha256"
+        ],
+        "decision_count": len(document["decisions"]),
+    }
+
+
 def _build_projection_metadata(
     old_metadata: Mapping[str, Any],
     canonical: Mapping[str, Any],
@@ -1630,9 +2336,17 @@ def _build_projection_metadata(
     metadata["canonical_structure_locator_review"] = _artifact_reference(
         canonical["review_path"], output_path, schema_version=canonical["review"]["schema_version"]
     ) | {"review_sha256": canonical["review"]["review_sha256"]}
+    if canonical["locator_fit_supplement"] is not None:
+        metadata["canonical_locator_fit_supplement"] = (
+            _locator_fit_supplement_reference(
+                canonical["locator_fit_supplement_path"],
+                output_path,
+                canonical["locator_fit_supplement"],
+            )
+        )
     if counterfactuals:
         metadata["counterfactual_score_views"] = [
-            {
+            ({
                 "view_id": item["view_id"],
                 "label": item["label"],
                 "calculation": _calculation_reference(
@@ -1653,6 +2367,17 @@ def _build_projection_metadata(
                     for provenance in item["provenance_artifacts"]
                 ],
             }
+            | (
+                {
+                    "locator_fit_supplement": _locator_fit_supplement_reference(
+                        item["locator_fit_supplement_path"],
+                        output_path,
+                        item["locator_fit_supplement"],
+                    )
+                }
+                if item["locator_fit_supplement"] is not None
+                else {}
+            ))
             for item in counterfactuals
         ]
     metadata["projection_metadata_sha256"] = v5.canonical_hash(
@@ -1667,7 +2392,7 @@ def _build_score_views(
     web_output: Path,
 ) -> dict[str, Any]:
     views = [
-        {
+        ({
             "view_id": "canonical_as_delivered",
             "label": "Canonical as delivered",
             "view_kind": "observed",
@@ -1682,10 +2407,21 @@ def _build_score_views(
             "causal_attribution": "primary_observed_result",
             "provenance_artifacts": [],
         }
+        | (
+            {
+                "locator_fit_supplement": _locator_fit_supplement_reference(
+                    canonical["locator_fit_supplement_path"],
+                    web_output,
+                    canonical["locator_fit_supplement"],
+                )
+            }
+            if canonical["locator_fit_supplement"] is not None
+            else {}
+        ))
     ]
     for item in counterfactuals:
         views.append(
-            {
+            ({
                 "view_id": item["view_id"],
                 "label": item["label"],
                 "view_kind": "counterfactual",
@@ -1710,6 +2446,17 @@ def _build_score_views(
                     for provenance in item["provenance_artifacts"]
                 ],
             }
+            | (
+                {
+                    "locator_fit_supplement": _locator_fit_supplement_reference(
+                        item["locator_fit_supplement_path"],
+                        web_output,
+                        item["locator_fit_supplement"],
+                    )
+                }
+                if item["locator_fit_supplement"] is not None
+                else {}
+            ))
         )
     return {
         "primary_view_id": "canonical_as_delivered",
@@ -1784,6 +2531,15 @@ def _build_result_and_web(
         },
         "limitations": deepcopy(metadata.get("limitations", [])),
     }
+    result["locator_fit_compatibility"] = deepcopy(
+        calculation["locator_fit_compatibility"]
+    )
+    if canonical["locator_fit_supplement"] is not None:
+        result["locator_fit_supplement"] = _locator_fit_supplement_reference(
+            canonical["locator_fit_supplement_path"],
+            result_output,
+            canonical["locator_fit_supplement"],
+        )
     score_views = _build_score_views(canonical, counterfactuals, web_output)
     web = {
         "schema_version": WEB_REPORT_SCHEMA,
@@ -1833,6 +2589,15 @@ def _build_result_and_web(
         "limitations": deepcopy(metadata.get("limitations", [])),
         "evidence_index": {},
     }
+    web["locator_fit_compatibility"] = deepcopy(
+        calculation["locator_fit_compatibility"]
+    )
+    if canonical["locator_fit_supplement"] is not None:
+        web["locator_fit_supplement"] = _locator_fit_supplement_reference(
+            canonical["locator_fit_supplement_path"],
+            web_output,
+            canonical["locator_fit_supplement"],
+        )
     return result, web
 
 
@@ -1905,6 +2670,28 @@ def command_migrate(args: argparse.Namespace) -> None:
         for view_id in sorted(old_views):
             old_view = old_views[view_id]
             refs = declared_counterfactuals[view_id]
+            bound_old_view_calc = v5.resolve_referenced_artifact(
+                old_view["calculation"],
+                old_web_path,
+                label=f"historical score view {view_id}",
+            )
+            provenance_artifacts = []
+            for index, provenance in enumerate(
+                old_view.get("provenance_artifacts", [])
+            ):
+                provenance_path = v5.resolve_referenced_artifact(
+                    provenance,
+                    old_web_path,
+                    label=f"historical score view {view_id} provenance[{index}]",
+                )
+                provenance_artifacts.append(
+                    {
+                        "role": provenance["role"],
+                        "schema_version": provenance["schema_version"],
+                        "path": provenance_path,
+                        "sha256": v5.sha256_file(provenance_path),
+                    }
+                )
             migrated = _migrate_calculation_view(
                 manifest_path=manifest_path,
                 references=refs,
@@ -1912,13 +2699,9 @@ def command_migrate(args: argparse.Namespace) -> None:
                 calculation_output=output_dir / "score-views" / f"{view_id}.dimension-calculations.v7.json",
                 migration_context=None,
                 label=f"counterfactual:{view_id}",
+                representation_provenance_artifacts=provenance_artifacts,
             )
-            bound_old_view_calc = v5.resolve_referenced_artifact(old_view["calculation"], old_web_path, label=f"historical score view {view_id}")
             v5.require_same_artifact(bound_old_view_calc, migrated["old_calculation_path"], label=f"historical score view {view_id}")
-            provenance_artifacts = []
-            for index, provenance in enumerate(old_view.get("provenance_artifacts", [])):
-                provenance_path = v5.resolve_referenced_artifact(provenance, old_web_path, label=f"historical score view {view_id} provenance[{index}]")
-                provenance_artifacts.append({"role": provenance["role"], "schema_version": provenance["schema_version"], "path": provenance_path, "sha256": v5.sha256_file(provenance_path)})
             migrated |= {"view_id": view_id, "label": old_view["label"], "provenance_artifacts": provenance_artifacts}
             counterfactuals.append(migrated)
 
@@ -1958,6 +2741,43 @@ def command_migrate(args: argparse.Namespace) -> None:
             }
             for item in supplemental_view_inputs
         ]
+        locator_fit_view_inputs = [
+            {
+                "view_id": view_id,
+                "path": view["locator_fit_supplement_path"],
+                "document": view["locator_fit_supplement"],
+            }
+            for view_id, view in [
+                ("canonical_as_delivered", canonical),
+                *((item["view_id"], item) for item in counterfactuals),
+            ]
+            if view["locator_fit_supplement"] is not None
+        ]
+        locator_fit_migration_references = [
+            {
+                "view_id": item["view_id"],
+                "artifact": _locator_fit_supplement_reference(
+                    item["path"], migration_output, item["document"]
+                ),
+            }
+            for item in locator_fit_view_inputs
+        ]
+        semantic_scopes = {
+            (False, False): "none",
+            (True, False): "supplemental_architecture_review_only",
+            (False, True): "supplemental_locator_fit_only",
+            (True, True): "supplemental_architecture_and_locator_fit",
+        }
+        semantic_scope = semantic_scopes[
+            (
+                bool(supplemental_migration_references),
+                bool(locator_fit_migration_references),
+            )
+        ]
+        migrated_views = [
+            ("canonical_as_delivered", canonical),
+            *((item["view_id"], item) for item in counterfactuals),
+        ]
         migration = {
             "schema_version": MIGRATION_SCHEMA,
             "migration_id": "",
@@ -1988,7 +2808,45 @@ def command_migrate(args: argparse.Namespace) -> None:
                     canonical, counterfactuals, migration_output
                 ),
                 "counterfactual_calculations": [
-                    {"view_id": item["view_id"], "calculation": _calculation_reference(item["calculation_path"], migration_output, item["calculation"]), "structure_locator_review": _artifact_reference(item["review_path"], migration_output, schema_version=item["review"]["schema_version"]) | {"review_sha256": item["review"]["review_sha256"]}, "provenance_artifacts": [{"role": provenance["role"], "schema_version": provenance["schema_version"], "artifact_path": v5.portable_relative_reference(provenance["path"], migration_output, label="migration counterfactual provenance"), "sha256": provenance["sha256"]} for provenance in item["provenance_artifacts"]]} for item in counterfactuals
+                    {
+                        "view_id": item["view_id"],
+                        "calculation": _calculation_reference(
+                            item["calculation_path"],
+                            migration_output,
+                            item["calculation"],
+                        ),
+                        "structure_locator_review": _artifact_reference(
+                            item["review_path"],
+                            migration_output,
+                            schema_version=item["review"]["schema_version"],
+                        )
+                        | {"review_sha256": item["review"]["review_sha256"]},
+                        "provenance_artifacts": [
+                            {
+                                "role": provenance["role"],
+                                "schema_version": provenance["schema_version"],
+                                "artifact_path": v5.portable_relative_reference(
+                                    provenance["path"],
+                                    migration_output,
+                                    label="migration counterfactual provenance",
+                                ),
+                                "sha256": provenance["sha256"],
+                            }
+                            for provenance in item["provenance_artifacts"]
+                        ],
+                        **(
+                            {
+                                "locator_fit_supplement": _locator_fit_supplement_reference(
+                                    item["locator_fit_supplement_path"],
+                                    migration_output,
+                                    item["locator_fit_supplement"],
+                                )
+                            }
+                            if item["locator_fit_supplement"] is not None
+                            else {}
+                        ),
+                    }
+                    for item in counterfactuals
                 ],
             },
             "frozen_evidence": {
@@ -1997,25 +2855,78 @@ def command_migrate(args: argparse.Namespace) -> None:
                 "normalized_candidate": _historical_reference(canonical["candidate_path"], migration_output, canonical["candidate"]),
                 "item_inventory": _historical_reference(canonical["inventory_path"], migration_output, canonical["inventory"]),
                 "supplemental_architecture_reviews": supplemental_migration_references,
+                "supplemental_locator_fit_supplements": locator_fit_migration_references,
                 "source_pages_reopened": False,
                 "prose_inference_used": False,
-                "semantic_judgments_added": bool(
-                    supplemental_migration_references
-                ),
-                "semantic_judgment_scope": (
-                    "supplemental_architecture_review_only"
-                    if supplemental_migration_references
-                    else "none"
-                ),
+                "semantic_judgments_added": semantic_scope != "none",
+                "semantic_judgment_scope": semantic_scope,
                 "historical_artifacts_modified": False,
             },
             "dimension_comparison": dimension_comparison,
             "precision_comparison": {"v6": {"weighted_locator_precision": v6.precision_diagnostics(old_calc)["weighted_locator_precision"], "strict_substantive_precision": v6.precision_diagnostics(old_calc)["strict_substantive_precision"]}, "v7": precision_diagnostics(canonical["calculation"])},
             "gate_preservation": {"historical_gate_outcomes_sha256": gate_hash, "preserved_gate_outcomes_sha256": gate_hash, "historical_outcomes": deepcopy(old_result["critical_gates"]), "preserved_outcomes": deepcopy(old_result["critical_gates"]), "outcomes_equal": True},
             "structure_count_correction": {"thresholds": deepcopy(canonical["review"]["thresholds"]), "path_dispositions": [{key: deepcopy(item[key]) for key in ("path_id", "displayed_locator_count", "maximum_range_span", "atomic_assignment_count", "long_displayed_locator_string_review_trigger", "long_continuous_range_review_trigger", "applicable_structured_defect_ids", "removed_structured_defect_ids", "retained_structured_defect_ids", "historical_defect_dispositions", "final_architecture_disposition", "deterministic_mapping_rule_id")} for item in canonical["review"]["path_reviews"]], "removed_historical_defect_ids": deepcopy(canonical["review"]["summary"]["removed_historical_defect_ids"]), "new_defects_created_from_numeric_triggers": False},
+            "locator_fit_supplementation": {
+                "supplemental_judgments_added": bool(
+                    locator_fit_migration_references
+                ),
+                "scope": (
+                    "complete_path_fit_only"
+                    if locator_fit_migration_references
+                    else "none"
+                ),
+                "views": [
+                    {
+                        "view_id": view_id,
+                        "unresolved_set_count_before_supplementation": len(
+                            view["locator_fit_preflight"][
+                                "unresolved_locator_fit"
+                            ]
+                        ),
+                        "unresolved_set_count_after_supplementation": 0,
+                        "unresolved_locator_ids": [
+                            item["locator_id"]
+                            for item in view["locator_fit_preflight"][
+                                "unresolved_locator_fit"
+                            ]
+                        ],
+                        "unresolved_set_sha256": view[
+                            "locator_fit_preflight"
+                        ]["unresolved_set_sha256"],
+                        "compatibility_classifications_without_supplement": deepcopy(
+                            view["locator_fit_preflight"][
+                                "compatibility_classifications"
+                            ]
+                        ),
+                        "supplement": (
+                            _locator_fit_supplement_reference(
+                                view["locator_fit_supplement_path"],
+                                migration_output,
+                                view["locator_fit_supplement"],
+                            )
+                            if view["locator_fit_supplement"] is not None
+                            else None
+                        ),
+                    }
+                    for view_id, view in migrated_views
+                ],
+                "historical_artifacts_unchanged": True,
+                "non_fit_judgments_unchanged": True,
+                "numerical_fit_credit_manually_supplied": False,
+                "combined_credit_manually_supplied": False,
+                "grade_manually_supplied": False,
+                "dimension_or_total_score_manually_supplied": False,
+            },
             "invariants": {"only_calculation_and_display_artifacts_rebuilt": True, "locator_support_and_missing_access_unchanged": True, "non_reliability_dimensions_unchanged_except_deterministic_structure_correction": True, "gates_unchanged": True, "representation_views_recalculated_from_own_inputs": True, "supplemental_review_narrowly_scoped_and_hash_bound": True, "oxford_artifacts_modified": False, "formula_tuned_to_oxford_result": False},
             "migration_sha256": "",
         }
+        migration["invariants"].update(
+            {
+                "locator_fit_supplement_applied_in_memory_only": True,
+                "evaluation_specific_fit_rule_added": False,
+                "evaluation_result_used_as_target": False,
+            }
+        )
         migration["migration_id"] = f"MIG-{v5.canonical_hash(migration)[:12].upper()}"
         migration["migration_sha256"] = v5.canonical_hash(migration, "migration_sha256")
         v5.validate_schema_document(migration, "score-migration-v6-to-v7.schema.json", "Generated V6-to-V7 migration")
@@ -2042,7 +2953,16 @@ def command_migrate(args: argparse.Namespace) -> None:
                 }
                 for item in supplemental_view_inputs
             ],
-            "validation": {"all_hashes_recomputed": True, "all_schemas_valid": True, "historical_bytes_unchanged": True, "calculation_hash_valid": canonical["calculation"]["calculation_sha256"] == v5.canonical_hash(canonical["calculation"], "calculation_sha256"), "migration_hash_valid": migration["migration_sha256"] == v5.canonical_hash(migration, "migration_sha256"), "structure_review_hash_valid": canonical["review"]["review_sha256"] == structure_review_hash(canonical["review"], "review_sha256"), "supplemental_review_hash_valid": all(item["document"]["supplement_sha256"] == v5.canonical_hash(item["document"], "supplement_sha256") for item in supplemental_view_inputs), "supplemental_review_scope_exact": all(view["review"]["summary"]["review_required_path_ids"] == [] for view in [canonical, *counterfactuals]), "decimal_safe_projection_validation": True, "gate_outcomes_equal": True, "representation_provenance_complete": True},
+            "supplemental_locator_fit_supplements": [
+                {
+                    "view_id": item["view_id"],
+                    "artifact": _locator_fit_supplement_reference(
+                        item["path"], receipt_output, item["document"]
+                    ),
+                }
+                for item in locator_fit_view_inputs
+            ],
+            "validation": {"all_hashes_recomputed": True, "all_schemas_valid": True, "historical_bytes_unchanged": True, "calculation_hash_valid": canonical["calculation"]["calculation_sha256"] == v5.canonical_hash(canonical["calculation"], "calculation_sha256"), "migration_hash_valid": migration["migration_sha256"] == v5.canonical_hash(migration, "migration_sha256"), "structure_review_hash_valid": canonical["review"]["review_sha256"] == structure_review_hash(canonical["review"], "review_sha256"), "supplemental_review_hash_valid": all(item["document"]["supplement_sha256"] == v5.canonical_hash(item["document"], "supplement_sha256") for item in supplemental_view_inputs), "supplemental_review_scope_exact": all(view["review"]["summary"]["review_required_path_ids"] == [] for view in [canonical, *counterfactuals]), "locator_fit_supplement_hash_valid": all(item["document"]["supplement_sha256"] == v5.canonical_hash(item["document"], "supplement_sha256") for item in locator_fit_view_inputs), "locator_fit_supplement_scope_exact": all(view["calculation"]["locator_fit_compatibility"]["unresolved_after_supplement"] == 0 for _, view in migrated_views), "locator_fit_supplement_non_fit_fields_unchanged": True, "locator_fit_supplement_contains_no_manual_numerical_credit_or_score": True, "decimal_safe_projection_validation": True, "gate_outcomes_equal": True, "representation_provenance_complete": True},
             "receipt_sha256": "",
         }
         receipt["receipt_id"] = f"VAL-{v5.canonical_hash(receipt)[:12].upper()}"

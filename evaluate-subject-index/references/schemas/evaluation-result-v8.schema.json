@@ -30,6 +30,8 @@
     "structure_locator_review": {"allOf": [{"$ref": "#/$defs/artifact"}, {"required": ["review_sha256", "summary"], "properties": {"schema_version": {"const": "subject-index-structure-locator-review-v1"}, "review_sha256": {"$ref": "#/$defs/sha256"}, "summary": {"type": "object"}}}]},
     "score_migration": {"allOf": [{"$ref": "#/$defs/artifact"}, {"required": ["migration_sha256"], "properties": {"schema_version": {"const": "subject-index-score-migration-v6-to-v7-v1"}, "migration_sha256": {"$ref": "#/$defs/sha256"}}}]},
     "projection_metadata": {"allOf": [{"$ref": "#/$defs/artifact"}, {"required": ["projection_metadata_sha256"], "properties": {"schema_version": {"const": "subject-index-v7-projection-metadata-v1"}, "projection_metadata_sha256": {"$ref": "#/$defs/sha256"}}}]},
+    "locator_fit_compatibility": {"$ref": "dimension-calculations-v3.schema.json#/properties/locator_fit_compatibility"},
+    "locator_fit_supplement": {"$ref": "v7-projection-metadata.schema.json#/$defs/fitSupplementReference"},
     "critical_gates": {"type": "array", "items": {"type": "object"}},
     "defect_counts": {"type": "object"},
     "comparison_key": {

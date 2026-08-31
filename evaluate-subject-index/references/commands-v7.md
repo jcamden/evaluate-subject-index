@@ -10,7 +10,7 @@ python evaluate-subject-index/scripts/dimension_score_v7_cli.py preflight \
   --output /path/to/v7-preflight.json
 ```
 
-Preflight requires an unambiguous structured treatment and fit mapping for every locator. It reports missing/contradictory fields and never reads rationale or evidence-summary prose.
+Preflight requires an unambiguous structured treatment and fit mapping for every locator. It reports missing/contradictory fields and never reads rationale or evidence-summary prose. For each unresolved fit state it emits only public-safe structured fields: locator/path IDs, stable reason code(s), present judgment, treatment, scope, structured codes, applicable defect IDs, and `complete_path_fit_category` as the missing classifier. It emits no source excerpt, rationale, candidate display text, or private page evidence and produces no score.
 
 ## Derive structure-locator review
 
@@ -61,6 +61,8 @@ validate as `subject-index-v7-architecture-review-supplement-v1`; its sorted
 decision paths must equal the mechanically unresolved trigger set exactly.
 Omit the field when no supplemental decision is needed.
 
+After an unsupplemented stop on unresolved complete-path fit, add `locator_fit_supplement` only to the affected canonical or counterfactual view. The referenced artifact must validate as `subject-index-v7-locator-fit-supplement-v1`; its sorted decisions must equal the independently derived unresolved locator-ID set exactly. Each decision supplies an existing fit category, not a numerical credit. A separately bound artifact is required for every counterfactual unless all relevant artifact identities independently validate as identical.
+
 ```bash
 python evaluate-subject-index/scripts/dimension_score_v7_cli.py migrate-v6-to-v7 \
   --manifest /path/to/v7-migration-input.json \
@@ -69,10 +71,7 @@ python evaluate-subject-index/scripts/dimension_score_v7_cli.py migrate-v6-to-v7
 
 Use a new empty output directory. The migration refuses to overwrite outputs, alter history, infer range grouping from prose, copy a counterfactual score without recalculation, invent a new architecture judgment, or proceed with a required unmeasured/ambiguous locator.
 
-The migration recalculates V6 from its original input before it reads a
-supplement. A supplement therefore cannot rebind, repair, or replace frozen V6
-evidence. Its exact file hash is carried into the V7 structure review,
-calculation, migration record, and validation receipt.
+The migration recalculates V6 from its original input, derives unsupplemented compatibility and the complete unresolved fit set, and only then reads a locator-fit supplement. A supplement therefore cannot rebind, repair, or replace frozen V6 evidence. Architecture and locator-fit supplements have separate contracts. Locator-fit file/self hashes and exact scope are carried into the calculation, item assessments, migration, result, web report, projection metadata, and validation receipt; historical inputs remain unchanged.
 
 ## Validate
 

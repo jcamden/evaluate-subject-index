@@ -24,6 +24,8 @@ For historically `unsupported` weak presence, exact fit is allowed only when the
 
 Direct codes and applicable structured defects are considered together. The strongest validated fit severity controls an `unsupported` mismatch. Minor maps to 0.35, major to 0.15, and critical/no-fit evidence to zero. Contradictory positive judgments fail validation.
 
+At the immutable `structure-audit-v3` history boundary only, a missing `defect_kind` may be tolerated through `F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1`. The code, severity, locator binding, scope, and all other structured fields must be valid and converge on one category. Do not invent a kind. Cosmetic evidence, bare `LOC_POS`, `MEC`, `SEL`, unknown/missing fields, or multiple possible categories cannot complete the mapping.
+
 ## Structure review judgment
 
 Do not describe expanded pages as “undivided locators.” Preserve displayed locator, range-span, and atomic-assignment quantities separately.
@@ -42,3 +44,5 @@ A long range may be a faithful representation of one sustained discussion. A lon
 ## Supplemental review during migration
 
 A supplemental architecture review is narrowly scoped to the triggered path. It may inspect only the frozen structured architecture evidence authorized for that review. It must not reopen source pages, locator support, missing access, or unrelated structure judgments. If semantic evidence is not already frozen and the migration is score-only, stop and request the supplemental determination rather than infer from prose.
+
+A supplemental locator-fit artifact likewise does not make a judgment. A separately authorized process makes the semantic decision; `subject-index-v7-locator-fit-supplement-v1` transports the selected existing category with exact artifact, unresolved-set, evidence, and authorization bindings. The score-only migration itself never inspects source pages or prose and cannot alter treatment, judgment, scope, defects, gates, or another dimension.

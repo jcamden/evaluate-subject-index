@@ -12,7 +12,8 @@
     "active_projections": {"type": "object", "required": ["calculation", "result", "item_assessments", "web_report", "projection_metadata", "structure_locator_review"], "additionalProperties": {"$ref": "#/$defs/artifact"}},
     "historical_projections": {"type": "object", "required": ["calculation", "result", "item_assessments", "web_report", "projection_metadata"], "additionalProperties": {"$ref": "#/$defs/artifact"}},
     "counterfactual_projections": {"type": "array", "items": {"type": "object", "required": ["view_id", "calculation", "structure_locator_review", "provenance_sha256"], "properties": {"view_id": {"type": "string"}, "calculation": {"$ref": "#/$defs/artifact"}, "structure_locator_review": {"$ref": "#/$defs/artifact"}, "provenance_sha256": {"type": "array", "items": {"$ref": "#/$defs/sha256"}, "uniqueItems": true}}, "additionalProperties": false}},
-    "supplemental_architecture_reviews": {"type": "array", "items": {"type": "object", "required": ["view_id", "artifact"], "properties": {"view_id": {"type": "string", "minLength": 1}, "artifact": {"$ref": "#/$defs/artifact"}}, "additionalProperties": false}},
+    "supplemental_architecture_reviews": {"type": "array", "items": {"type": "object", "required": ["view_id", "artifact"], "properties": {"view_id": {"type": "string", "minLength": 1}, "artifact": {"$ref": "#/$defs/architectureSupplementArtifact"}}, "additionalProperties": false}},
+    "supplemental_locator_fit_supplements": {"type": "array", "items": {"type": "object", "required": ["view_id", "artifact"], "properties": {"view_id": {"type": "string", "minLength": 1}, "artifact": {"$ref": "#/$defs/locatorFitSupplementArtifact"}}, "additionalProperties": false}},
     "validation": {
       "type": "object",
       "required": ["all_hashes_recomputed", "all_schemas_valid", "historical_bytes_unchanged", "calculation_hash_valid", "migration_hash_valid", "structure_review_hash_valid", "decimal_safe_projection_validation", "gate_outcomes_equal", "representation_provenance_complete"],
@@ -25,6 +26,10 @@
         "structure_review_hash_valid": {"const": true},
         "supplemental_review_hash_valid": {"const": true},
         "supplemental_review_scope_exact": {"const": true},
+        "locator_fit_supplement_hash_valid": {"const": true},
+        "locator_fit_supplement_scope_exact": {"const": true},
+        "locator_fit_supplement_non_fit_fields_unchanged": {"const": true},
+        "locator_fit_supplement_contains_no_manual_numerical_credit_or_score": {"const": true},
         "decimal_safe_projection_validation": {"const": true},
         "gate_outcomes_equal": {"const": true},
         "representation_provenance_complete": {"const": true}
@@ -45,11 +50,49 @@
         "calculation_sha256": {"$ref": "#/$defs/sha256"},
         "migration_sha256": {"$ref": "#/$defs/sha256"},
         "review_sha256": {"$ref": "#/$defs/sha256"},
-        "supplement_id": {"type": "string", "pattern": "^ARCHSUP-[A-F0-9]{12}$"},
-        "supplement_sha256": {"$ref": "#/$defs/sha256"}
+        "supplement_id": {"type": "string", "pattern": "^(?:ARCHSUP|FITSUP)-[A-F0-9]{12}$"},
+        "supplement_sha256": {"$ref": "#/$defs/sha256"},
+        "unresolved_set_sha256": {"$ref": "#/$defs/sha256"},
+        "decision_count": {"type": "integer", "minimum": 1}
       },
       "additionalProperties": true
+    },
+    "locatorFitSupplementArtifact": {
+      "allOf": [
+        {"$ref": "#/$defs/artifact"},
+        {
+          "required": ["supplement_id", "supplement_sha256", "unresolved_set_sha256", "decision_count"],
+          "properties": {
+            "schema_version": {"const": "subject-index-v7-locator-fit-supplement-v1"},
+            "supplement_id": {"type": "string", "pattern": "^FITSUP-[A-F0-9]{12}$"}
+          }
+        }
+      ]
+    },
+    "architectureSupplementArtifact": {
+      "allOf": [
+        {"$ref": "#/$defs/artifact"},
+        {
+          "required": ["supplement_id", "supplement_sha256"],
+          "properties": {
+            "schema_version": {"const": "subject-index-v7-architecture-review-supplement-v1"},
+            "supplement_id": {"type": "string", "pattern": "^ARCHSUP-[A-F0-9]{12}$"}
+          }
+        }
+      ]
     }
   },
+  "allOf": [
+    {
+      "if": {"required": ["supplemental_locator_fit_supplements"]},
+      "then": {
+        "properties": {
+          "validation": {
+            "required": ["locator_fit_supplement_hash_valid", "locator_fit_supplement_scope_exact", "locator_fit_supplement_non_fit_fields_unchanged", "locator_fit_supplement_contains_no_manual_numerical_credit_or_score"]
+          }
+        }
+      }
+    }
+  ],
   "additionalProperties": false
 }
