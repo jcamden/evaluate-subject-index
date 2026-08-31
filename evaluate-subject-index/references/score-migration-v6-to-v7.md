@@ -40,6 +40,12 @@ The manifest records the methodology repository, exact V6 base commit, V7 implem
 11. Preserve the V6 gate array byte-for-value and hash-for-hash.
 12. Emit a migration record and a validation receipt binding active and historical projections.
 
+## Deterministic item projection
+
+Tool patch `dimension-score-cli-v7.0.6` applies `ITEM-PROJECTION-DEFECT-ID-ASC-V1` when a complete path, heading node, or cross-reference discovers more than one applicable structured defect. The projector preserves the existing path, node, locator, reference, display, and source-evidence order used for semantic navigation; it uses those identities only for membership lookup, deduplicates defects by stable `defect_id`, and emits defect-derived cap and evidence arrays in ascending `defect_id` order. Equivalent clean migrations must therefore produce byte-identical item, result, report, migration, and receipt artifacts across Python hash seeds.
+
+This rule changes serialization only. It changes no schema identity or artifact shape, locator judgment, treatment or fit category, credit, minimum rule, grade, dimension formula, cap value, threshold, gate, architecture disposition, or historical byte. Historical artifacts remain immutable.
+
 ## Historical locator-fit compatibility
 
 Historical top-level `structure-audit-v3` defects may predate `defect_kind`. Rule `F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1` tolerates that omission only when every other required structured field is valid and the approved V7 code/severity table lets each record select one category without prose. Locator-bound `SCP`, `CON`, `STA`, `CMP`, `HED`, or `SUB` evidence maps minor to material mismatch, major to severe mismatch, and critical to no fit. Convergent records produce the same deterministic category as before; eligible inter-record disagreement follows the separate fit-only conflict rule. The historical defect is neither rewritten nor assigned an invented kind.

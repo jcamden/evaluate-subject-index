@@ -13,9 +13,9 @@ V7 uses:
 - web report `subject-index-web-report-v6`; and
 - migration `subject-index-score-migration-v6-to-v7-v1`;
 - supplemental fit input `subject-index-v7-locator-fit-supplement-v1`; and
-- tool patch `dimension-score-cli-v7.0.5`.
+- tool patch `dimension-score-cli-v7.0.6`.
 
-V7 changes the per-locator precision input to Page-reference Reliability and corrects the counting unit used for locator-string architecture review. Benchmark construction, blindness, locator and missing-access judgments, expected-treatment recall, treatment-unit coalescing, weights, the other dimension formulas, Editorial Selectivity, density, caps, gates, uncertainty, rounding, defect ownership, and representation-adjustment provenance remain unchanged. Historical V4, V5, and V6 artifacts retain their original readers and identities.
+V7 changes the per-locator precision input to Page-reference Reliability and corrects the counting unit used for locator-string architecture review. Benchmark construction, blindness, locator and missing-access judgments, expected-treatment recall, treatment-unit coalescing, weights, the other dimension formulas, Editorial Selectivity, density, caps, gates, uncertainty, rounding, defect ownership, and representation-adjustment provenance remain unchanged. Historical V4, V5, and V6 artifacts retain their original readers and identities. Tool patch V7.0.6 changes item-projection serialization only: rule `ITEM-PROJECTION-DEFECT-ID-ASC-V1` orders multi-defect arrays by stable `defect_id` without changing any grade, dimension formula, mapping, cap, threshold, or gate.
 
 ## Two independent locator facts
 

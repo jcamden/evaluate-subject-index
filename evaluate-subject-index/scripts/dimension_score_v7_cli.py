@@ -60,7 +60,7 @@ SUPPLEMENTAL_ARCHITECTURE_REVIEW_SCHEMA = (
 )
 LOCATOR_FIT_SUPPLEMENT_SCHEMA = "subject-index-v7-locator-fit-supplement-v1"
 TOOL_NAME = "dimension_score_v7_cli.py"
-TOOL_VERSION = "dimension-score-cli-v7.0.5"
+TOOL_VERSION = "dimension-score-cli-v7.0.6"
 METHODOLOGY_REPOSITORY = "https://github.com/jcamden/evaluate-subject-index"
 
 ZERO = Decimal(0)
