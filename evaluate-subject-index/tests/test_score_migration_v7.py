@@ -92,6 +92,8 @@ def prepare_v6_projection(
     root: Path,
     documents: tuple[dict, dict, dict] | None = None,
     candidate_document: dict | None = None,
+    *,
+    legacy_structure_defects: list[dict] | None = None,
 ) -> dict[str, Path]:
     locator, missing, structure = documents or base_documents()
     candidate_path = root / "candidate-index.json"
@@ -101,6 +103,60 @@ def prepare_v6_projection(
         document["provenance"]["normalized_candidate_file_sha256"] = candidate_file_sha
     structure["provenance"]["normalized_candidate_file_sha256"] = candidate_file_sha
     config_path = calculation_files(root, locator, missing, structure)
+    migration_supplement_path: Path | None = None
+    if legacy_structure_defects is not None:
+        structure_path = root / "structure.json"
+        historical = json.loads(structure_path.read_text())
+        scoring_context = historical.pop("v5_scoring_context")
+        historical["schema_version"] = "structure-audit-v3"
+        historical.pop("audit_mode")
+        historical["defects"] = copy.deepcopy(legacy_structure_defects)
+        for chapter in historical["density"]["chapter_measurements"]:
+            chapter["metric_results"] = {}
+            chapter["unit_fit_rating"] = 5
+        canonical_locator_set_sha256 = historical["provenance"][
+            "locator_audit_set_sha256"
+        ]
+        canonical_missing_set_sha256 = historical["provenance"][
+            "missing_access_audit_set_sha256"
+        ]
+        historical_locator_set_sha256 = "8" * 64
+        historical_missing_set_sha256 = "9" * 64
+        historical["provenance"] = {
+            "benchmark_sha256": historical["provenance"]["benchmark_sha256"],
+            "normalized_candidate_file_sha256": historical["provenance"][
+                "normalized_candidate_file_sha256"
+            ],
+            "item_inventory_file_sha256": historical["provenance"][
+                "item_inventory_file_sha256"
+            ],
+            "locator_audit_set_sha256": historical_locator_set_sha256,
+            "missing_access_audit_set_sha256": historical_missing_set_sha256,
+        }
+        write_json(structure_path, historical)
+        migration_supplement_path = root / "v5-migration-supplement.json"
+        write_json(
+            migration_supplement_path,
+            {
+                "schema_version": "subject-index-v5-migration-supplement-v1",
+                "evaluation_id": locator["evaluation_id"],
+                "audit_mode": "full",
+                "structure_audit_sha256": digest(structure_path),
+                "historical_locator_audit_set_sha256": historical_locator_set_sha256,
+                "historical_missing_access_audit_set_sha256": historical_missing_set_sha256,
+                "locator_audit_set_sha256": canonical_locator_set_sha256,
+                "missing_access_audit_set_sha256": canonical_missing_set_sha256,
+                "audit_set_reconciliation_basis": "same_frozen_files_rehashed_with_subject_index_canonical_audit_set_v1",
+                "scoring_context": scoring_context,
+            },
+        )
+        config = json.loads(config_path.read_text())
+        config["inputs"]["structure_audit"]["sha256"] = digest(structure_path)
+        config["inputs"]["migration_supplement"] = {
+            "path": migration_supplement_path.name,
+            "sha256": digest(migration_supplement_path),
+        }
+        write_json(config_path, config)
     loaded = v5.load_inputs(config_path)
     calculation = v6.calculate_loaded(loaded)
     calculation_path = root / "dimension-calculations.v6.json"
@@ -131,16 +187,20 @@ def prepare_v6_projection(
     v6.write_json(result_path, result)
     v6.write_json(web_path, web)
     v6.validate_projection_artifacts(calculation_path, result_path, web_path)
-    return {
+    paths = {
         "config": config_path,
         "candidate": candidate_path,
         "inventory": root / "item-inventory.json",
+        "structure": root / "structure.json",
         "calculation": calculation_path,
         "result": result_path,
         "items": items_path,
         "web": web_path,
         "metadata": metadata_path,
     }
+    if migration_supplement_path is not None:
+        paths["migration_supplement"] = migration_supplement_path
+    return paths
 
 
 def grouped_candidate(locator: dict, groups: list[int]) -> dict:
@@ -424,7 +484,7 @@ def locator_fit_supplement(
             "fit_category": categories.get(item["locator_id"], "material_partial_fit"),
             "evidence_ids": [item["locator_id"]],
         }
-        for item in fit_preflight["unresolved_locator_fit"]
+        for item in fit_preflight["unresolved_complete_path_fit"]
     ]
     document = finalize_locator_fit_supplement(
         {
@@ -462,7 +522,7 @@ def locator_fit_supplement(
                 "rule_id": "FIT-V7-EXACT-UNRESOLVED-LOCATOR-SET-V1",
                 "unresolved_locator_ids": [
                     item["locator_id"]
-                    for item in fit_preflight["unresolved_locator_fit"]
+                    for item in fit_preflight["unresolved_complete_path_fit"]
                 ],
                 "unresolved_set_sha256": fit_preflight["unresolved_set_sha256"],
             },
@@ -508,6 +568,50 @@ def bare_loc_pos_documents(*, count: int = 1) -> tuple[dict, dict, dict]:
             evidence_summary="Synthetic display text is deliberately non-classifying.",
         )
     return documents
+
+
+def legacy_structure_defect(
+    locator_id: str,
+    *,
+    code: str = "STA",
+    severity: str = "major",
+    defect_id: str = "DEFECT-SYNTHETIC-LEGACY-FIT",
+) -> dict:
+    return {
+        "defect_id": defect_id,
+        "code": code,
+        "severity": severity,
+        "summary": "Synthetic historical prose is preserved but never interpreted.",
+        "affected_ids": [locator_id],
+    }
+
+
+def legacy_fit_conflict_documents(
+    *, treatment_derived: bool = False
+) -> tuple[tuple[dict, dict, dict], list[dict]]:
+    documents = base_documents()
+    target = documents[0]["judgments"][0]
+    if treatment_derived:
+        target.update(
+            judgment="unsupported",
+            treatment_class="passing_mention",
+            error_codes=[],
+            severity="minor",
+        )
+        historical = [
+            legacy_structure_defect(
+                target["locator_id"], code="HED", severity="minor"
+            )
+        ]
+    else:
+        target.update(
+            judgment="unsupported",
+            treatment_class="substantive",
+            error_codes=["CON"],
+            severity="minor",
+        )
+        historical = [legacy_structure_defect(target["locator_id"])]
+    return documents, historical
 
 
 def counterfactual_manifest(
@@ -665,6 +769,30 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
             self.assertFalse(report["methodology"]["numeric_trigger_is_automatic_defect"])
             self.assertTrue(receipt["validation"]["decimal_safe_projection_validation"])
 
+    def test_frozen_benchmark_binding_drift_remains_invalid(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = prepare_v6_projection(root)
+            manifest_path = migration_manifest(root, paths)
+            manifest = json.loads(manifest_path.read_text())
+            manifest["repository_state"]["frozen_benchmark_sha256"] = "6" * 64
+            write_json(manifest_path, manifest)
+
+            failure = run_cli(
+                "dimension_score_v7_cli.py",
+                "migrate-v6-to-v7",
+                "--manifest",
+                manifest_path,
+                "--output-directory",
+                root / "v7",
+                expect_ok=False,
+            )
+
+            self.assertEqual(
+                "frozen_benchmark_identity_mismatch", failure["error"]["code"]
+            )
+            self.assertFalse((root / "v7" / "dimension-calculations.v7.json").exists())
+
     def test_migration_refuses_candidate_grouping_hash_drift(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -707,12 +835,14 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
                 paths["config"],
             )
             self.assertFalse(preflight["sufficient"])
+            fit_preflight = preflight["locator_fit_preflight"]
             self.assertEqual(
                 "bare_loc_pos_without_fit_cause",
-                preflight["unresolved_locator_fit"][0]["reason_code"],
+                fit_preflight["unresolved_complete_path_fit"][0]["reason_code"],
             )
             self.assertNotIn(
-                "rationale", json.dumps(preflight["unresolved_locator_fit"])
+                "rationale",
+                json.dumps(fit_preflight["unresolved_complete_path_fit"]),
             )
             manifest = migration_manifest(root, paths)
             failure = run_cli(
@@ -725,7 +855,7 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
                 expect_ok=False,
             )
             self.assertEqual("v7_locator_fit_unresolved", failure["error"]["code"])
-            unresolved = failure["error"]["details"]["unresolved_locator_fit"]
+            unresolved = failure["error"]["details"]["unresolved_complete_path_fit"]
             self.assertEqual(1, len(unresolved))
             self.assertEqual(
                 "bare_loc_pos_without_fit_cause", unresolved[0]["reason_code"]
@@ -736,6 +866,350 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
             self.assertNotIn("favorable nonzero", public_details)
             self.assertNotIn("rationale", public_details)
             self.assertFalse((root / "v7" / "dimension-calculations.v7.json").exists())
+
+    def test_legacy_fit_conflict_routes_to_exact_scope_supplement_deterministically(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            documents, historical_defects = legacy_fit_conflict_documents()
+            frozen_locator = copy.deepcopy(documents[0]["judgments"][0])
+            frozen_defects = copy.deepcopy(historical_defects)
+            paths = prepare_v6_projection(
+                root,
+                documents,
+                legacy_structure_defects=historical_defects,
+            )
+            loaded = v7.load_v7_inputs(paths["config"])
+            ledgers, missing = v5.preflight_loaded(loaded)
+            self.assertEqual([], missing)
+            candidate = json.loads(paths["candidate"].read_text())
+            inventory = json.loads(paths["inventory"].read_text())
+            fit_preflight = v7.locator_fit_preflight(
+                ledgers,
+                loaded["config"]["audit_mode"],
+                legacy_defects=v7.historical_locator_fit_defects(
+                    loaded["structure"]
+                ),
+                candidate=candidate,
+                inventory=inventory,
+            )
+            public_preflight = v7.public_locator_fit_preflight(fit_preflight)
+            v5.validate_schema_document(
+                public_preflight,
+                "v7-locator-fit-preflight.schema.json",
+                "Synthetic migration legacy-fit conflict preflight",
+            )
+            self.assertEqual(
+                {
+                    "deterministically_compatible": 3,
+                    "unresolved_complete_path_fit": 1,
+                    "invalid_or_contradictory_state": 0,
+                },
+                public_preflight["group_counts"],
+            )
+            unresolved = public_preflight["unresolved_complete_path_fit"]
+            self.assertEqual([frozen_locator["locator_id"]], [item["locator_id"] for item in unresolved])
+            self.assertEqual(
+                {
+                    "legacy_structured_fit_classification_conflict_requires_adjudication": 1
+                },
+                public_preflight["unresolved_reason_counts"],
+            )
+            self.assertEqual(
+                {
+                    "locator_audit": "material_mismatch",
+                    "historical_structure_audit": "severe_mismatch",
+                },
+                {
+                    item["source_artifact_role"]: item["implied_fit_category"]
+                    for item in unresolved[0]["structured_classifiers"]
+                },
+            )
+            self.assertFalse(public_preflight["aggregate_v7_score_available"])
+            self.assertNotIn("total_score", public_preflight)
+
+            manifest_path = migration_manifest(root, paths)
+            failure = run_cli(
+                "dimension_score_v7_cli.py",
+                "migrate-v6-to-v7",
+                "--manifest",
+                manifest_path,
+                "--output-directory",
+                root / "v7-unsupplemented",
+                expect_ok=False,
+            )
+            self.assertEqual("v7_locator_fit_unresolved", failure["error"]["code"])
+            self.assertEqual(
+                "legacy_structured_fit_classification_conflict_requires_adjudication",
+                failure["error"]["details"]["unresolved_complete_path_fit"][0][
+                    "reason_code"
+                ],
+            )
+            self.assertNotIn(
+                "invalid_or_contradictory_state",
+                failure["error"]["details"],
+            )
+
+            supplement_path, supplement_preflight, supplement = locator_fit_supplement(
+                root,
+                paths,
+                categories={frozen_locator["locator_id"]: "material_partial_fit"},
+            )
+            self.assertEqual(
+                fit_preflight["unresolved_set_sha256"],
+                supplement_preflight["unresolved_set_sha256"],
+            )
+            self.assertEqual(
+                [frozen_locator["locator_id"]],
+                supplement["scope"]["unresolved_locator_ids"],
+            )
+
+            prohibited_numerical_keys = {
+                "fit_credit",
+                "treatment_credit",
+                "page_treatment_credit",
+                "combined_credit",
+                "grade",
+                "dimension_score",
+                "total_score",
+            }
+
+            def all_keys(value: object) -> set[str]:
+                if isinstance(value, dict):
+                    return set(value) | set().union(
+                        *(all_keys(item) for item in value.values())
+                    )
+                if isinstance(value, list):
+                    return set().union(*(all_keys(item) for item in value))
+                return set()
+
+            self.assertFalse(prohibited_numerical_keys & all_keys(supplement))
+            manifest = json.loads(manifest_path.read_text())
+            manifest["canonical"]["locator_fit_supplement"] = {
+                "path": supplement_path.name,
+                "sha256": digest(supplement_path),
+            }
+            write_json(manifest_path, manifest)
+            frozen_hashes = {key: digest(path) for key, path in paths.items()}
+
+            first_dir = root / "v7-conflict-a"
+            second_dir = root / "v7-conflict-b"
+            run_cli(
+                "dimension_score_v7_cli.py",
+                "migrate-v6-to-v7",
+                "--manifest",
+                manifest_path,
+                "--output-directory",
+                first_dir,
+            )
+            run_cli(
+                "dimension_score_v7_cli.py",
+                "migrate-v6-to-v7",
+                "--manifest",
+                manifest_path,
+                "--output-directory",
+                second_dir,
+            )
+            self.assertEqual(
+                frozen_hashes, {key: digest(path) for key, path in paths.items()}
+            )
+            relative_files = sorted(
+                path.relative_to(first_dir) for path in first_dir.rglob("*.json")
+            )
+            self.assertEqual(
+                relative_files,
+                sorted(path.relative_to(second_dir) for path in second_dir.rglob("*.json")),
+            )
+            for relative in relative_files:
+                self.assertEqual(
+                    (first_dir / relative).read_bytes(),
+                    (second_dir / relative).read_bytes(),
+                    relative,
+                )
+
+            calculation = json.loads(
+                (first_dir / "dimension-calculations.v7.json").read_text()
+            )
+            reliability = next(
+                item
+                for item in calculation["dimensions"]
+                if item["dimension_id"] == "page_reference_reliability"
+            )
+            assignment = next(
+                item
+                for item in reliability["reliability_provenance"][
+                    "locator_utility_assignments"
+                ]
+                if item["locator_id"] == frozen_locator["locator_id"]
+            )
+            self.assertEqual("material_partial_fit", assignment["fit_category"])
+            self.assertEqual("0.7", assignment["fit_score"])
+            self.assertEqual("0.7", assignment["combined_credit"])
+            self.assertEqual(70, assignment["diagnostic_grade"])
+            self.assertEqual(
+                [
+                    "F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1",
+                    "F-COMPAT-LEGACY-FIT-CONFLICT-TO-SUPPLEMENT-V1",
+                ],
+                assignment["compatibility_rule_ids"],
+            )
+            invalid_calculation = copy.deepcopy(calculation)
+            invalid_reliability = next(
+                item
+                for item in invalid_calculation["dimensions"]
+                if item["dimension_id"] == "page_reference_reliability"
+            )
+            invalid_compatibility = next(
+                item
+                for item in invalid_reliability["reliability_provenance"][
+                    "compatibility_classifications"
+                ]
+                if item["locator_id"] == frozen_locator["locator_id"]
+            )
+            invalid_compatibility["fit_rule_id"] = "F-SUPPLEMENTAL-EXACT-100"
+            with self.assertRaises(v5.CalculationError):
+                v5.validate_schema_document(
+                    invalid_calculation,
+                    "dimension-calculations-v3.schema.json",
+                    "Synthetic mismatched conflict fit rule",
+                )
+            for field in (
+                "judgment",
+                "treatment_class",
+                "source_scope_status",
+                "error_codes",
+            ):
+                self.assertEqual(frozen_locator[field], assignment[field])
+
+            migration = json.loads(
+                (first_dir / "score-migration.v6-to-v7.json").read_text()
+            )
+            self.assertEqual(
+                "dimension-score-cli-v7.0.4", migration["tool"]["version"]
+            )
+            view = migration["locator_fit_supplementation"]["views"][0]
+            self.assertEqual(
+                [frozen_locator["locator_id"]], view["conflict_routed_locator_ids"]
+            )
+            self.assertEqual(
+                public_preflight["unresolved_set_sha256"],
+                view["unresolved_set_sha256"],
+            )
+            self.assertFalse(
+                migration["invariants"]["historical_fit_classifier_records_modified"]
+            )
+            self.assertTrue(
+                migration["invariants"]["legacy_fit_conflicts_routed_without_precedence"]
+            )
+            self.assertFalse(
+                migration["invariants"]["invalid_states_supplement_eligible"]
+            )
+            receipt = json.loads(
+                (first_dir / "validation-receipt.v7.json").read_text()
+            )
+            self.assertTrue(receipt["validation"]["legacy_fit_conflict_routing_valid"])
+            self.assertTrue(
+                receipt["validation"]["legacy_fit_conflict_provenance_complete"]
+            )
+            self.assertTrue(
+                receipt["validation"]["invalid_states_excluded_from_unresolved_set"]
+            )
+            self.assertTrue(
+                receipt["validation"][
+                    "aggregate_score_absent_during_preflight_and_adjudication"
+                ]
+            )
+            self.assertEqual(frozen_locator, documents[0]["judgments"][0])
+            self.assertEqual(frozen_defects, historical_defects)
+
+    def test_conflict_with_cross_artifact_path_drift_remains_invalid(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            documents, historical_defects = legacy_fit_conflict_documents()
+            candidate = normalized_candidate(documents[0])
+            candidate["records"][0]["path_id"] = "PATH-SYNTHETIC-DRIFT"
+            paths = prepare_v6_projection(
+                root,
+                documents,
+                candidate_document=candidate,
+                legacy_structure_defects=historical_defects,
+            )
+            manifest = migration_manifest(root, paths)
+            failure = run_cli(
+                "dimension_score_v7_cli.py",
+                "migrate-v6-to-v7",
+                "--manifest",
+                manifest,
+                "--output-directory",
+                root / "v7",
+                expect_ok=False,
+            )
+            self.assertEqual("v7_inputs_insufficient", failure["error"]["code"])
+            invalid = failure["error"]["details"]
+            self.assertTrue(
+                any(
+                    "complete_path_identity" in error
+                    for item in invalid
+                    for error in item.get("state_errors", [])
+                )
+            )
+            self.assertNotIn(
+                "legacy_structured_fit_classification_conflict_requires_adjudication",
+                json.dumps(invalid),
+            )
+            self.assertFalse((root / "v7" / "dimension-calculations.v7.json").exists())
+
+    def test_conflict_supplement_identity_drift_remains_ineligible(self) -> None:
+        cases = {
+            "evaluation": "locator_fit_supplement_identity_mismatch",
+            "candidate": "locator_fit_supplement_identity_mismatch",
+            "audit_mode": "locator_fit_supplement_identity_mismatch",
+            "locator": "locator_fit_supplement_scope_mismatch",
+            "path": "locator_fit_supplement_override_forbidden",
+        }
+        for case, expected_code in cases.items():
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                documents, historical_defects = legacy_fit_conflict_documents()
+                paths = prepare_v6_projection(
+                    root,
+                    documents,
+                    legacy_structure_defects=historical_defects,
+                )
+                manifest_path = migration_manifest(root, paths)
+                supplement_path, _, supplement = locator_fit_supplement(
+                    root, paths
+                )
+                if case == "evaluation":
+                    supplement["evaluation_id"] = "eval-synthetic-drift"
+                elif case == "candidate":
+                    supplement["candidate_identity"]["candidate_sha256"] = "7" * 64
+                elif case == "audit_mode":
+                    supplement["audit_mode"] = "pilot"
+                elif case == "locator":
+                    supplement["decisions"][0]["locator_id"] = "LOC-SYNTHETIC-DRIFT"
+                else:
+                    supplement["decisions"][0]["path_id"] = "PATH-0002"
+                supplement = finalize_locator_fit_supplement(supplement)
+                write_json(supplement_path, supplement)
+                manifest = json.loads(manifest_path.read_text())
+                manifest["canonical"]["locator_fit_supplement"] = {
+                    "path": supplement_path.name,
+                    "sha256": digest(supplement_path),
+                }
+                write_json(manifest_path, manifest)
+                failure = run_cli(
+                    "dimension_score_v7_cli.py",
+                    "migrate-v6-to-v7",
+                    "--manifest",
+                    manifest_path,
+                    "--output-directory",
+                    root / "v7",
+                    expect_ok=False,
+                )
+                self.assertEqual(expected_code, failure["error"]["code"])
+                self.assertFalse(
+                    (root / "v7" / "dimension-calculations.v7.json").exists()
+                )
 
     def test_hash_bound_locator_fit_supplement_resolves_exact_set_in_memory(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -818,7 +1292,7 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
             ):
                 self.assertEqual(frozen_locator[field], assignment[field])
             self.assertEqual(
-                len(preflight["unresolved_locator_fit"]),
+                len(preflight["unresolved_complete_path_fit"]),
                 calculation["locator_fit_compatibility"][
                     "unresolved_before_supplement"
                 ],
@@ -904,7 +1378,7 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
             )
 
     def test_locator_fit_supplement_exact_set_and_order_failures(self) -> None:
-        cases = ("missing", "extra", "duplicate", "reordered", "deterministic")
+        cases = ("missing", "extra", "duplicate", "reordered", "path", "deterministic")
         for case in cases:
             with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
@@ -914,7 +1388,7 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
                 supplement_path, preflight, supplement = locator_fit_supplement(
                     root, paths
                 )
-                self.assertEqual(2, len(preflight["unresolved_locator_fit"]))
+                self.assertEqual(2, len(preflight["unresolved_complete_path_fit"]))
                 deterministic = next(
                     item
                     for item in documents[0]["judgments"]
@@ -939,6 +1413,10 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
                     supplement["decisions"].insert(1, duplicate)
                 elif case == "reordered":
                     supplement["decisions"].reverse()
+                elif case == "path":
+                    supplement["decisions"][0]["path_id"] = deterministic[
+                        "path_id"
+                    ]
                 else:
                     supplement["decisions"].append(
                         {
@@ -972,6 +1450,8 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
                 expected = (
                     "locator_fit_supplement_decision_order_invalid"
                     if case in {"duplicate", "reordered"}
+                    else "locator_fit_supplement_override_forbidden"
+                    if case == "path"
                     else "locator_fit_supplement_scope_mismatch"
                 )
                 self.assertEqual(expected, failure["error"]["code"])
@@ -1003,7 +1483,10 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
                 ("judgment", "supported"),
                 ("treatment_class", "substantive"),
                 ("source_scope_status", "indexable"),
+                ("error_codes", ["CON"]),
+                ("severity", "minor"),
                 ("defects", []),
+                ("historical_artifacts", []),
                 ("gates", []),
                 ("page_treatment", "substantive"),
                 ("rationale", "Prose cannot classify fit."),
@@ -1213,6 +1696,11 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
             )
             for field in (
                 "locator_fit_supplement_applied_in_memory_only",
+                "legacy_fit_conflict_rule_id",
+                "legacy_fit_conflicts_routed_without_precedence",
+                "historical_fit_classifier_records_modified",
+                "invalid_states_supplement_eligible",
+                "bare_loc_pos_automatically_mapped",
                 "evaluation_specific_fit_rule_added",
                 "evaluation_result_used_as_target",
             ):
@@ -1229,6 +1717,10 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
                 "locator_fit_supplement_scope_exact",
                 "locator_fit_supplement_non_fit_fields_unchanged",
                 "locator_fit_supplement_contains_no_manual_numerical_credit_or_score",
+                "legacy_fit_conflict_routing_valid",
+                "legacy_fit_conflict_provenance_complete",
+                "invalid_states_excluded_from_unresolved_set",
+                "aggregate_score_absent_during_preflight_and_adjudication",
             ):
                 receipt["validation"].pop(field, None)
             receipt["receipt_sha256"] = v5.canonical_hash(

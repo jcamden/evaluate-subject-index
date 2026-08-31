@@ -20,7 +20,14 @@ sys.path.insert(0, str(ROOT / "tests"))
 import dimension_score_cli as v5  # noqa: E402
 import dimension_score_v6_cli as v6  # noqa: E402
 import dimension_score_v7_cli as v7  # noqa: E402
-from locator_utility import assign_locator_utility, combined_state_errors  # noqa: E402
+from locator_utility import (  # noqa: E402
+    LEGACY_FIT_COMPATIBILITY_RULE_ID,
+    LEGACY_FIT_CONFLICT_REASON_CODE,
+    LEGACY_FIT_CONFLICT_RULE_ID,
+    assign_locator_utility,
+    combined_state_errors,
+    locator_fit_state_analysis,
+)
 from test_dimension_scoring_v5 import base_documents, calculation_files  # noqa: E402
 from test_dimension_scoring_v6 import reliability_ledgers  # noqa: E402
 
@@ -292,6 +299,168 @@ class LocatorUtilityPolicyTests(unittest.TestCase):
                     ["F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1"],
                     assignment["compatibility_rule_ids"],
                 )
+
+    def test_conflicting_valid_legacy_fit_classifiers_route_to_supplement(self) -> None:
+        record = state(
+            "unsupported",
+            "substantive",
+            codes=["CON"],
+            severity="minor",
+        ) | {"path_id": "PATH-SYNTHETIC-CONFLICT"}
+        historical = [legacy_defect("STA", "major")]
+        frozen_record = copy.deepcopy(record)
+        frozen_historical = copy.deepcopy(historical)
+
+        analysis = locator_fit_state_analysis(
+            record, legacy_defects=historical
+        )
+        self.assertEqual([], analysis["hard_errors"])
+        self.assertEqual(
+            [LEGACY_FIT_CONFLICT_REASON_CODE],
+            analysis["unresolved_reason_codes"],
+        )
+        conflict = analysis["fit_conflict"]
+        self.assertEqual(LEGACY_FIT_CONFLICT_RULE_ID, conflict["conflict_rule_id"])
+        self.assertEqual(
+            "derived_complete_path_fit_category_only", conflict["conflict_scope"]
+        )
+        self.assertEqual(
+            ["material_mismatch", "severe_mismatch"],
+            conflict["independently_implied_fit_categories"],
+        )
+        self.assertFalse(conflict["classifier_precedence_applied"])
+        self.assertTrue(conflict["supplement_eligible"])
+        self.assertFalse(conflict["prose_inference_used"])
+        classifiers = conflict["structured_classifiers"]
+        self.assertEqual(2, len(classifiers))
+        self.assertEqual(
+            {"locator_audit", "historical_structure_audit"},
+            {item["source_artifact_role"] for item in classifiers},
+        )
+        self.assertEqual(
+            {"material_mismatch", "severe_mismatch"},
+            {item["implied_fit_category"] for item in classifiers},
+        )
+        self.assertTrue(
+            all(
+                item["bound_locator_id"] == record["locator_id"]
+                and item["path_id"] == record["path_id"]
+                and item["prose_inference_used"] is False
+                for item in classifiers
+            )
+        )
+        with self.assertRaisesRegex(
+            ValueError, LEGACY_FIT_CONFLICT_REASON_CODE
+        ):
+            assign_locator_utility(record, legacy_defects=historical)
+
+        assignment = assign_locator_utility(
+            record,
+            legacy_defects=historical,
+            supplemental_fit_decision={
+                "decision_id": "FITDEC-123456789ABC",
+                "fit_category": "material_partial_fit",
+                "evidence_ids": [record["locator_id"]],
+            },
+        ).as_dict()
+        self.assertEqual("supplemental_locator_fit", assignment["fit_classification_source"])
+        self.assertEqual("material_partial_fit", assignment["fit_category"])
+        self.assertEqual(
+            [LEGACY_FIT_COMPATIBILITY_RULE_ID, LEGACY_FIT_CONFLICT_RULE_ID],
+            assignment["compatibility_rule_ids"],
+        )
+        self.assertEqual(frozen_record, record)
+        self.assertEqual(frozen_historical, historical)
+
+    def test_treatment_indication_and_valid_legacy_classifier_conflict_narrowly(self) -> None:
+        record = state(
+            "unsupported", "passing_mention", severity="minor"
+        ) | {"path_id": "PATH-SYNTHETIC-TREATMENT-CONFLICT"}
+        analysis = locator_fit_state_analysis(
+            record,
+            legacy_defects=[legacy_defect("HED", "minor")],
+        )
+        self.assertEqual([], analysis["hard_errors"])
+        self.assertEqual(
+            [LEGACY_FIT_CONFLICT_REASON_CODE],
+            analysis["unresolved_reason_codes"],
+        )
+        classifiers = analysis["fit_conflict"]["structured_classifiers"]
+        self.assertEqual(
+            {
+                "unsupported_weak_treatment_fit_indication": "exact_fit",
+                "legacy_code_severity_compatibility": "material_mismatch",
+            },
+            {
+                item["classifier_basis"]: item["implied_fit_category"]
+                for item in classifiers
+            },
+        )
+        with self.assertRaisesRegex(ValueError, LEGACY_FIT_CONFLICT_REASON_CODE):
+            assign_locator_utility(
+                record,
+                legacy_defects=[legacy_defect("HED", "minor")],
+            )
+
+    def test_conflict_preflight_is_score_free_unique_and_schema_valid(self) -> None:
+        record = state(
+            "unsupported",
+            "substantive",
+            codes=["CON"],
+            severity="minor",
+            locator_id="LOC-SYNTHETIC-CONFLICT",
+        ) | {"path_id": "PATH-SYNTHETIC-CONFLICT"}
+        ledgers = reliability_ledgers([record])
+        report = v7.locator_fit_preflight(
+            ledgers,
+            "full",
+            legacy_defects=[
+                legacy_defect(
+                    "STA",
+                    "major",
+                    locator_id=record["locator_id"],
+                    defect_id="DEFECT-SYNTHETIC-CONFLICT",
+                )
+            ],
+        )
+        public = v7.public_locator_fit_preflight(report)
+        self.assertEqual(
+            {
+                "deterministically_compatible": 0,
+                "unresolved_complete_path_fit": 1,
+                "invalid_or_contradictory_state": 0,
+            },
+            public["group_counts"],
+        )
+        self.assertEqual(
+            {LEGACY_FIT_CONFLICT_REASON_CODE: 1},
+            public["unresolved_reason_counts"],
+        )
+        self.assertEqual(
+            [record["locator_id"]],
+            [
+                item["locator_id"]
+                for item in public["unresolved_complete_path_fit"]
+            ],
+        )
+        self.assertFalse(public["aggregate_v7_score_available"])
+        self.assertNotIn("total_score", public)
+        self.assertNotIn("dimension_score", public)
+        self.assertEqual(
+            v5.canonical_hash(
+                {
+                    "unresolved_locator_fit": public[
+                        "unresolved_complete_path_fit"
+                    ]
+                }
+            ),
+            public["unresolved_set_sha256"],
+        )
+        v5.validate_schema_document(
+            public,
+            "v7-locator-fit-preflight.schema.json",
+            "Synthetic legacy-fit conflict preflight",
+        )
 
     def test_legacy_fit_neutral_invalid_and_ambiguous_states_fail_closed(self) -> None:
         base = state(

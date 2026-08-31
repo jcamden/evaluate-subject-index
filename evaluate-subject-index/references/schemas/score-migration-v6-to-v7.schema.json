@@ -159,6 +159,11 @@
         "representation_views_recalculated_from_own_inputs": {"const": true},
         "supplemental_review_narrowly_scoped_and_hash_bound": {"const": true},
         "locator_fit_supplement_applied_in_memory_only": {"const": true},
+        "legacy_fit_conflict_rule_id": {"const": "F-COMPAT-LEGACY-FIT-CONFLICT-TO-SUPPLEMENT-V1"},
+        "legacy_fit_conflicts_routed_without_precedence": {"const": true},
+        "historical_fit_classifier_records_modified": {"const": false},
+        "invalid_states_supplement_eligible": {"const": false},
+        "bare_loc_pos_automatically_mapped": {"const": false},
         "evaluation_specific_fit_rule_added": {"const": false},
         "evaluation_result_used_as_target": {"const": false},
         "oxford_artifacts_modified": {"const": false},
@@ -234,6 +239,10 @@
               "unresolved_set_count_before_supplementation": {"type": "integer", "minimum": 0},
               "unresolved_set_count_after_supplementation": {"const": 0},
               "unresolved_locator_ids": {"type": "array", "items": {"type": "string", "pattern": "^LOC-"}, "uniqueItems": true},
+              "unresolved_records_without_supplement": {"type": "array", "items": {"$ref": "v7-locator-fit-preflight.schema.json#/$defs/unresolvedFit"}},
+              "unresolved_reason_counts_without_supplement": {"$ref": "v7-locator-fit-preflight.schema.json#/$defs/unresolvedReasonCounts"},
+              "preflight_group_counts": {"$ref": "v7-locator-fit-preflight.schema.json#/$defs/groupCounts"},
+              "conflict_routed_locator_ids": {"type": "array", "items": {"type": "string", "pattern": "^LOC-"}, "uniqueItems": true},
               "unresolved_set_sha256": {"$ref": "#/$defs/sha256"},
               "compatibility_classifications_without_supplement": {"type": "array", "items": {"$ref": "#/$defs/legacyFitClassification"}},
               "supplement": {"oneOf": [{"$ref": "#/$defs/locatorFitSupplementArtifact"}, {"type": "null"}]}
@@ -298,6 +307,27 @@
         "properties": {
           "frozen_evidence": {"required": ["supplemental_locator_fit_supplements"]},
           "invariants": {"required": ["locator_fit_supplement_applied_in_memory_only", "evaluation_specific_fit_rule_added", "evaluation_result_used_as_target"]}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"tool": {"properties": {"version": {"const": "dimension-score-cli-v7.0.4"}}, "required": ["version"]}}, "required": ["tool"]},
+      "then": {
+        "required": ["locator_fit_supplementation"],
+        "properties": {
+          "frozen_evidence": {"required": ["supplemental_locator_fit_supplements"]},
+          "locator_fit_supplementation": {
+            "properties": {
+              "views": {
+                "items": {
+                  "required": ["unresolved_records_without_supplement", "unresolved_reason_counts_without_supplement", "preflight_group_counts", "conflict_routed_locator_ids"]
+                }
+              }
+            }
+          },
+          "invariants": {
+            "required": ["locator_fit_supplement_applied_in_memory_only", "legacy_fit_conflict_rule_id", "legacy_fit_conflicts_routed_without_precedence", "historical_fit_classifier_records_modified", "invalid_states_supplement_eligible", "bare_loc_pos_automatically_mapped", "evaluation_specific_fit_rule_added", "evaluation_result_used_as_target"]
+          }
         }
       }
     }

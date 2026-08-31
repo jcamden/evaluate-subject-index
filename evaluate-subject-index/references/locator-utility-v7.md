@@ -14,7 +14,7 @@ For each locator, V7 reads:
 - current structured defects whose `affected_item_ids` contain that locator ID, including each defect's code, owner, kind, severity, and ID; and
 - for an immutable historical `structure-audit-v3` only, locator-bound top-level defects with a validated code, severity, ID, and `affected_ids`, even when that legacy contract predates `defect_kind`.
 
-The validated locator audit and scoring-context defect ledger are exhaustive for the frozen evaluation. Absence of a fit-relevant code or locator-bound defect may therefore prove that an unsupported weak-presence locator has no independent path-fit failure. If the available fields are incomplete, contradictory, or permit more than one fit category, V7 rejects the locator instead of reading prose or choosing the more favorable category.
+The validated locator audit and scoring-context defect ledger are exhaustive for the frozen evaluation. Absence of a fit-relevant code or locator-bound defect may therefore prove that an unsupported weak-presence locator has no independent path-fit failure. Incomplete, malformed, identity-inconsistent, or substantively contradictory states are invalid. The one narrow exception is a disagreement confined to the category independently derived by otherwise valid legacy structured classifiers: that state is unresolved and supplement-eligible under the rule below. V7 never reads prose or chooses a favorable, adverse, newest, highest-severity, or lowest-severity classifier.
 
 ## Current-code inventory
 
@@ -51,7 +51,11 @@ The current locator-audit schema permits `SCP`, `SEL`, `CON`, `STA`, `LOC_POS`, 
 
 The closed compatibility rule `F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1` applies only at the `structure-audit-v3` history boundary. It never fabricates or writes a modern `defect_kind`. When locator binding, scope, code, severity, and all other structured fields are valid and mutually consistent, legacy `SCP`, `CON`, `STA`, `CMP`, `HED`, or `SUB` evidence uses the already approved severity mapping: minor is material mismatch, major is severe mismatch, and critical is no fit.
 
-Compatibility is permitted only when the complete structured state selects exactly one fit category. Different legacy severities, or a legacy projection that conflicts with a current structured classifier, are invalid rather than resolved by precedence. Cosmetic evidence supplies no category. `MEC`, `SEL`, and consequence-only `LOC_POS` remain fit-neutral or insufficient; unknown codes, missing severity, ambiguous scope, and contradictory combinations fail closed. Modern V4/V5 defects cannot opt into this boundary by omitting `defect_kind`.
+Compatibility is deterministic only when the complete structured state selects exactly one fit category. Cosmetic evidence supplies no category. `MEC`, `SEL`, and consequence-only `LOC_POS` remain fit-neutral or insufficient; unknown codes, missing severity, ambiguous scope, and contradictory combinations fail closed. Modern V4/V5 defects cannot opt into this boundary by omitting `defect_kind`.
+
+Rule `F-COMPAT-LEGACY-FIT-CONFLICT-TO-SUPPLEMENT-V1` applies when at least two individually schema-valid structured classifiers, at least one of them using the legacy compatibility boundary, are bound to the same evaluation, candidate, audit mode, locator, and unique normalized complete path; every code and severity is recognized; each classifier independently selects an existing category; and the only disagreement is the derived complete-path-fit category. No prose may be needed, and exposing the conflict may not require changing judgment, treatment, scope, code, severity, defect, evidence, or any historical record. The locator is then `unresolved_complete_path_fit` with reason `legacy_structured_fit_classification_conflict_requires_adjudication`. No classifier wins, classifications are not averaged, and the state is not called deterministically compatible or invalid.
+
+The unresolved record preserves the locator/path binding and every classifier's artifact role, stable record ID, structured basis, code/severity, independently implied category/rule, legacy compatibility identity when applicable, and explicit no-prose/no-precedence/no-history-change declarations. Evaluation/candidate/audit/locator/path drift, incompatible normalized paths, missing identities, malformed records, unsupported values, internal treatment/scope contradictions, artifact/hash/containment failures, prose-only resolution, and disagreement beyond fit remain invalid and supplement-ineligible.
 
 ## Treatment axis
 
@@ -84,13 +88,15 @@ Fit asks whether the frozen treatment supports the complete heading path. Positi
 | `F-UNINSPECTABLE-BOUND` | unavailable or ambiguous evidence with `uninspectable` judgment | neutral uncertainty bound | null |
 | `F-NOT-MEASURED-REJECT` | required full-audit locator not measured | validation failure | null |
 
-Under the complete current structured-defect contract, the strongest applicable severity controls: critical/no-fit, then major, then minor. Historical missing-`defect_kind` compatibility is narrower: every applicable classifier must converge on one category, or validation fails. Cosmetic evidence cannot justify an `unsupported` judgment. A `supported` state with a non-cosmetic independent fit defect or a known invalid destination is contradictory. A positive `partially_supported` state remains 0.70 unless a known invalid/no-fit destination makes that combined state contradictory.
+Under the complete current structured-defect contract, the strongest applicable severity controls: critical/no-fit, then major, then minor. Historical missing-`defect_kind` compatibility is narrower: convergence produces a deterministic classification; an eligible fit-only disagreement is routed to supplementation; every broader contradiction remains invalid. Cosmetic evidence cannot justify an `unsupported` judgment. A `supported` state with a non-cosmetic independent fit defect or a known invalid destination is contradictory. A positive `partially_supported` state remains 0.70 unless a known invalid/no-fit destination makes that combined state contradictory.
 
 Weak-presence exact fit is deliberately narrow. It requires an indexable, inspectable weak-presence treatment, `unsupported` judgment, and exhaustive absence of `SCP`, `CON`, `STA`, `CMP`, `HED`, or `SUB` causes and locator-bound no-fit or fit-relevant defects. `SEL` is permitted. A bare `LOC_POS` without a classifying cause is ambiguous and fails closed.
 
 ## Supplemental complete-path-fit decision
 
-An unsupplemented V6-to-V7 migration first derives every deterministic compatibility classification and the complete unresolved locator set. Only that unresolved set may be carried by a separately authorized `subject-index-v7-locator-fit-supplement-v1`. The supplement transports a semantic fit-category decision; it does not create the decision, inspect source pages, or infer from rationale, headings, summaries, explanations, popovers, or candidate display text.
+An unsupplemented V6-to-V7 migration first places every locator in exactly one group: `deterministically_compatible`, `unresolved_complete_path_fit`, or `invalid_or_contradictory_state`. It reports reason counts without an aggregate V7 score. Ordinary bare-`LOC_POS` uncertainty and eligible legacy-classifier conflict use distinct reasons. Every eligible locator appears exactly once in the sorted unresolved set and set hash; invalid states never appear there.
+
+Only that unresolved set may be carried by a separately authorized `subject-index-v7-locator-fit-supplement-v1`. The supplement transports a semantic fit-category decision; it does not create the decision, inspect source pages, or infer from rationale, headings, summaries, explanations, popovers, or candidate display text. For a conflict-routed locator, adjudication assesses the complete path at the cited destination prospectively. It does not declare which historical classifier was correct and does not amend either record.
 
 Each supplemental decision selects only one existing fit category. The calculator obtains `F_j` from the frozen table above and still derives `L_j=min(T_j,F_j)` and `G_j=100L_j`. The artifact cannot contain numerical credit, treatment, judgment, scope, defects, gates, grades, dimension scores, or totals, and it is applied only in memory. Exact file hashes bind every artifact that affects the unresolved set, including each counterfactual view's own inputs and representation-correction provenance.
 
@@ -121,7 +127,7 @@ V7 rejects, at minimum:
 - `partially_supported` with absent treatment;
 - `unsupported` substantive or mixed treatment without a classifying fit/no-fit state;
 - unsupported weak presence with ambiguous bare `LOC_POS` evidence;
-- incompatible legacy code/severity projections that permit more than one fit category;
+- legacy fit-classifier disagreement accompanied by any identity, schema, artifact, treatment, scope, judgment, code, severity, defect, or evidence inconsistency outside the narrowly eligible fit-only conflict;
 - `unsupported` justified only by cosmetic or fit-neutral evidence;
 - locator-bound `COV`, `LOC_NEG`, `XRF`, `DEN`, or unrelated-stage defect kinds;
 - conflicting no-fit and positive-fit states; and

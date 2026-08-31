@@ -10,7 +10,9 @@ python evaluate-subject-index/scripts/dimension_score_v7_cli.py preflight \
   --output /path/to/v7-preflight.json
 ```
 
-Preflight requires an unambiguous structured treatment and fit mapping for every locator. It reports missing/contradictory fields and never reads rationale or evidence-summary prose. For each unresolved fit state it emits only public-safe structured fields: locator/path IDs, stable reason code(s), present judgment, treatment, scope, structured codes, applicable defect IDs, and `complete_path_fit_category` as the missing classifier. It emits no source excerpt, rationale, candidate display text, or private page evidence and produces no score.
+Preflight assigns every frozen locator exactly once to `deterministically_compatible`, `unresolved_complete_path_fit`, or `invalid_or_contradictory_state`. It reports group counts and unresolved-reason counts, never reads rationale or evidence-summary prose, and exposes `aggregate_v7_score_available: false`. Ordinary bare `LOC_POS` uses `bare_loc_pos_without_fit_cause`; an eligible disagreement among individually valid legacy structured classifiers uses `legacy_structured_fit_classification_conflict_requires_adjudication` under `F-COMPAT-LEGACY-FIT-CONFLICT-TO-SUPPLEMENT-V1`.
+
+For ordinary unresolved states, preflight emits only public-safe structured locator/path IDs, reason codes, present judgment, treatment, scope, structured codes, applicable defect IDs, and `complete_path_fit_category` as the missing classifier. A conflict record additionally preserves each participating classifier's source-artifact role, stable record identity, structured basis, code/severity, and independently implied category/rule plus explicit no-prose/no-precedence/no-history-change declarations. It emits no source excerpt, rationale, candidate display text, private page evidence, credit, grade, dimension score, total, or aggregate score. Invalid identity, schema, assignment, artifact, or broader contradiction states remain outside the unresolved set and stop processing.
 
 ## Derive structure-locator review
 
@@ -61,7 +63,7 @@ validate as `subject-index-v7-architecture-review-supplement-v1`; its sorted
 decision paths must equal the mechanically unresolved trigger set exactly.
 Omit the field when no supplemental decision is needed.
 
-After an unsupplemented stop on unresolved complete-path fit, add `locator_fit_supplement` only to the affected canonical or counterfactual view. The referenced artifact must validate as `subject-index-v7-locator-fit-supplement-v1`; its sorted decisions must equal the independently derived unresolved locator-ID set exactly. Each decision supplies an existing fit category, not a numerical credit. A separately bound artifact is required for every counterfactual unless all relevant artifact identities independently validate as identical.
+After an unsupplemented stop on unresolved complete-path fit, add `locator_fit_supplement` only to the affected canonical or counterfactual view. The referenced artifact must validate as `subject-index-v7-locator-fit-supplement-v1`; its sorted decisions must equal the independently derived unresolved locator-ID set exactly. Each decision supplies an existing fit category, not a numerical credit. For a conflict-routed locator, it resolves the prospective V7 fit axis without selecting a historically “correct” classifier or rewriting either record. A separately bound artifact is required for every counterfactual unless all relevant artifact identities independently validate as identical.
 
 ```bash
 python evaluate-subject-index/scripts/dimension_score_v7_cli.py migrate-v6-to-v7 \

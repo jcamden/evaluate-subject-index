@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "v7-locator-fit-preflight.schema.json",
+  "title": "V7 locator complete-path-fit preflight",
+  "description": "Score-free classification of each frozen locator into one and only one deterministic, supplement-eligible unresolved, or invalid state.",
+  "type": "object",
+  "required": ["schema_version", "deterministically_compatible", "unresolved_complete_path_fit", "invalid_or_contradictory_state", "compatibility_classifications", "group_counts", "unresolved_reason_counts", "unresolved_set_sha256", "aggregate_v7_score_available", "prose_inference_used", "historical_artifacts_modified"],
+  "properties": {
+    "schema_version": {"const": "subject-index-v7-locator-fit-preflight-v1"},
+    "deterministically_compatible": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/deterministicFit"}
+    },
+    "unresolved_complete_path_fit": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/unresolvedFit"}
+    },
+    "invalid_or_contradictory_state": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/invalidState"}
+    },
+    "compatibility_classifications": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/legacyCompatibilityClassification"}
+    },
+    "group_counts": {"$ref": "#/$defs/groupCounts"},
+    "unresolved_reason_counts": {"$ref": "#/$defs/unresolvedReasonCounts"},
+    "unresolved_set_sha256": {"$ref": "#/$defs/sha256"},
+    "aggregate_v7_score_available": {"const": false},
+    "prose_inference_used": {"const": false},
+    "historical_artifacts_modified": {"const": false}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "locatorId": {"type": "string", "pattern": "^LOC-"},
+    "pathId": {"type": "string", "pattern": "^PATH-"},
+    "defectIds": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^DEFECT-"},
+      "uniqueItems": true
+    },
+    "fitCategory": {
+      "enum": ["exact_fit", "material_partial_fit", "material_mismatch", "severe_mismatch", "no_fit"]
+    },
+    "preflightFitCategory": {
+      "enum": ["exact_fit", "material_partial_fit", "material_mismatch", "severe_mismatch", "no_fit", "uninspectable", "not_measured"]
+    },
+    "compatibilityRuleIds": {
+      "type": "array",
+      "oneOf": [
+        {"maxItems": 0},
+        {"const": ["F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1"]},
+        {"const": ["F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1", "F-COMPAT-LEGACY-FIT-CONFLICT-TO-SUPPLEMENT-V1"]}
+      ]
+    },
+    "reasonCode": {
+      "enum": [
+        "bare_loc_pos_without_fit_cause",
+        "unsupported_material_treatment_without_fit_classifier",
+        "fit_evidence_without_classifying_severity",
+        "legacy_structured_fit_classification_conflict_requires_adjudication"
+      ]
+    },
+    "deterministicFit": {
+      "type": "object",
+      "required": ["locator_id", "path_id", "fit_category", "fit_classification_source", "compatibility_rule_ids", "prose_inference_used"],
+      "properties": {
+        "locator_id": {"$ref": "#/$defs/locatorId"},
+        "path_id": {"$ref": "#/$defs/pathId"},
+        "fit_category": {"$ref": "#/$defs/preflightFitCategory"},
+        "fit_classification_source": {
+          "enum": [
+            "frozen_uninspectable_state",
+            "structured_no_fit_precedence",
+            "frozen_supported_judgment",
+            "frozen_partially_supported_judgment",
+            "frozen_absent_treatment",
+            "modern_structured_fit_evidence",
+            "legacy_code_severity_compatibility",
+            "frozen_weak_treatment_only",
+            "not_measured"
+          ]
+        },
+        "compatibility_rule_ids": {"$ref": "#/$defs/compatibilityRuleIds"},
+        "prose_inference_used": {"const": false}
+      },
+      "additionalProperties": false
+    },
+    "structuredClassifier": {
+      "type": "object",
+      "required": ["source_artifact_role", "stable_record_id", "classifier_basis", "bound_locator_id", "path_id", "binding_basis", "error_codes", "severity", "implied_fit_category", "implied_fit_rule_id", "compatibility_rule_id", "prose_inference_used"],
+      "properties": {
+        "source_artifact_role": {"enum": ["locator_audit", "scoring_context_defect", "historical_structure_audit"]},
+        "stable_record_id": {"type": "string", "minLength": 1},
+        "classifier_basis": {"enum": ["locator_code_severity", "unsupported_weak_treatment_fit_indication", "current_defect_code_severity", "legacy_code_severity_compatibility"]},
+        "bound_locator_id": {"$ref": "#/$defs/locatorId"},
+        "path_id": {"$ref": "#/$defs/pathId"},
+        "binding_basis": {"enum": ["direct_locator_and_path_identity", "unique_locator_id_to_path_identity"]},
+        "error_codes": {
+          "type": "array",
+          "items": {"enum": ["SCP", "COV", "SEL", "CON", "STA", "LOC_POS", "LOC_NEG", "CMP", "HED", "SUB", "XRF", "DEN", "MEC"]},
+          "uniqueItems": true
+        },
+        "severity": {"enum": ["minor", "major", "critical", null]},
+        "implied_fit_category": {"enum": ["exact_fit", "material_mismatch", "severe_mismatch", "no_fit"]},
+        "implied_fit_rule_id": {"enum": ["F-WEAK-TREATMENT-ONLY-100", "F-MINOR-MISMATCH-035", "F-MAJOR-MISMATCH-015", "F-NO-FIT-000"]},
+        "compatibility_rule_id": {"enum": ["F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1", null]},
+        "source_unit_id": {"type": "string", "minLength": 1},
+        "prose_inference_used": {"const": false}
+      },
+      "additionalProperties": false
+    },
+    "unresolvedFit": {
+      "type": "object",
+      "required": ["locator_id", "path_id", "reason_code", "reason_codes", "present_judgment", "treatment_class", "source_scope_status", "structured_codes", "applicable_structured_defect_ids", "missing_classifier_category", "prose_inference_permitted"],
+      "properties": {
+        "locator_id": {"$ref": "#/$defs/locatorId"},
+        "path_id": {"$ref": "#/$defs/pathId"},
+        "reason_code": {"$ref": "#/$defs/reasonCode"},
+        "reason_codes": {"type": "array", "items": {"$ref": "#/$defs/reasonCode"}, "minItems": 1, "uniqueItems": true},
+        "present_judgment": {"const": "unsupported"},
+        "treatment_class": {"enum": ["substantive", "mixed", "passing_mention", "attribution_only", "citation_only", "incidental_example"]},
+        "source_scope_status": {"const": "indexable"},
+        "structured_codes": {
+          "type": "array",
+          "items": {"enum": ["SCP", "COV", "SEL", "CON", "STA", "LOC_POS", "LOC_NEG", "CMP", "HED", "SUB", "XRF", "DEN", "MEC"]},
+          "uniqueItems": true
+        },
+        "applicable_structured_defect_ids": {"$ref": "#/$defs/defectIds"},
+        "missing_classifier_category": {"const": "complete_path_fit_category"},
+        "prose_inference_permitted": {"const": false},
+        "conflict_rule_id": {"const": "F-COMPAT-LEGACY-FIT-CONFLICT-TO-SUPPLEMENT-V1"},
+        "conflict_scope": {"const": "derived_complete_path_fit_category_only"},
+        "structured_classifiers": {"type": "array", "items": {"$ref": "#/$defs/structuredClassifier"}, "minItems": 2, "uniqueItems": true},
+        "independently_implied_fit_categories": {"type": "array", "items": {"$ref": "#/$defs/fitCategory"}, "minItems": 2, "uniqueItems": true},
+        "classifier_precedence_applied": {"const": false},
+        "supplement_eligible": {"const": true},
+        "prose_inference_used": {"const": false},
+        "historical_records_modified": {"const": false}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"reason_code": {"const": "legacy_structured_fit_classification_conflict_requires_adjudication"}}, "required": ["reason_code"]},
+          "then": {"required": ["conflict_rule_id", "conflict_scope", "structured_classifiers", "independently_implied_fit_categories", "classifier_precedence_applied", "supplement_eligible", "prose_inference_used", "historical_records_modified"]},
+          "else": {
+            "not": {
+              "anyOf": [
+                {"required": ["conflict_rule_id"]},
+                {"required": ["structured_classifiers"]},
+                {"required": ["independently_implied_fit_categories"]}
+              ]
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "invalidState": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["code", "path", "message", "locator_id", "path_id", "frozen_state", "state_errors", "prose_inference_permitted"],
+          "properties": {
+            "code": {"const": "inconsistent_or_incomplete_locator_utility_state"},
+            "path": {"type": "string", "minLength": 1},
+            "message": {"type": "string", "minLength": 1},
+            "locator_id": {"type": ["string", "null"]},
+            "path_id": {"type": ["string", "null"]},
+            "frozen_state": {"type": "object"},
+            "state_errors": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+            "prose_inference_permitted": {"const": false}
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["code", "path", "message", "locator_ids", "prose_inference_permitted"],
+          "properties": {
+            "code": {"const": "required_locator_not_measured"},
+            "path": {"const": "locator_not_measured"},
+            "message": {"type": "string", "minLength": 1},
+            "locator_ids": {"type": "array", "items": {"$ref": "#/$defs/locatorId"}, "minItems": 1, "uniqueItems": true},
+            "prose_inference_permitted": {"const": false}
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "legacyCompatibilityClassification": {
+      "type": "object",
+      "required": ["locator_id", "path_id", "compatibility_rule_id", "fit_category", "fit_rule_id", "applicable_structured_defect_ids", "prose_inference_used"],
+      "properties": {
+        "locator_id": {"$ref": "#/$defs/locatorId"},
+        "path_id": {"$ref": "#/$defs/pathId"},
+        "compatibility_rule_id": {"const": "F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1"},
+        "fit_category": {"enum": ["material_mismatch", "severe_mismatch", "no_fit"]},
+        "fit_rule_id": {"enum": ["F-MINOR-MISMATCH-035", "F-MAJOR-MISMATCH-015", "F-NO-FIT-000"]},
+        "applicable_structured_defect_ids": {"$ref": "#/$defs/defectIds"},
+        "prose_inference_used": {"const": false}
+      },
+      "additionalProperties": false
+    },
+    "groupCounts": {
+      "type": "object",
+      "required": ["deterministically_compatible", "unresolved_complete_path_fit", "invalid_or_contradictory_state"],
+      "properties": {
+        "deterministically_compatible": {"type": "integer", "minimum": 0},
+        "unresolved_complete_path_fit": {"type": "integer", "minimum": 0},
+        "invalid_or_contradictory_state": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "unresolvedReasonCounts": {
+      "type": "object",
+      "properties": {
+        "bare_loc_pos_without_fit_cause": {"type": "integer", "minimum": 1},
+        "unsupported_material_treatment_without_fit_classifier": {"type": "integer", "minimum": 1},
+        "fit_evidence_without_classifying_severity": {"type": "integer", "minimum": 1},
+        "legacy_structured_fit_classification_conflict_requires_adjudication": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

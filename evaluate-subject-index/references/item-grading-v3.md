@@ -18,7 +18,7 @@ Possible measured grades are 100, 70, 35, 25, 15, and 0. Uninspectable or pilot-
 - minimum combination rule, credit, and grade; and
 - bounded/excluded/rejected reason.
 
-When historical code/severity compatibility or a locator-fit supplement supplied the fit classification, the row also exposes the stable compatibility rule or supplemental decision/evidence identities. These are provenance, not additional grade inputs. A supplement cannot supply `G_j`; item construction still derives it exactly from the calculation's `combined_credit`.
+When historical code/severity compatibility, conflict routing, or a locator-fit supplement supplied the fit classification, the row also exposes the stable compatibility/conflict rules or supplemental decision/evidence identities. These are provenance, not additional grade inputs and not a declaration that one historical classifier was correct. A supplement cannot supply `G_j`; item construction still derives it exactly from the calculation's `combined_credit`.
 
 The grade equals the calculation credit on a 0–100 display scale. Page-reference Reliability never averages grades. Its only canonical precision input is `reliability_provenance.locator_utility_assignments[].combined_credit`.
 

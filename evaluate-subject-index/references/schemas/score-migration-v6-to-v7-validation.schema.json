@@ -30,6 +30,10 @@
         "locator_fit_supplement_scope_exact": {"const": true},
         "locator_fit_supplement_non_fit_fields_unchanged": {"const": true},
         "locator_fit_supplement_contains_no_manual_numerical_credit_or_score": {"const": true},
+        "legacy_fit_conflict_routing_valid": {"const": true},
+        "legacy_fit_conflict_provenance_complete": {"const": true},
+        "invalid_states_excluded_from_unresolved_set": {"const": true},
+        "aggregate_score_absent_during_preflight_and_adjudication": {"const": true},
         "decimal_safe_projection_validation": {"const": true},
         "gate_outcomes_equal": {"const": true},
         "representation_provenance_complete": {"const": true}
@@ -88,7 +92,7 @@
       "then": {
         "properties": {
           "validation": {
-            "required": ["locator_fit_supplement_hash_valid", "locator_fit_supplement_scope_exact", "locator_fit_supplement_non_fit_fields_unchanged", "locator_fit_supplement_contains_no_manual_numerical_credit_or_score"]
+            "required": ["locator_fit_supplement_hash_valid", "locator_fit_supplement_scope_exact", "locator_fit_supplement_non_fit_fields_unchanged", "locator_fit_supplement_contains_no_manual_numerical_credit_or_score", "legacy_fit_conflict_routing_valid", "legacy_fit_conflict_provenance_complete", "invalid_states_excluded_from_unresolved_set", "aggregate_score_absent_during_preflight_and_adjudication"]
           }
         }
       }

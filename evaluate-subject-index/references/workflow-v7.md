@@ -17,8 +17,8 @@ An unreviewed trigger blocks a full score. The permitted follow-up is a narrowly
 
 1. Resolve and hash the complete immutable V6 projection and its original calculation inputs.
 2. Recalculate V6 and require canonical decimal-safe equality.
-3. Run unsupplemented historical code/severity compatibility, derive the complete unresolved locator-fit set with stable reason codes, and stop on invalid state.
-4. If a separately authorized locator-fit supplement exists, bind it only now and require every and only the unresolved locators; otherwise unresolved fit blocks scoring.
+3. Run unsupplemented historical code/severity compatibility and place every locator in the deterministic, unresolved-fit, or invalid group. Route an eligible fit-only legacy-classifier disagreement under `F-COMPAT-LEGACY-FIT-CONFLICT-TO-SUPPLEMENT-V1`, preserve classifier provenance, derive the complete unresolved set/hash with stable reason counts and no aggregate score, and stop on invalid state.
+4. If a separately authorized locator-fit supplement exists, bind it only now and require every and only the unresolved locators; otherwise unresolved fit blocks scoring. A conflict decision resolves only prospective V7 fit and does not select a winning historical classifier.
 5. Derive display/range/atomic metrics from frozen normalized candidate and inventory groupings.
 6. Stop on missing grouping, prose-dependent locator mapping, or a newly exposed unreviewed architecture case.
 7. After an authorized architecture follow-up, bind its separate artifact and require its decision paths to equal every and only the unresolved triggers; project both supplement types in memory without changing V6 inputs.

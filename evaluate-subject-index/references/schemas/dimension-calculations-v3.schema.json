@@ -75,10 +75,16 @@
       "required": ["rule", "classifications", "unresolved_before_supplement", "unresolved_after_supplement", "historical_defects_rewritten", "prose_inference_used"],
       "properties": {
         "rule": {"const": "F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1"},
+        "conflict_rule": {"const": "F-COMPAT-LEGACY-FIT-CONFLICT-TO-SUPPLEMENT-V1"},
         "classifications": {"type": "array", "items": {"$ref": "#/$defs/compatibilityClassification"}},
+        "preflight_group_counts": {"$ref": "v7-locator-fit-preflight.schema.json#/$defs/groupCounts"},
+        "unresolved_reason_counts_before_supplement": {"$ref": "v7-locator-fit-preflight.schema.json#/$defs/unresolvedReasonCounts"},
+        "unresolved_records_before_supplement": {"type": "array", "items": {"$ref": "v7-locator-fit-preflight.schema.json#/$defs/unresolvedFit"}},
         "unresolved_before_supplement": {"type": "integer", "minimum": 0},
         "unresolved_after_supplement": {"type": "integer", "minimum": 0},
         "historical_defects_rewritten": {"const": false},
+        "classifier_precedence_applied": {"const": false},
+        "aggregate_score_exposed_during_preflight": {"const": false},
         "prose_inference_used": {"const": false}
       },
       "additionalProperties": false
@@ -140,11 +146,69 @@
       "required": ["locator_id", "fit_category", "fit_rule_id", "compatibility_rule_ids", "applicable_structured_defect_ids"],
       "properties": {
         "locator_id": {"type": "string", "pattern": "^LOC-"},
-        "fit_category": {"enum": ["material_mismatch", "severe_mismatch", "no_fit"]},
-        "fit_rule_id": {"enum": ["F-MINOR-MISMATCH-035", "F-MAJOR-MISMATCH-015", "F-NO-FIT-000"]},
-        "compatibility_rule_ids": {"type": "array", "items": {"const": "F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1"}, "minItems": 1, "maxItems": 1, "uniqueItems": true},
+        "fit_category": {"enum": ["exact_fit", "material_partial_fit", "material_mismatch", "severe_mismatch", "no_fit"]},
+        "fit_rule_id": {"enum": ["F-MINOR-MISMATCH-035", "F-MAJOR-MISMATCH-015", "F-NO-FIT-000", "F-SUPPLEMENTAL-EXACT-100", "F-SUPPLEMENTAL-PARTIAL-070", "F-SUPPLEMENTAL-MISMATCH-035", "F-SUPPLEMENTAL-SEVERE-015", "F-SUPPLEMENTAL-NO-FIT-000"]},
+        "compatibility_rule_ids": {"$ref": "v7-locator-fit-preflight.schema.json#/$defs/compatibilityRuleIds"},
         "applicable_structured_defect_ids": {"type": "array", "items": {"type": "string", "pattern": "^DEFECT-"}, "uniqueItems": true}
       },
+      "oneOf": [
+        {
+          "properties": {
+            "compatibility_rule_ids": {"const": ["F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1"]},
+            "fit_category": {"const": "material_mismatch"},
+            "fit_rule_id": {"const": "F-MINOR-MISMATCH-035"}
+          }
+        },
+        {
+          "properties": {
+            "compatibility_rule_ids": {"const": ["F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1"]},
+            "fit_category": {"const": "severe_mismatch"},
+            "fit_rule_id": {"const": "F-MAJOR-MISMATCH-015"}
+          }
+        },
+        {
+          "properties": {
+            "compatibility_rule_ids": {"const": ["F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1"]},
+            "fit_category": {"const": "no_fit"},
+            "fit_rule_id": {"const": "F-NO-FIT-000"}
+          }
+        },
+        {
+          "properties": {
+            "compatibility_rule_ids": {"const": ["F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1", "F-COMPAT-LEGACY-FIT-CONFLICT-TO-SUPPLEMENT-V1"]},
+            "fit_category": {"const": "exact_fit"},
+            "fit_rule_id": {"const": "F-SUPPLEMENTAL-EXACT-100"}
+          }
+        },
+        {
+          "properties": {
+            "compatibility_rule_ids": {"const": ["F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1", "F-COMPAT-LEGACY-FIT-CONFLICT-TO-SUPPLEMENT-V1"]},
+            "fit_category": {"const": "material_partial_fit"},
+            "fit_rule_id": {"const": "F-SUPPLEMENTAL-PARTIAL-070"}
+          }
+        },
+        {
+          "properties": {
+            "compatibility_rule_ids": {"const": ["F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1", "F-COMPAT-LEGACY-FIT-CONFLICT-TO-SUPPLEMENT-V1"]},
+            "fit_category": {"const": "material_mismatch"},
+            "fit_rule_id": {"const": "F-SUPPLEMENTAL-MISMATCH-035"}
+          }
+        },
+        {
+          "properties": {
+            "compatibility_rule_ids": {"const": ["F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1", "F-COMPAT-LEGACY-FIT-CONFLICT-TO-SUPPLEMENT-V1"]},
+            "fit_category": {"const": "severe_mismatch"},
+            "fit_rule_id": {"const": "F-SUPPLEMENTAL-SEVERE-015"}
+          }
+        },
+        {
+          "properties": {
+            "compatibility_rule_ids": {"const": ["F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1", "F-COMPAT-LEGACY-FIT-CONFLICT-TO-SUPPLEMENT-V1"]},
+            "fit_category": {"const": "no_fit"},
+            "fit_rule_id": {"const": "F-SUPPLEMENTAL-NO-FIT-000"}
+          }
+        }
+      ],
       "additionalProperties": false
     },
     "uncertaintyTriple": {
@@ -231,9 +295,9 @@
         "fit_score": {"enum": ["1", "0.7", "0.35", "0.15", "0", null]},
         "treatment_rule_id": {"type": "string", "pattern": "^T-[A-Z0-9-]+$"},
         "fit_rule_id": {"type": "string", "pattern": "^F-[A-Z0-9-]+$"},
-        "mapping_rule_id": {"type": "string", "pattern": "^T-[A-Z0-9-]+\\+F-[A-Z0-9-]+(?:\\+F-COMPAT-[A-Z0-9-]+)?\\+MIN$"},
+        "mapping_rule_id": {"type": "string", "pattern": "^T-[A-Z0-9-]+\\+F-[A-Z0-9-]+(?:\\+F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1(?:\\+F-COMPAT-LEGACY-FIT-CONFLICT-TO-SUPPLEMENT-V1)?)?\\+MIN$"},
         "fit_classification_source": {"enum": ["frozen_uninspectable_state", "structured_no_fit_precedence", "frozen_supported_judgment", "frozen_partially_supported_judgment", "frozen_absent_treatment", "modern_structured_fit_evidence", "legacy_code_severity_compatibility", "frozen_weak_treatment_only", "supplemental_locator_fit", "not_measured"]},
-        "compatibility_rule_ids": {"type": "array", "items": {"const": "F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1"}, "uniqueItems": true, "maxItems": 1},
+        "compatibility_rule_ids": {"$ref": "v7-locator-fit-preflight.schema.json#/$defs/compatibilityRuleIds"},
         "supplemental_fit_decision_id": {"type": ["string", "null"], "pattern": "^FITDEC-[A-F0-9]{12}$"},
         "supplemental_fit_evidence_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
         "combined_credit": {"enum": ["1", "0.7", "0.35", "0.25", "0.15", "0", null]},

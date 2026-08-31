@@ -46,7 +46,7 @@
       },
       "additionalProperties": false
     },
-    "locator_fit_compatibility": {"$ref": "dimension-calculations-v3.schema.json#/properties/locator_fit_compatibility"},
+    "locator_fit_compatibility": {"description": "Projected score-free compatibility and unresolved-fit provenance; conflict supplementation never rewrites the locator's historical non-fit fields.", "$ref": "dimension-calculations-v3.schema.json#/properties/locator_fit_compatibility"},
     "locator_fit_supplement": {"$ref": "dimension-calculations-v3.schema.json#/properties/locator_fit_supplement"},
     "color_legend": {"$ref": "item-assessments.schema.json#/properties/color_legend"},
     "locator_assessments": {

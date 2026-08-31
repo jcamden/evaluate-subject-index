@@ -80,6 +80,7 @@
     },
     "fitSupplementReference": {
       "type": "object",
+      "description": "Projection reference to an exact-scope, score-free complete-path-fit supplement; the supplement may resolve an eligible legacy structured fit conflict without modifying historical records.",
       "required": ["schema_version", "artifact_path", "sha256", "supplement_id", "supplement_sha256", "unresolved_set_sha256", "decision_count"],
       "properties": {
         "schema_version": {"const": "subject-index-v7-locator-fit-supplement-v1"},
