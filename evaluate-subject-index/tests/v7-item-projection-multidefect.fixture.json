@@ -1,0 +1,91 @@
+{
+  "fixture_id": "synthetic-v7-item-projection-multidefect-v1",
+  "purpose": "Adversarial deterministic ordering fixture with no evaluation-derived identities or outcomes.",
+  "path_id": "PATH-0001",
+  "node_ids": [
+    "NODE-0001"
+  ],
+  "locator_ids": [
+    "LOC-0001",
+    "LOC-DUP-0001"
+  ],
+  "defects": [
+    {
+      "defect_id": "DEFECT-ZETA",
+      "dimension_owner": "mechanics_consistency",
+      "code": "MEC",
+      "severity": "minor",
+      "defect_kind": "generic",
+      "affected_item_ids": [
+        "PATH-0001"
+      ],
+      "applicable_count": 1
+    },
+    {
+      "defect_id": "DEFECT-MIDDLE",
+      "dimension_owner": "mechanics_consistency",
+      "code": "MEC",
+      "severity": "cosmetic",
+      "defect_kind": "generic",
+      "affected_item_ids": [
+        "LOC-0001",
+        "LOC-DUP-0001"
+      ],
+      "applicable_count": 2
+    },
+    {
+      "defect_id": "DEFECT-BETA",
+      "dimension_owner": "mechanics_consistency",
+      "code": "MEC",
+      "severity": "minor",
+      "defect_kind": "generic",
+      "affected_item_ids": [
+        "NODE-0001"
+      ],
+      "applicable_count": 2
+    },
+    {
+      "defect_id": "DEFECT-ALPHA",
+      "dimension_owner": "mechanics_consistency",
+      "code": "MEC",
+      "severity": "major",
+      "defect_kind": "generic",
+      "affected_item_ids": [
+        "NODE-0001"
+      ],
+      "applicable_count": 2
+    }
+  ],
+  "expected_defect_id_order": [
+    "DEFECT-ALPHA",
+    "DEFECT-BETA",
+    "DEFECT-MIDDLE",
+    "DEFECT-ZETA"
+  ],
+  "expected_path_cap_order": [
+    [
+      "DEFECT-ALPHA",
+      "major",
+      55
+    ],
+    [
+      "DEFECT-BETA",
+      "minor",
+      85
+    ],
+    [
+      "DEFECT-MIDDLE",
+      "cosmetic",
+      95
+    ],
+    [
+      "DEFECT-ZETA",
+      "minor",
+      85
+    ]
+  ],
+  "expected_node_defect_id_order": [
+    "DEFECT-ALPHA",
+    "DEFECT-BETA"
+  ]
+}

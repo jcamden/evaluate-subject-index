@@ -51,3 +51,11 @@ Heading-node, cross-reference, source-subject, and non-reliability path diagnost
 Editorial Selectivity stays separate. A weak-presence locator can show grade 25 while still receiving zero substantive-selectivity credit. Publication caps and gates also remain separate and visible.
 
 Applied locator-fit supplement schema, identity, file hash, self-hash, scope hash, and decision count are copied into the item artifact's provenance. The historical locator audit and V6 item artifact remain byte-identical.
+
+## Deterministic multi-defect serialization
+
+Rule `ITEM-PROJECTION-DEFECT-ID-ASC-V1` governs arrays derived from an unordered set of applicable defect identities. Item construction deduplicates applicable defects by stable `defect_id` and emits them in ascending `defect_id` order. The rule applies to component `severity_caps`, the defect-derived portion of component `evidence_ids`, and the corresponding popover factor arrays for complete paths, heading nodes, and cross-references.
+
+Identity membership determines applicability only; it never supplies output order. Existing editorial order remains authoritative for heading paths, node IDs, locator IDs, reference IDs, display records, source evidence, and other arrays whose order carries meaning.
+
+Tool patch `dimension-score-cli-v7.0.6` changes serialization determinism only. Public schema identities and artifact shapes, score and grade arithmetic, judgments, mappings, caps, thresholds, gates, and intentional source order are unchanged. Historical artifacts remain immutable.

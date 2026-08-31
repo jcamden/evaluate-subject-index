@@ -16,6 +16,7 @@ from locator_relevance import assign_locator_credit
 
 GRADING_POLICY = "subject-index-item-grading-v1"
 V6_GRADING_POLICY = "subject-index-item-grading-v2"
+DEFECT_PROJECTION_ORDER_RULE_ID = "ITEM-PROJECTION-DEFECT-ID-ASC-V1"
 COMPONENT_WEIGHTS = {
     "meaningful_coverage": 20.0,
     "editorial_selectivity": 10.0,
@@ -124,6 +125,18 @@ def defect_affected_ids(defect: dict[str, Any]) -> list[str]:
     if values is None:
         values = defect.get("affected_ids", [])
     return values if isinstance(values, list) else []
+
+
+def ordered_unique_defects(
+    defect_records: Iterable[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Deduplicate valid defects by identity and emit them in stable ID order."""
+    by_id: dict[str, dict[str, Any]] = {}
+    for item in defect_records:
+        defect_id = item.get("defect_id")
+        if isinstance(defect_id, str) and defect_id:
+            by_id.setdefault(defect_id, item)
+    return [by_id[defect_id] for defect_id in sorted(by_id)]
 
 
 def emit(value: Any) -> None:
@@ -650,7 +663,11 @@ def build_assessments(
             source = judgment.get("component_judgments", {}).get(source_name, {}) if judgment else {}
             status = source.get("status", "uninspectable") if audit_mode == "full" else source.get("status", "not_applicable")
             score = STRUCTURE_STATUS_SCORE.get(status)
-            relevant = [item for item in defects_by_affected_id.get(node_id, []) if defect_dimension(item) == dimension]
+            relevant = ordered_unique_defects(
+                item
+                for item in defects_by_affected_id.get(node_id, [])
+                if defect_dimension(item) == dimension
+            )
             score = apply_caps(score, relevant)
             cap_records = severity_cap_records(relevant)
             scores[dimension] = score
@@ -705,10 +722,19 @@ def build_assessments(
         path_id = path["path_id"]
         path_locators = locators_by_path.get(path_id, [])
         path_subjects = subjects_by_path.get(path_id, [])
-        affected_ids = {path_id, *path.get("node_ids", []), *path.get("locator_ids", [])}
-        path_defects = [item for affected_id in affected_ids for item in defects_by_affected_id.get(affected_id, [])]
-        unique_defects = {item.get("defect_id"): item for item in path_defects if item.get("defect_id")}.values()
-        path_defects = list(unique_defects)
+        # Preserve intentional path/node/locator source order for lookup. Defect
+        # projection order is a separate identity-set concern governed by
+        # ITEM-PROJECTION-DEFECT-ID-ASC-V1.
+        affected_ids = list(dict.fromkeys([
+            path_id,
+            *path.get("node_ids", []),
+            *path.get("locator_ids", []),
+        ]))
+        path_defects = ordered_unique_defects(
+            item
+            for affected_id in affected_ids
+            for item in defects_by_affected_id.get(affected_id, [])
+        )
 
         locator_score = mean(item["grade"]["score"] for item in path_locators)
         treatment_values = []
@@ -842,7 +868,11 @@ def build_assessments(
         reference_id = reference["reference_id"]
         judgment = reference_judgments.get(reference_id)
         score = REFERENCE_SCORE.get(judgment.get("judgment")) if judgment else None
-        relevant = [item for item in defects_by_affected_id.get(reference_id, []) if defect_dimension(item) == "findability_navigation"]
+        relevant = ordered_unique_defects(
+            item
+            for item in defects_by_affected_id.get(reference_id, [])
+            if defect_dimension(item) == "findability_navigation"
+        )
         score = apply_caps(score, relevant)
         cap_records = severity_cap_records(relevant)
         reference_record = {

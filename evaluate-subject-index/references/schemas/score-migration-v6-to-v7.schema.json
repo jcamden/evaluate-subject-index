@@ -311,7 +311,7 @@
       }
     },
     {
-      "if": {"properties": {"tool": {"properties": {"version": {"enum": ["dimension-score-cli-v7.0.4", "dimension-score-cli-v7.0.5"]}}, "required": ["version"]}}, "required": ["tool"]},
+      "if": {"properties": {"tool": {"properties": {"version": {"enum": ["dimension-score-cli-v7.0.4", "dimension-score-cli-v7.0.5", "dimension-score-cli-v7.0.6"]}}, "required": ["version"]}}, "required": ["tool"]},
       "then": {
         "required": ["locator_fit_supplementation"],
         "properties": {

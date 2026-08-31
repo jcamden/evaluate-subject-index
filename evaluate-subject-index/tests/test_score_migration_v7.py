@@ -1093,7 +1093,7 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
                 (first_dir / "score-migration.v6-to-v7.json").read_text()
             )
             self.assertEqual(
-                "dimension-score-cli-v7.0.5", migration["tool"]["version"]
+                "dimension-score-cli-v7.0.6", migration["tool"]["version"]
             )
             view = migration["locator_fit_supplementation"]["views"][0]
             self.assertEqual(
@@ -1343,7 +1343,7 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
                 (first_dir / "score-migration.v6-to-v7.json").read_text()
             )
             self.assertEqual(
-                "dimension-score-cli-v7.0.5", migration["tool"]["version"]
+                "dimension-score-cli-v7.0.6", migration["tool"]["version"]
             )
             migration_view = migration["locator_fit_supplementation"]["views"][0]
             self.assertEqual(
@@ -1943,6 +1943,7 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
                 "dimension-score-cli-v7.0.3",
                 "dimension-score-cli-v7.0.4",
                 "dimension-score-cli-v7.0.5",
+                "dimension-score-cli-v7.0.6",
             ):
                 historical_migration = copy.deepcopy(migration)
                 historical_migration["tool"]["version"] = historical_version
