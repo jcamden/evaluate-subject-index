@@ -20,7 +20,7 @@ SCRIPT = SKILL_ROOT / "scripts" / "worker_prompt_cli.py"
 def prompt_spec() -> dict:
     sha = "a" * 64
     return {
-        "schema_version": "locator-worker-prompt-pack-v1",
+        "schema_version": "locator-worker-prompt-pack-v2",
         "evaluation_id": "evaluation-example",
         "candidate_id": "candidate-example",
         "project": "owner/candidate-evaluation",
@@ -160,9 +160,12 @@ class WorkerPromptCliTests(unittest.TestCase):
             rendered = output_path.read_text(encoding="utf-8")
             self.assertIn("Publication profile: public_evaluation_artifacts", rendered)
             self.assertIn(
-                "candidate/locator-audits/locator-audit.CHUNK-001.v1.json",
+                "candidate/locator-audits/locator-audit.CHUNK-001.v2.json",
                 rendered,
             )
+            self.assertIn("How substantively does the cited page treat", rendered)
+            self.assertIn("fit_rationale", rendered)
+            self.assertIn("routine supported, substantive, exact-fit", rendered)
             self.assertIn("exact validated canonical audit bytes", rendered)
 
     def test_legacy_checkpoint_without_profile_is_rejected(self) -> None:

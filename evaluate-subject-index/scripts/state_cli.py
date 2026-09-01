@@ -944,7 +944,7 @@ def verify_v5_inputs_registered(
     """Require score-profile evidence to be the state's exact frozen audit inventory."""
     role_contracts = {
         "chunk_manifest": ("chunk_definition", {"chunk_manifest"}),
-        "locator_audit": ("locator_audit", {"locator_audit", "locator_audit_v1"}),
+        "locator_audit": ("locator_audit", {"locator_audit", "locator_audit_v1", "locator_audit_v2"}),
         "missing_access_audit": ("missing_access_audit", {"missing_access_audit", "missing_access_audit_v1"}),
         "structure_audit": ("structure_audit", {"structure_audit", "structure_audit_v3", "structure_audit_v4"}),
         "migration_supplement": ("structure_audit", {"migration_supplement", "v5_migration_supplement", "subject_index_v5_migration_supplement_v1"}),

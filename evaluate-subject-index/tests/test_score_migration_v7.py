@@ -710,6 +710,180 @@ def counterfactual_manifest(
 
 
 class V7ScoreOnlyMigrationTests(unittest.TestCase):
+    def _migrate_documents(
+        self, root: Path, documents: tuple[dict, dict, dict]
+    ) -> tuple[dict, dict, dict, dict]:
+        paths = prepare_v6_projection(root, documents=documents)
+        manifest = migration_manifest(root, paths)
+        output = root / "v7"
+        run_cli(
+            "dimension_score_v7_cli.py",
+            "migrate-v6-to-v7",
+            "--manifest",
+            manifest,
+            "--output-directory",
+            output,
+        )
+        return (
+            json.loads((output / "dimension-calculations.v7.json").read_text()),
+            json.loads((output / "item-assessments.v7.json").read_text()),
+            json.loads((output / "web-report.v7.json").read_text()),
+            json.loads((output / "evaluation-result.v7.json").read_text()),
+        )
+
+    def test_locator_specific_two_axis_explanations_are_preserved(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            documents = base_documents(subject_count=1)
+            locator = documents[0]
+            locator["schema_version"] = "locator-audit-v2"
+            aachen = locator["judgments"][0]
+            aachen.update(
+                judgment="unsupported",
+                treatment_class="passing_mention",
+                evidence_summary=(
+                    "Aachen appears only as the place where Gustavus III hoped to "
+                    "welcome Louis XVI, without independent treatment of the place."
+                ),
+                fit_rationale=(
+                    "The mention is genuinely about Aachen; the limitation concerns "
+                    "depth of treatment rather than a mismatch with the heading path."
+                ),
+                error_codes=[],
+                severity="none",
+            )
+            invalid_audit = copy.deepcopy(locator)
+            invalid_audit["judgments"][0].pop("fit_rationale")
+            with self.assertRaises(v5.CalculationError):
+                v5.validate_schema_document(
+                    invalid_audit,
+                    "locator-audit-v2.schema.json",
+                    "Divergent-axis audit without fit rationale",
+                )
+            empty_evidence = copy.deepcopy(locator)
+            empty_evidence["judgments"][0]["evidence_summary"] = ""
+            with self.assertRaises(v5.CalculationError):
+                v5.validate_schema_document(
+                    empty_evidence,
+                    "locator-audit-v2.schema.json",
+                    "Measured audit with empty evidence summary",
+                )
+            _, items, web, _ = self._migrate_documents(Path(temporary), documents)
+            assessment = next(
+                item
+                for item in items["locator_assessments"]
+                if item["locator_id"] == aachen["locator_id"]
+            )
+            explanation = assessment["locator_explanation"]
+            self.assertEqual(aachen["evidence_summary"], explanation["evidence_summary"])
+            self.assertEqual("weak_presence", explanation["page_treatment"]["category"])
+            self.assertEqual(25, explanation["page_treatment"]["score"])
+            self.assertTrue(explanation["page_treatment"]["rule_id"].startswith("T-"))
+            self.assertEqual("exact_fit", explanation["complete_path_fit"]["category"])
+            self.assertEqual(100, explanation["complete_path_fit"]["score"])
+            self.assertEqual(aachen["fit_rationale"], explanation["complete_path_fit"]["rationale"])
+            self.assertEqual("authored_locator_audit", explanation["complete_path_fit"]["rationale_source"])
+            self.assertEqual("min(25, 100) = 25", explanation["combined_locator_utility"]["calculation"])
+            self.assertEqual(
+                explanation,
+                next(
+                    item
+                    for item in web["locator_explanations"]
+                    if item["locator_id"] == aachen["locator_id"]
+                ),
+            )
+            visible = json.dumps({"items": items, "web": web})
+            self.assertNotIn("Derived only from frozen treatment class", visible)
+            self.assertNotIn("Derived only from frozen judgment", visible)
+
+    def test_routine_perfect_fit_needs_no_duplicate_authored_prose(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            documents = base_documents(subject_count=1)
+            documents[0]["schema_version"] = "locator-audit-v2"
+            _, items, _, _ = self._migrate_documents(Path(temporary), documents)
+            for assessment in items["locator_assessments"]:
+                explanation = assessment["locator_explanation"]
+                self.assertFalse(explanation["fit_rationale_required"])
+                self.assertEqual(
+                    "mechanical_structured_category_rule",
+                    explanation["complete_path_fit"]["rationale_source"],
+                )
+                self.assertIn(
+                    explanation["complete_path_fit"]["rule_id"],
+                    explanation["complete_path_fit"]["rationale"],
+                )
+
+    def test_explanation_changes_cannot_change_scores_grades_or_gates(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            first_documents = base_documents(subject_count=1)
+            first_documents[0]["schema_version"] = "locator-audit-v2"
+            for judgment in first_documents[0]["judgments"]:
+                judgment.update(
+                    judgment="unsupported",
+                    treatment_class="passing_mention",
+                    error_codes=[],
+                    severity="none",
+                    fit_rationale="First public-safe fit explanation.",
+                )
+            second_documents = copy.deepcopy(first_documents)
+            for judgment in second_documents[0]["judgments"]:
+                judgment["evidence_summary"] = "A different public-safe evidence explanation."
+                judgment["fit_rationale"] = "A different public-safe fit explanation."
+
+            first = self._migrate_documents(root / "first", first_documents)
+            second = self._migrate_documents(root / "second", second_documents)
+            first_calculation, first_items, _, first_result = first
+            second_calculation, second_items, _, second_result = second
+            def calculation_snapshot(calculation: dict) -> tuple[list, list]:
+                dimensions = [
+                    (
+                        item["dimension_id"],
+                        item["status"],
+                        item["base_rating"],
+                        item["final_rating"],
+                        item["awarded_points"],
+                        item["applied_cap"],
+                    )
+                    for item in calculation["dimensions"]
+                ]
+                reliability = next(
+                    item
+                    for item in calculation["dimensions"]
+                    if item["dimension_id"] == "page_reference_reliability"
+                )["reliability_provenance"]["locator_utility_assignments"]
+                categories = [
+                    (
+                        item["locator_id"],
+                        item["treatment_category"],
+                        item["treatment_score"],
+                        item["fit_category"],
+                        item["fit_score"],
+                        item["combined_credit"],
+                        item["diagnostic_grade"],
+                    )
+                    for item in reliability
+                ]
+                return dimensions, categories
+
+            self.assertEqual(
+                calculation_snapshot(first_calculation),
+                calculation_snapshot(second_calculation),
+            )
+            self.assertEqual(first_calculation["total_score"], second_calculation["total_score"])
+            self.assertEqual(first_result["critical_gates"], second_result["critical_gates"])
+            self.assertEqual(first_result["total_score"], second_result["total_score"])
+            grade_snapshot = lambda items: [
+                (
+                    item["locator_id"],
+                    item["grade"],
+                    item["locator_utility"]["treatment_category"],
+                    item["locator_utility"]["fit_category"],
+                    item["locator_utility"]["combined_credit"],
+                )
+                for item in items["locator_assessments"]
+            ]
+            self.assertEqual(grade_snapshot(first_items), grade_snapshot(second_items))
+
     def test_full_migration_chain_is_hash_bound_and_deterministic(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -748,14 +922,19 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
             report = json.loads((first_dir / "web-report.v7.json").read_text())
             receipt = json.loads((first_dir / "validation-receipt.v7.json").read_text())
             self.assertEqual("subject-index-rubric-v7", calculation["rubric_version"])
-            self.assertEqual("subject-index-score-migration-v6-to-v7-v1", migration["schema_version"])
+            self.assertEqual("subject-index-score-migration-v6-to-v7-v2", migration["schema_version"])
             self.assertEqual(
                 "3" * 40,
                 migration["repository_state"]["evaluation_base_commit"],
             )
             self.assertTrue(migration["gate_preservation"]["outcomes_equal"])
             self.assertFalse(migration["frozen_evidence"]["prose_inference_used"])
-            self.assertEqual("subject-index-item-assessments-v4", items["schema_version"])
+            self.assertEqual("subject-index-item-assessments-v5", items["schema_version"])
+            self.assertEqual("subject-index-web-report-v7", report["schema_version"])
+            self.assertEqual(
+                [item["locator_explanation"] for item in items["locator_assessments"]],
+                report["locator_explanations"],
+            )
             for locator in items["locator_assessments"]:
                 credit = locator["locator_utility"]["combined_credit"]
                 expected = None if credit is None else float(credit) * 100
@@ -1093,7 +1272,7 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
                 (first_dir / "score-migration.v6-to-v7.json").read_text()
             )
             self.assertEqual(
-                "dimension-score-cli-v7.0.6", migration["tool"]["version"]
+                "dimension-score-cli-v7.1.0", migration["tool"]["version"]
             )
             view = migration["locator_fit_supplementation"]["views"][0]
             self.assertEqual(
@@ -1343,7 +1522,7 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
                 (first_dir / "score-migration.v6-to-v7.json").read_text()
             )
             self.assertEqual(
-                "dimension-score-cli-v7.0.6", migration["tool"]["version"]
+                "dimension-score-cli-v7.1.0", migration["tool"]["version"]
             )
             migration_view = migration["locator_fit_supplementation"]["views"][0]
             self.assertEqual(
@@ -1729,6 +1908,137 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
                             "v7-locator-fit-supplement.schema.json",
                             "Synthetic invalid locator-fit supplement",
                         )
+
+    def test_new_fit_supplement_requires_public_rationale_or_validated_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = prepare_v6_projection(root, documents=bare_loc_pos_documents())
+            supplement_path, _, supplement = locator_fit_supplement(root, paths)
+            supplement["schema_version"] = "subject-index-v7-locator-fit-supplement-v2"
+            supplement["rationale_ledgers"] = []
+            for decision in supplement["decisions"]:
+                decision["public_safe_rationale"] = (
+                    "The complete heading path is only partly supported by the frozen "
+                    "structured adjudication."
+                )
+            supplement = finalize_locator_fit_supplement(supplement)
+            write_json(supplement_path, supplement)
+            v5.validate_schema_document(
+                supplement,
+                "v7-locator-fit-supplement-v2.schema.json",
+                "Synthetic V2 locator-fit supplement",
+            )
+            resolved = v7._resolve_locator_fit_rationales(
+                supplement, supplement_path
+            )
+            self.assertEqual(
+                "authored_supplement",
+                next(iter(resolved.values()))["source"],
+            )
+            manifest_path = migration_manifest(root, paths)
+            manifest = json.loads(manifest_path.read_text())
+            manifest["canonical"]["locator_fit_supplement"] = {
+                "path": supplement_path.name,
+                "sha256": digest(supplement_path),
+            }
+            write_json(manifest_path, manifest)
+            output = root / "v7-with-rationale"
+            run_cli(
+                "dimension_score_v7_cli.py",
+                "migrate-v6-to-v7",
+                "--manifest",
+                manifest_path,
+                "--output-directory",
+                output,
+            )
+            items = json.loads((output / "item-assessments.v7.json").read_text())
+            projected = next(
+                item["locator_explanation"]
+                for item in items["locator_assessments"]
+                if item["locator_id"] == supplement["decisions"][0]["locator_id"]
+            )
+            self.assertEqual(
+                supplement["decisions"][0]["public_safe_rationale"],
+                projected["complete_path_fit"]["rationale"],
+            )
+            self.assertEqual(
+                "authored_supplement",
+                projected["complete_path_fit"]["rationale_source"],
+            )
+
+            invalid = copy.deepcopy(supplement)
+            invalid["decisions"][0].pop("public_safe_rationale")
+            invalid = finalize_locator_fit_supplement(invalid)
+            with self.assertRaises(v5.CalculationError):
+                v5.validate_schema_document(
+                    invalid,
+                    "v7-locator-fit-supplement-v2.schema.json",
+                    "Synthetic V2 supplement without rationale",
+                )
+
+    def test_fit_supplement_resolves_hash_bound_rationale_ledger(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = prepare_v6_projection(root, documents=bare_loc_pos_documents())
+            supplement_path, _, supplement = locator_fit_supplement(root, paths)
+            decision = supplement["decisions"][0]
+            rationale = {
+                "rationale_id": "FITRAT-000000000001",
+                "locator_id": decision["locator_id"],
+                "path_id": decision["path_id"],
+                "public_safe_rationale": "The adjudicated treatment only partly fits the complete path.",
+                "evidence_ids": decision["evidence_ids"],
+                "rationale_sha256": "",
+            }
+            rationale["rationale_sha256"] = v5.canonical_hash(
+                rationale, "rationale_sha256"
+            )
+            ledger = {
+                "schema_version": "subject-index-v7-locator-fit-rationale-ledger-v1",
+                "ledger_id": "FITRATLED-000000000001",
+                "evaluation_id": supplement["evaluation_id"],
+                "candidate_identity": supplement["candidate_identity"],
+                "audit_mode": supplement["audit_mode"],
+                "records": [rationale],
+                "ledger_sha256": "",
+            }
+            ledger["ledger_sha256"] = v5.canonical_hash(
+                ledger, "ledger_sha256"
+            )
+            ledger_path = root / "fit-rationale-ledger.v7.json"
+            write_json(ledger_path, ledger)
+            supplement["schema_version"] = "subject-index-v7-locator-fit-supplement-v2"
+            supplement["rationale_ledgers"] = [
+                {
+                    "schema_version": ledger["schema_version"],
+                    "artifact_path": ledger_path.name,
+                    "file_sha256": digest(ledger_path),
+                    "ledger_id": ledger["ledger_id"],
+                    "ledger_sha256": ledger["ledger_sha256"],
+                }
+            ]
+            for record in supplement["decisions"]:
+                record["rationale_reference"] = {
+                    "ledger_id": ledger["ledger_id"],
+                    "ledger_sha256": ledger["ledger_sha256"],
+                    "rationale_id": rationale["rationale_id"],
+                    "rationale_sha256": rationale["rationale_sha256"],
+                }
+            supplement = finalize_locator_fit_supplement(supplement)
+            write_json(supplement_path, supplement)
+            loaded = v7._load_locator_fit_supplement(
+                supplement_path, label="Synthetic ledger-referenced supplement"
+            )
+            resolved = v7._resolve_locator_fit_rationales(
+                loaded, supplement_path
+            )
+            self.assertEqual(
+                {
+                    "rationale": rationale["public_safe_rationale"],
+                    "source": "validated_rationale_ledger",
+                },
+                resolved[decision["locator_id"]],
+            )
             for field, value in (
                 ("judgment", "supported"),
                 ("treatment_class", "substantive"),
@@ -1939,6 +2249,37 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
             migration = json.loads(
                 (output / "score-migration.v6-to-v7.json").read_text()
             )
+            historical_schema_versions = {
+                "subject-index-dimension-calculations-v4": "subject-index-dimension-calculations-v3",
+                "subject-index-item-assessments-v5": "subject-index-item-assessments-v4",
+                "subject-index-evaluation-result-v9": "subject-index-evaluation-result-v8",
+                "subject-index-web-report-v7": "subject-index-web-report-v6",
+                "subject-index-v7-projection-metadata-v2": "subject-index-v7-projection-metadata-v1",
+                "subject-index-score-migration-v6-to-v7-v2": "subject-index-score-migration-v6-to-v7-v1",
+                "subject-index-score-migration-v6-to-v7-validation-v2": "subject-index-score-migration-v6-to-v7-validation-v1",
+            }
+
+            def historicalize(value: object) -> None:
+                if isinstance(value, dict):
+                    if value.get("schema_version") in historical_schema_versions:
+                        value["schema_version"] = historical_schema_versions[
+                            value["schema_version"]
+                        ]
+                    for nested in value.values():
+                        historicalize(nested)
+                elif isinstance(value, list):
+                    for nested in value:
+                        historicalize(nested)
+
+            for document in (calculation, items, result, web, metadata, migration):
+                historicalize(document)
+            calculation["migration_context"]["migration_schema_version"] = (
+                "subject-index-score-migration-v6-to-v7-v1"
+            )
+            items.pop("explanation_contract", None)
+            for locator in items["locator_assessments"]:
+                locator.pop("locator_explanation", None)
+            web.pop("locator_explanations", None)
             for historical_version in (
                 "dimension-score-cli-v7.0.3",
                 "dimension-score-cli-v7.0.4",
@@ -1977,6 +2318,7 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
             receipt = json.loads(
                 (output / "validation-receipt.v7.json").read_text()
             )
+            historicalize(receipt)
             receipt.pop("supplemental_locator_fit_supplements", None)
             for field in (
                 "locator_fit_supplement_hash_valid",
@@ -2005,6 +2347,12 @@ class V7ScoreOnlyMigrationTests(unittest.TestCase):
                 with self.subTest(schema=schema):
                     v5.validate_schema_document(
                         document, schema, f"Synthetic pre-v7.0.3 {schema}"
+                    )
+                    self.assertEqual(
+                        v7.validate_v7_artifact_compatibility(
+                            document, label=f"Compatibility reader {schema}"
+                        ),
+                        schema,
                     )
 
     def test_representation_adjusted_view_is_recalculated_from_own_inputs_and_provenance(self) -> None:

@@ -25,7 +25,7 @@ validation/missing-access-audit-worker.<chunk-id>.json
 For `public_evaluation_artifacts`:
 
 ```text
-candidate/locator-audits/locator-audit.<chunk-id>.v1.json
+candidate/locator-audits/locator-audit.<chunk-id>.v2.json
 candidate/missing-access-audits/missing-access-audit.<chunk-id>.v1.json
 ```
 
@@ -35,14 +35,14 @@ The established receipt and binding fields named `public_report_path`, `public_p
 
 ## Public canonical locator-audit contract
 
-The published bytes are the exact validated `locator-audit-v1` worker artifact. No separate projection or redacted copy is created. Publication adds a strict allowlist on top of the substantive audit validator:
+The published bytes for a new locator worker are the exact validated `locator-audit-v2` artifact. Historical `locator-audit-v1` artifacts remain accepted through the compatibility reader. No separate projection or redacted copy is created. Publication adds a strict allowlist on top of the substantive audit validator:
 
 - top level: `schema_version`, `evaluation_id`, optional `candidate_id`, `candidate_sha256`, `chunk_id`, `provenance`, `expected_locator_ids`, `judgments`, and `completion`;
-- each judgment: `locator_id`, `path_id`, `complete_heading_path`, `document_page`, `source_page_label`, `source_scope_status`, `treatment_class`, `judgment`, `evidence_summary`, `evidence_ids`, `confidence`, `error_codes`, and `severity`;
+- each judgment: `locator_id`, `path_id`, `complete_heading_path`, `document_page`, `source_page_label`, `source_scope_status`, `treatment_class`, `judgment`, `evidence_summary`, optional conditionally required `fit_rationale`, `evidence_ids`, `confidence`, `error_codes`, and `severity`;
 - completion: exactly `expected`, `judged`, `unique`, and `complete`;
 - provenance: exactly the source, benchmark, benchmark-lock, policy, page-map, chunk-manifest, normalized-candidate, item-inventory, and locator-packet hashes required by the parallel worker.
 
-This is the per-locator linkage used later by item grading: `locator_id` is the stable join key, `path_id` links it to the complete heading path, and `judgment`, `severity`, `error_codes`, `confidence`, and `evidence_summary` supply the locator-level diagnostic factors.
+This is the per-locator linkage used later by item grading: `locator_id` is the stable join key, `path_id` links it to the complete heading path, and `judgment`, `severity`, `error_codes`, `confidence`, and `evidence_summary` supply the locator-level diagnostic factors. The evidence summary must remain nonempty and locator-specific. `fit_rationale` is required when axis scores differ, fit is below 100, classifiers conflict, or supplementation supplies the fit category; routine obvious 100/100 cases do not require duplicate authored prose.
 
 ## Public canonical missing-access contract
 

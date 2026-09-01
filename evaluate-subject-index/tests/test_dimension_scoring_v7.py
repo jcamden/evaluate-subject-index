@@ -923,7 +923,7 @@ class V7ReliabilityIntegrationTests(unittest.TestCase):
                 self.assertEqual(old_dimension, new_dimension, dimension_id)
             v5.validate_schema_document(
                 new,
-                "dimension-calculations-v3.schema.json",
+            "dimension-calculations-v4.schema.json",
                 "Synthetic V7 calculation",
             )
 
@@ -941,7 +941,7 @@ class V7ReliabilityIntegrationTests(unittest.TestCase):
             self.assertEqual("subject-index-rubric-v7", calculation["rubric_version"])
             v5.validate_schema_document(
                 calculation,
-                "dimension-calculations-v3.schema.json",
+            "dimension-calculations-v4.schema.json",
                 "Native V7 structure calculation",
             )
 

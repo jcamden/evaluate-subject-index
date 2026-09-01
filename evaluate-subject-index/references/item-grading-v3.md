@@ -1,6 +1,6 @@
 # Diagnostic item grading — V7
 
-V7 item assessments use `subject-index-item-grading-v3` and `subject-index-item-assessments-v4`. They are a presentation layer, not a seventh dimension and not an additive decomposition of the 100-point score.
+V7 item assessments use `subject-index-item-grading-v3`. New projections use `subject-index-item-assessments-v5`; the V4 reader remains available for immutable historical projections. They are a presentation layer, not a seventh dimension and not an additive decomposition of the 100-point score.
 
 ## Locator grade
 
@@ -21,6 +21,14 @@ Possible measured grades are 100, 70, 35, 25, 15, and 0. Uninspectable or pilot-
 When historical code/severity compatibility, conflict routing, or a locator-fit supplement supplied the fit classification, the row also exposes the stable compatibility/conflict rules or supplemental decision/evidence identities. These are provenance, not additional grade inputs and not a declaration that one historical classifier was correct. A supplement cannot supply `G_j`; item construction still derives it exactly from the calculation's `combined_credit`.
 
 The grade equals the calculation credit on a 0–100 display scale. Page-reference Reliability never averages grades. Its only canonical precision input is `reliability_provenance.locator_utility_assignments[].combined_credit`.
+
+## Locator-specific explanations
+
+Every measured locator retains the public-safe `evidence_summary` authored during source inspection. That text is the primary explanation of what the cited page contains and why the page-treatment class applies; a projector must not replace it with generic provenance language or demand a duplicate treatment paragraph.
+
+The V2 locator-audit contract asks the evaluator two independent questions during the same inspection: how substantively the cited page treats the subject, and whether that treatment accurately fits the complete heading path. A separate `fit_rationale` is required when the treatment and fit scores differ, fit is below 100, structured classifiers conflict, or a supplemental decision supplies fit. For the routine supported, substantive, indexable, defect-free 100/100 case, the projection may generate a short explanation mechanically from the structured fit category and rule.
+
+The V5 item projection exposes the preserved evidence summary, both axis categories/scores/rule IDs, the fit rationale and its source, evidence IDs, relevant structured defects, and the explicit `min(T,F)` calculation. Authored or referenced prose is explanatory metadata only and is never read by scoring code.
 
 ## Complete-path display
 
@@ -50,7 +58,7 @@ Heading-node, cross-reference, source-subject, and non-reliability path diagnost
 
 Editorial Selectivity stays separate. A weak-presence locator can show grade 25 while still receiving zero substantive-selectivity credit. Publication caps and gates also remain separate and visible.
 
-Applied locator-fit supplement schema, identity, file hash, self-hash, scope hash, and decision count are copied into the item artifact's provenance. The historical locator audit and V6 item artifact remain byte-identical.
+Applied locator-fit supplement schema, identity, file hash, self-hash, scope hash, and decision count are copied into the item artifact's provenance. For V2 supplements the applicable public-safe rationale, or the validated rationale-ledger record it references, is copied into the locator explanation. The historical locator audit and V6 item artifact remain byte-identical.
 
 ## Deterministic multi-defect serialization
 

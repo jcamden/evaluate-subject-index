@@ -58,7 +58,8 @@ from state_cli import STAGES, next_stage, validate_state
 
 STATE_VERSION = "subject-index-evaluation-state-v4"
 MANIFEST_VERSION = "subject-index-artifact-manifest-v1"
-LOCATOR_AUDIT_VERSION = "locator-audit-v1"
+LOCATOR_AUDIT_VERSION = "locator-audit-v2"
+LOCATOR_AUDIT_COMPATIBILITY_VERSIONS = {"locator-audit-v1", LOCATOR_AUDIT_VERSION}
 MISSING_AUDIT_VERSION = "missing-access-audit-v1"
 LOCATOR_RECEIPT_VERSION = "parallel-locator-audit-worker-receipt-v1"
 MISSING_RECEIPT_VERSION = "parallel-missing-access-worker-receipt-v2"
@@ -794,7 +795,8 @@ def validate_evidence_ids(value: Any, field: str) -> list[str]:
 
 
 def validate_locator_audit(artifact: dict[str, Any], frozen: dict[str, Any], packet: dict[str, Any], chunk_id: str, parallel: bool = True) -> dict[str, Any]:
-    require(artifact.get("schema_version") == LOCATOR_AUDIT_VERSION, "audit_schema", f"Expected {LOCATOR_AUDIT_VERSION}.")
+    schema_version = artifact.get("schema_version")
+    require(schema_version in LOCATOR_AUDIT_COMPATIBILITY_VERSIONS, "audit_schema", f"Expected one of {sorted(LOCATOR_AUDIT_COMPATIBILITY_VERSIONS)}.")
     require(artifact.get("evaluation_id") == frozen["state"].get("evaluation_id"), "audit_identity_mismatch", "Locator audit evaluation ID differs.")
     require(artifact.get("candidate_sha256") == frozen["candidate_sha256"], "audit_identity_mismatch", "Locator audit candidate hash differs.")
     require(artifact.get("chunk_id") == chunk_id, "audit_chunk_mismatch", "Locator audit names a different chunk.")
@@ -839,6 +841,19 @@ def validate_locator_audit(artifact: dict[str, Any], frozen: dict[str, Any], pac
         severity = judgment.get("severity")
         require(severity in SEVERITIES, "audit_judgment", f"Locator {locator_id} has invalid severity.")
         require_nonempty_string(judgment.get("evidence_summary"), f"judgments[{index}].evidence_summary", 2000)
+        routine_perfect = (
+            status == "supported"
+            and judgment.get("treatment_class") == "substantive"
+            and judgment.get("source_scope_status") == "indexable"
+            and not judgment.get("error_codes")
+            and severity in {"none", "cosmetic"}
+        )
+        if schema_version == LOCATOR_AUDIT_VERSION and not routine_perfect:
+            require_nonempty_string(
+                judgment.get("fit_rationale"),
+                f"judgments[{index}].fit_rationale",
+                2000,
+            )
         if parallel:
             validate_evidence_ids(judgment.get("evidence_ids"), f"judgments[{index}].evidence_ids")
         codes = judgment.get("error_codes")
@@ -1151,7 +1166,7 @@ def load_locator_audit_set(paths: list[str], frozen: dict[str, Any]) -> dict[str
     for raw_path in paths:
         path = Path(raw_path).resolve()
         artifact, payload, digest = load_json_snapshot(path, "Canonical locator audit")
-        require(artifact.get("schema_version") == LOCATOR_AUDIT_VERSION, "locator_audit_set_schema", f"Expected {LOCATOR_AUDIT_VERSION}.")
+        require(artifact.get("schema_version") in LOCATOR_AUDIT_COMPATIBILITY_VERSIONS, "locator_audit_set_schema", f"Expected one of {sorted(LOCATOR_AUDIT_COMPATIBILITY_VERSIONS)}.")
         require(artifact.get("evaluation_id") == frozen["state"].get("evaluation_id"), "locator_audit_set_identity", "Locator audit evaluation identity differs.")
         require(artifact.get("candidate_sha256") == frozen["candidate_sha256"], "locator_audit_set_identity", "Locator audit candidate identity differs.")
         chunk_id = validate_chunk_id(artifact.get("chunk_id"))
@@ -1220,7 +1235,8 @@ def public_audit_scan(value: Any, path: str = "$") -> None:
 def validate_public_locator_audit_shape(artifact: dict[str, Any], chunk_id: str | None = None) -> dict[str, Any]:
     top_required = {"schema_version", "evaluation_id", "candidate_sha256", "chunk_id", "provenance", "expected_locator_ids", "judgments", "completion"}
     allowed_keys(artifact, top_required | {"candidate_id"}, top_required, "Public locator audit")
-    require(artifact["schema_version"] == LOCATOR_AUDIT_VERSION, "public_audit_schema", f"Expected {LOCATOR_AUDIT_VERSION}.")
+    schema_version = artifact["schema_version"]
+    require(schema_version in LOCATOR_AUDIT_COMPATIBILITY_VERSIONS, "public_audit_schema", f"Expected one of {sorted(LOCATOR_AUDIT_COMPATIBILITY_VERSIONS)}.")
     actual_chunk = validate_chunk_id(artifact["chunk_id"])
     require(chunk_id is None or actual_chunk == chunk_id, "public_audit_chunk", "Public locator audit names a different chunk.")
     provenance_fields = {"source_sha256", "benchmark_sha256", "benchmark_lock_sha256", "policy_sha256", "page_map_sha256", "chunk_manifest_sha256", "normalized_candidate_file_sha256", "item_inventory_file_sha256", "locator_packet_file_sha256"}
@@ -1229,13 +1245,14 @@ def validate_public_locator_audit_shape(artifact: dict[str, Any], chunk_id: str 
         require_sha256(value, f"public_locator_audit.provenance.{field}")
     judgments = artifact["judgments"]
     require(isinstance(judgments, list), "public_audit_shape", "Public locator audit judgments must be an array.")
-    judgment_fields = {"locator_id", "path_id", "complete_heading_path", "document_page", "source_page_label", "source_scope_status", "treatment_class", "judgment", "evidence_summary", "evidence_ids", "confidence", "error_codes", "severity"}
+    judgment_fields = {"locator_id", "path_id", "complete_heading_path", "document_page", "source_page_label", "source_scope_status", "treatment_class", "judgment", "evidence_summary", "evidence_ids", "confidence", "error_codes", "severity", "fit_rationale"}
+    required_judgment_fields = judgment_fields - {"fit_rationale"}
     for index, judgment in enumerate(judgments):
-        allowed_keys(judgment, judgment_fields, judgment_fields, f"Public locator judgment {index}")
+        allowed_keys(judgment, judgment_fields, required_judgment_fields, f"Public locator judgment {index}")
     completion_fields = {"expected", "judged", "unique", "complete"}
     allowed_keys(artifact["completion"], completion_fields, completion_fields, "Public locator audit completion")
     public_audit_scan(artifact)
-    return {"audit_kind": "locator", "chunk_id": actual_chunk, "schema_version": LOCATOR_AUDIT_VERSION}
+    return {"audit_kind": "locator", "chunk_id": actual_chunk, "schema_version": schema_version}
 
 
 def validate_public_missing_audit_shape(artifact: dict[str, Any], chunk_id: str | None = None) -> dict[str, Any]:
@@ -2300,14 +2317,14 @@ def command_validate_public(args: argparse.Namespace) -> None:
     document, payload, file_sha = load_json_snapshot(Path(args.report).resolve(), "Public worker artifact")
     expected = args.audit_kind
     if expected is None:
-        expected = "locator" if document.get("schema_version") in {LOCATOR_AUDIT_VERSION, LOCATOR_REPORT_VERSION} else "missing_access"
+        expected = "locator" if document.get("schema_version") in {*LOCATOR_AUDIT_COMPATIBILITY_VERSIONS, LOCATOR_REPORT_VERSION} else "missing_access"
     chunk_id = args.chunk_id or document.get("chunk_id")
     chunk_id = validate_chunk_id(chunk_id)
     profile = args.publication_profile
     if profile is None and args.expected_path:
         profile = publication_profile_from_path(expected, chunk_id, safe_relative_path(args.expected_path))
     if profile is None:
-        profile = PUBLIC_EVALUATION_ARTIFACTS if document.get("schema_version") in {LOCATOR_AUDIT_VERSION, MISSING_AUDIT_VERSION} else AGGREGATE_ONLY
+        profile = PUBLIC_EVALUATION_ARTIFACTS if document.get("schema_version") in {*LOCATOR_AUDIT_COMPATIBILITY_VERSIONS, MISSING_AUDIT_VERSION} else AGGREGATE_ONLY
     result = validate_public_artifact(document, expected, chunk_id, profile)
     if args.expected_path:
         require(safe_relative_path(args.expected_path) == public_path_for(expected, chunk_id, profile), "public_output_path", "Expected public path is not the exact allowlisted path.")

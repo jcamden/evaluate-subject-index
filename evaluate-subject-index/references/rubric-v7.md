@@ -6,16 +6,19 @@ V7 uses:
 
 - rubric `subject-index-rubric-v7`;
 - calculation profile `subject-index-dimension-calculation-v3`;
-- calculation artifact `subject-index-dimension-calculations-v3`;
-- result `subject-index-evaluation-result-v8`;
+- calculation artifact `subject-index-dimension-calculations-v4`;
+- result `subject-index-evaluation-result-v9`;
 - item-grading policy `subject-index-item-grading-v3`;
-- item artifact `subject-index-item-assessments-v4`;
-- web report `subject-index-web-report-v6`; and
-- migration `subject-index-score-migration-v6-to-v7-v1`;
-- supplemental fit input `subject-index-v7-locator-fit-supplement-v1`; and
-- tool patch `dimension-score-cli-v7.0.6`.
+- item artifact `subject-index-item-assessments-v5`;
+- web report `subject-index-web-report-v7`;
+- migration `subject-index-score-migration-v6-to-v7-v2`;
+- current locator audit `locator-audit-v2`;
+- supplemental fit input `subject-index-v7-locator-fit-supplement-v2`; and
+- tool patch `dimension-score-cli-v7.1.0`.
 
 V7 changes the per-locator precision input to Page-reference Reliability and corrects the counting unit used for locator-string architecture review. Benchmark construction, blindness, locator and missing-access judgments, expected-treatment recall, treatment-unit coalescing, weights, the other dimension formulas, Editorial Selectivity, density, caps, gates, uncertainty, rounding, defect ownership, and representation-adjustment provenance remain unchanged. Historical V4, V5, and V6 artifacts retain their original readers and identities. Tool patch V7.0.6 changes item-projection serialization only: rule `ITEM-PROJECTION-DEFECT-ID-ASC-V1` orders multi-defect arrays by stable `defect_id` without changing any grade, dimension formula, mapping, cap, threshold, or gate.
+
+Tool patch V7.1.0 changes explanation and projection contracts only. It preserves the locator-specific authored `evidence_summary`, adds conditional complete-path-fit rationale metadata, and exposes both axes plus `min(T,F)` in item and web projections. Explanation prose remains prohibited from category, credit, grade, dimension, gate, and total calculation logic. Historical V7 calculation V3, item V4, web V6, result V8, projection-metadata V1, migration V1, receipt V1, locator-audit V1, and locator-fit-supplement V1 artifacts remain valid through the explicit compatibility reader.
 
 ## Two independent locator facts
 
@@ -74,7 +77,7 @@ Fabrication/nonexistence/out-of-scope/scope-failure defect kinds and exact struc
 
 Historical `structure-audit-v3` defects that predate `defect_kind` may use `F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1` when their locator binding, code, severity, scope, and all other structured fields are valid. Minor, major, and critical retain the same 0.35, 0.15, and 0 mappings. Convergent classifiers remain deterministic. Under `F-COMPAT-LEGACY-FIT-CONFLICT-TO-SUPPLEMENT-V1`, two or more otherwise valid classifiers bound to one exact locator/path state but implying different categories become unresolved only when their disagreement is confined to complete-path fit. The stable reason is `legacy_structured_fit_classification_conflict_requires_adjudication`. A valid frozen `absent` treatment remains `absent` in this unresolved record; the supplement adjudicates fit separately, and `min(T,F)` still bounds combined credit by the unchanged zero treatment value. `unavailable` treatment requires `uninspectable` judgment and therefore follows the deterministic bounded route, not supplementation. No classifier receives precedence and no history is amended. Cosmetic, neutral, unknown, incomplete, identity-inconsistent, artifact-invalid, or more broadly contradictory states remain invalid or ordinarily unresolved as already specified. `LOC_POS` records a consequence, not its fit cause.
 
-If unsupplemented migration still has unresolved fit states, scoring stops. Preflight reports deterministic, unresolved, and invalid groups plus per-reason counts, never an aggregate V7 score. A separately authorized and exactly bound `subject-index-v7-locator-fit-supplement-v1` may carry one existing fit category for every and only the mechanically unresolved locators, including eligible conflicts. It carries no numerical values and cannot change treatment, judgment, scope, code, severity, evidence, defects, gates, or another dimension. It resolves the V7 fit axis prospectively and never declares a historical classifier correct. The score-only migration does not inspect source pages or prose; it maps the authorized category through the frozen table and applies the unchanged minimum rule mechanically.
+If unsupplemented migration still has unresolved fit states, scoring stops. Preflight reports deterministic, unresolved, and invalid groups plus per-reason counts, never an aggregate V7 score. A separately authorized and exactly bound `subject-index-v7-locator-fit-supplement-v2` may carry one existing fit category for every and only the mechanically unresolved locators, including eligible conflicts. Each new decision also carries a concise `public_safe_rationale` or a hash-bound reference to a validated public-safe rationale ledger. That explanation is metadata only. The supplement carries no numerical values and cannot change treatment, judgment, scope, code, severity, evidence, defects, gates, or another dimension. It resolves the V7 fit axis prospectively and never declares a historical classifier correct. The score-only migration does not inspect source pages or use prose in classification; it maps the authorized category through the frozen table and applies the unchanged minimum rule mechanically.
 
 ## Page-reference Reliability
 
@@ -153,6 +156,6 @@ Every locator-bearing path records delivered display IDs, display kind, range id
 
 ## Migration
 
-`subject-index-score-migration-v6-to-v7-v1` is calculation-only and display-only. It preserves V6 evidence and projections as immutable history, requires exact normalized-candidate and inventory hashes, independently recalculates V6 before deriving compatibility or reading a fit supplement, rejects prose inference, derives structure counts mechanically, recalculates representation-adjusted views from each view’s own inputs/provenance and separately bound supplement, preserves gates, and emits a receipt covering active and historical projections.
+`subject-index-score-migration-v6-to-v7-v2` is calculation-only and display-only. It preserves V6 evidence and projections as immutable history, requires exact normalized-candidate and inventory hashes, independently recalculates V6 before deriving compatibility or reading a fit supplement, rejects prose inference, derives structure counts mechanically, recalculates representation-adjusted views from each view’s own inputs/provenance and separately bound supplement, preserves gates, and emits a receipt covering active and historical projections.
 
 A sole historical defect with the exact structured atomic-threshold-only basis may be removed from the active V7 projection when corrected triggers are both false and no independent architecture evidence remains. A newly exposed trigger cannot invent a semantic judgment: it becomes `review_required`, and full scoring stops pending a narrow supplemental architecture review. Source pages, locator-support judgments, missing-access audits, and unrelated structure judgments are never reopened.

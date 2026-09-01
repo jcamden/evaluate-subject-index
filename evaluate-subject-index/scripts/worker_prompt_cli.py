@@ -53,7 +53,7 @@ def library_path(value: str, name: str) -> str:
 
 
 def validate_spec(spec: dict[str, Any]) -> None:
-    require(spec.get("schema_version") == "locator-worker-prompt-pack-v1", "unsupported schema_version")
+    require(spec.get("schema_version") in {"locator-worker-prompt-pack-v1", "locator-worker-prompt-pack-v2"}, "unsupported schema_version")
     for name in ("evaluation_id", "candidate_id", "project", "base_branch", "benchmark_project", "checkpoint_filename"):
         text_field(spec, name)
     require(bool(COMMIT.fullmatch(text_field(spec, "base_commit"))), "base_commit must be a 40-character lowercase commit")
@@ -168,7 +168,7 @@ def render_chunk(spec: dict[str, Any], chunk: dict[str, Any]) -> str:
     recovery_root = f"{spec['worker_library_root'].rstrip('/')}/locator-audit/{chunk_id}/"
     publication_profile = spec.get("publication_profile", "aggregate_only")
     if publication_profile == "public_evaluation_artifacts":
-        publication_instruction = f"""Preserve the complete audit, receipt, worker state, worker manifest, and recovery ZIP under the recovery root before publication. Publish the exact validated canonical audit bytes at `candidate/locator-audits/locator-audit.{chunk_id}.v1.json` in one commit and one open, unmerged pull request. The public artifact must pass the strict canonical-audit allowlist, bounded-text, path, and secret scan. Do not publish source PDFs, PDF chunks, raw source text, receipts, recovery data, or control files; do not update canonical state or manifests, modify the benchmark repository, or merge the pull request."""
+        publication_instruction = f"""Preserve the complete audit, receipt, worker state, worker manifest, and recovery ZIP under the recovery root before publication. Publish the exact validated canonical audit bytes under `locator-audit-v2` at `candidate/locator-audits/locator-audit.{chunk_id}.v2.json` in one commit and one open, unmerged pull request. The public artifact must pass the strict canonical-audit allowlist, bounded-text, path, and secret scan. Do not publish source PDFs, PDF chunks, raw source text, receipts, recovery data, or control files; do not update canonical state or manifests, modify the benchmark repository, or merge the pull request."""
         binding_nouns = "public canonical audit and its identical recovery copy"
     else:
         publication_instruction = f"""Preserve the complete private audit, receipt, worker state, worker manifest, and recovery ZIP under the recovery root before publication. Publish exactly `validation/locator-audit-worker.{chunk_id}.json` in one commit and one open, unmerged pull request. Do not publish the complete audit, update canonical state or manifests, modify the benchmark repository, or merge the pull request."""
@@ -221,7 +221,14 @@ Before substantive work, retrieve these exact restricted artifacts from ChatGPT 
 
 If either restricted source artifact is unavailable or has a different hash, stop as blocked. Use the unique private recovery root `workers/locator-audit/{chunk_id}/`. Use branch `locator-audit/{lower_chunk}`; refuse it if it already exists.
 
-Audit every one of the {chunk['expected_locator_assignments']} packet assignments exactly once. Preserve the complete heading path, judge only this chunk's owned assignments, and use only `supported`, `partially_supported`, `unsupported`, or `uninspectable`. Record concise public-safe evidence paraphrases, evidence IDs, error codes, severity, and confidence. Do not perform missing-access, global-structure, density, item-assessment, scoring, or reporting work.
+Audit every one of the {chunk['expected_locator_assignments']} packet assignments exactly once. Preserve the complete heading path, judge only this chunk's owned assignments, and use only `supported`, `partially_supported`, `unsupported`, or `uninspectable`.
+
+During the same source inspection, answer two independent questions:
+
+1. How substantively does the cited page treat the indexed subject?
+2. Does that treatment accurately fit the complete heading path?
+
+For every measured locator, record one concise, locator-specific, public-safe `evidence_summary` describing what the cited page contains and why the treatment class was assigned. Record a separate concise public-safe `fit_rationale` when page treatment and complete-path fit differ, fit is less than 100, structured classifiers conflict, or a supplemental decision will supply fit. A routine supported, substantive, exact-fit case may omit authored fit prose because the projection can explain it mechanically from the structured category and rule. Never substitute provenance boilerplate for either explanation. Also record evidence IDs, error codes, severity, and confidence. Do not perform missing-access, global-structure, density, item-assessment, scoring, or reporting work.
 
 Use `parallel_candidate_audit_cli.py build-locator-worker`, `bind-publication`, and `validate-worker`. {publication_instruction}
 

@@ -47,10 +47,11 @@ python evaluate-subject-index/scripts/item_grade_v7_cli.py build-assessments \
   --v6-compatible-items /path/to/item-assessments.v6-compatible.json \
   --calculation /path/to/dimension-calculations.v7.json \
   --structure-locator-review /path/to/structure-locator-review.v7.json \
+  --locator-audit /path/to/locator-audit.CHUNK-001.v2.json \
   --output /path/to/item-assessments.v7.json
 ```
 
-The command verifies both self-hashes and all schemas, requires exact calculation/item evidence identity, and replaces locator grades with exactly `100 × combined_credit`. It suppresses the old path-level reliability mean. If a historical structure penalty must be removed, use the migration command so the active structure and dependent item diagnostics are rebuilt together.
+Repeat `--locator-audit` once per chunk. The command verifies both self-hashes and all schemas, requires exact calculation/item evidence identity, and replaces locator grades with exactly `100 × combined_credit` while preserving locator-specific evidence and conditional fit rationale. It suppresses the old path-level reliability mean. If a historical structure penalty must be removed, use the migration command so the active structure and dependent item diagnostics are rebuilt together.
 
 ## Migrate V6 to V7
 
@@ -63,7 +64,7 @@ validate as `subject-index-v7-architecture-review-supplement-v1`; its sorted
 decision paths must equal the mechanically unresolved trigger set exactly.
 Omit the field when no supplemental decision is needed.
 
-After an unsupplemented stop on unresolved complete-path fit, add `locator_fit_supplement` only to the affected canonical or counterfactual view. The referenced artifact must validate as `subject-index-v7-locator-fit-supplement-v1`; its sorted decisions must equal the independently derived unresolved locator-ID set exactly. Each decision supplies an existing fit category, not a numerical credit. For a conflict-routed locator, it resolves the prospective V7 fit axis without selecting a historically “correct” classifier or rewriting either record. A separately bound artifact is required for every counterfactual unless all relevant artifact identities independently validate as identical.
+After an unsupplemented stop on unresolved complete-path fit, add `locator_fit_supplement` only to the affected canonical or counterfactual view. A new artifact must validate as `subject-index-v7-locator-fit-supplement-v2`; historical V1 inputs remain compatibility-readable. Its sorted decisions must equal the independently derived unresolved locator-ID set exactly. Each V2 decision supplies an existing fit category plus `public_safe_rationale` or a hash-bound validated rationale-ledger reference, never a numerical credit. For a conflict-routed locator, it resolves the prospective V7 fit axis without selecting a historically “correct” classifier or rewriting either record. A separately bound artifact is required for every counterfactual unless all relevant artifact identities independently validate as identical.
 
 ```bash
 python evaluate-subject-index/scripts/dimension_score_v7_cli.py migrate-v6-to-v7 \
@@ -76,6 +77,15 @@ Use a new empty output directory. The migration refuses to overwrite outputs, al
 The migration recalculates V6 from its original input, derives unsupplemented compatibility and the complete unresolved fit set, and only then reads a locator-fit supplement. A supplement therefore cannot rebind, repair, or replace frozen V6 evidence. Architecture and locator-fit supplements have separate contracts. Locator-fit file/self hashes and exact scope are carried into the calculation, item assessments, migration, result, web report, projection metadata, and validation receipt; historical inputs remain unchanged.
 
 ## Validate
+
+Validate either historical or current V7 artifacts through the explicit version-dispatching reader:
+
+```bash
+python evaluate-subject-index/scripts/dimension_score_v7_cli.py validate-artifact \
+  --artifact /path/to/v7-artifact.json
+```
+
+Then run the repository suite:
 
 ```bash
 python -m py_compile evaluate-subject-index/scripts/*.py

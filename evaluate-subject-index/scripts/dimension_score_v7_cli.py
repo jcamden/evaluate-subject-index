@@ -47,20 +47,21 @@ from structure_locator_review import (
 
 RUBRIC_VERSION = "subject-index-rubric-v7"
 CALCULATION_PROFILE = "subject-index-dimension-calculation-v3"
-CALCULATION_SCHEMA = "subject-index-dimension-calculations-v3"
-RESULT_SCHEMA = "subject-index-evaluation-result-v8"
-WEB_REPORT_SCHEMA = "subject-index-web-report-v6"
-ITEM_ASSESSMENT_SCHEMA = "subject-index-item-assessments-v4"
+CALCULATION_SCHEMA = "subject-index-dimension-calculations-v4"
+RESULT_SCHEMA = "subject-index-evaluation-result-v9"
+WEB_REPORT_SCHEMA = "subject-index-web-report-v7"
+ITEM_ASSESSMENT_SCHEMA = "subject-index-item-assessments-v5"
 ITEM_GRADING_POLICY = "subject-index-item-grading-v3"
-PROJECTION_METADATA_SCHEMA = "subject-index-v7-projection-metadata-v1"
-MIGRATION_SCHEMA = "subject-index-score-migration-v6-to-v7-v1"
-VALIDATION_RECEIPT_SCHEMA = "subject-index-score-migration-v6-to-v7-validation-v1"
+PROJECTION_METADATA_SCHEMA = "subject-index-v7-projection-metadata-v2"
+MIGRATION_SCHEMA = "subject-index-score-migration-v6-to-v7-v2"
+VALIDATION_RECEIPT_SCHEMA = "subject-index-score-migration-v6-to-v7-validation-v2"
 SUPPLEMENTAL_ARCHITECTURE_REVIEW_SCHEMA = (
     "subject-index-v7-architecture-review-supplement-v1"
 )
-LOCATOR_FIT_SUPPLEMENT_SCHEMA = "subject-index-v7-locator-fit-supplement-v1"
+LOCATOR_FIT_SUPPLEMENT_SCHEMA = "subject-index-v7-locator-fit-supplement-v2"
+LEGACY_LOCATOR_FIT_SUPPLEMENT_SCHEMA = "subject-index-v7-locator-fit-supplement-v1"
 TOOL_NAME = "dimension_score_v7_cli.py"
-TOOL_VERSION = "dimension-score-cli-v7.0.6"
+TOOL_VERSION = "dimension-score-cli-v7.1.0"
 METHODOLOGY_REPOSITORY = "https://github.com/jcamden/evaluate-subject-index"
 
 ZERO = Decimal(0)
@@ -83,6 +84,41 @@ migration_artifact_root_spec = v6.migration_artifact_root_spec
 portable_rooted_artifact_reference = v6.portable_rooted_artifact_reference
 migration_artifact_root = v6.migration_artifact_root
 resolve_migration_artifact_path = v6.resolve_migration_artifact_path
+
+
+V7_ARTIFACT_COMPATIBILITY_SCHEMAS = {
+    "subject-index-dimension-calculations-v3": "dimension-calculations-v3.schema.json",
+    "subject-index-dimension-calculations-v4": "dimension-calculations-v4.schema.json",
+    "subject-index-item-assessments-v4": "item-assessments-v4.schema.json",
+    "subject-index-item-assessments-v5": "item-assessments-v5.schema.json",
+    "subject-index-evaluation-result-v8": "evaluation-result-v8.schema.json",
+    "subject-index-evaluation-result-v9": "evaluation-result-v9.schema.json",
+    "subject-index-web-report-v6": "web-report-v6.schema.json",
+    "subject-index-web-report-v7": "web-report-v7.schema.json",
+    "subject-index-v7-projection-metadata-v1": "v7-projection-metadata.schema.json",
+    "subject-index-v7-projection-metadata-v2": "v7-projection-metadata-v2.schema.json",
+    "subject-index-score-migration-v6-to-v7-v1": "score-migration-v6-to-v7.schema.json",
+    "subject-index-score-migration-v6-to-v7-v2": "score-migration-v6-to-v7-v2.schema.json",
+    "subject-index-score-migration-v6-to-v7-validation-v1": "score-migration-v6-to-v7-validation.schema.json",
+    "subject-index-score-migration-v6-to-v7-validation-v2": "score-migration-v6-to-v7-validation-v2.schema.json",
+    LEGACY_LOCATOR_FIT_SUPPLEMENT_SCHEMA: "v7-locator-fit-supplement.schema.json",
+    LOCATOR_FIT_SUPPLEMENT_SCHEMA: "v7-locator-fit-supplement-v2.schema.json",
+}
+
+
+def validate_v7_artifact_compatibility(
+    document: Mapping[str, Any], *, label: str
+) -> str:
+    schema_version = document.get("schema_version")
+    schema_name = V7_ARTIFACT_COMPATIBILITY_SCHEMAS.get(str(schema_version))
+    v5.require(
+        schema_name is not None,
+        "unsupported_v7_artifact_schema",
+        "The artifact is not a recognized historical or current V7 contract.",
+        schema_version,
+    )
+    v5.validate_schema_document(dict(document), schema_name, label)
+    return schema_name
 
 
 def _mapping_failure(locator: Mapping[str, Any], errors: Iterable[str]) -> dict[str, Any]:
@@ -1088,7 +1124,7 @@ def calculate_loaded(
         v5.require(
             locator_fit_supplement_artifact is not None
             and locator_fit_supplement_artifact.get("schema_version")
-            == LOCATOR_FIT_SUPPLEMENT_SCHEMA,
+            == locator_fit_supplement.get("schema_version"),
             "locator_fit_supplement_binding_mismatch",
             "A supplemental locator-fit input requires its exact validated artifact binding.",
         )
@@ -1481,7 +1517,7 @@ def command_calculate(args: argparse.Namespace) -> None:
             structure_review=review,
             structure_review_artifact=review_artifact,
         )
-        v5.validate_schema_document(result, "dimension-calculations-v3.schema.json", "Generated V7 dimension calculations")
+        v5.validate_schema_document(result, "dimension-calculations-v4.schema.json", "Generated V7 dimension calculations")
         if args.output:
             output_path = Path(args.output).resolve()
             v5.require(not v5.aliases_existing_file(output_path, {loaded["config_path"], *loaded["input_paths"]}), "output_aliases_frozen_input", "Calculation output must not overwrite frozen evidence.")
@@ -1817,8 +1853,19 @@ def _expected_locator_fit_bindings(
 
 def _load_locator_fit_supplement(path: Path, *, label: str) -> dict[str, Any]:
     document = v5.load_json(path, label)
+    schema_version = document.get("schema_version")
+    schema_name = {
+        LEGACY_LOCATOR_FIT_SUPPLEMENT_SCHEMA: "v7-locator-fit-supplement.schema.json",
+        LOCATOR_FIT_SUPPLEMENT_SCHEMA: "v7-locator-fit-supplement-v2.schema.json",
+    }.get(schema_version)
+    v5.require(
+        schema_name is not None,
+        "locator_fit_supplement_schema_unsupported",
+        "The locator-fit supplement must use the historical V1 contract or current V2 rationale contract.",
+        schema_version,
+    )
     v5.validate_schema_document(
-        document, "v7-locator-fit-supplement.schema.json", label
+        document, schema_name, label
     )
     v5.require(
         document.get("supplement_sha256")
@@ -1873,7 +1920,100 @@ def _load_locator_fit_supplement(path: Path, *, label: str) -> dict[str, Any]:
             "locator_fit_supplement_binding_order_invalid",
             f"{field} must use stable role/hash ordering.",
         )
+    _resolve_locator_fit_rationales(document, path)
     return document
+
+
+def _resolve_locator_fit_rationales(
+    supplement: Mapping[str, Any], supplement_path: Path
+) -> dict[str, dict[str, str]]:
+    if supplement.get("schema_version") == LEGACY_LOCATOR_FIT_SUPPLEMENT_SCHEMA:
+        return {}
+    ledgers: dict[str, Mapping[str, Any]] = {}
+    records: dict[tuple[str, str], Mapping[str, Any]] = {}
+    for reference in supplement.get("rationale_ledgers", []):
+        ledger_path = (supplement_path.parent / reference["artifact_path"]).resolve()
+        v5.require(
+            ledger_path.is_file(),
+            "locator_fit_rationale_ledger_missing",
+            "A referenced locator-fit rationale ledger is unavailable.",
+            str(ledger_path),
+        )
+        v5.require(
+            v5.sha256_file(ledger_path) == reference["file_sha256"],
+            "locator_fit_rationale_ledger_file_hash_mismatch",
+            "A locator-fit rationale ledger file hash does not match its supplement reference.",
+        )
+        ledger = v5.load_json(ledger_path, "Locator-fit rationale ledger")
+        v5.validate_schema_document(
+            ledger,
+            "v7-locator-fit-rationale-ledger.schema.json",
+            "Locator-fit rationale ledger",
+        )
+        v5.require(
+            ledger["ledger_sha256"] == v5.canonical_hash(ledger, "ledger_sha256")
+            and ledger["ledger_id"] == reference["ledger_id"]
+            and ledger["ledger_sha256"] == reference["ledger_sha256"],
+            "locator_fit_rationale_ledger_binding_mismatch",
+            "The rationale ledger identity or self-hash does not match its supplement reference.",
+        )
+        v5.require(
+            ledger["evaluation_id"] == supplement["evaluation_id"]
+            and ledger["candidate_identity"] == supplement["candidate_identity"]
+            and ledger["audit_mode"] == supplement["audit_mode"],
+            "locator_fit_rationale_ledger_identity_mismatch",
+            "The rationale ledger has a different evaluation, candidate, or audit-mode identity.",
+        )
+        v5.require(
+            ledger["ledger_id"] not in ledgers,
+            "locator_fit_rationale_ledger_duplicate",
+            "A rationale ledger identity may be bound only once.",
+        )
+        ledgers[ledger["ledger_id"]] = ledger
+        rationale_ids = [item["rationale_id"] for item in ledger["records"]]
+        v5.require(
+            rationale_ids == sorted(rationale_ids)
+            and len(rationale_ids) == len(set(rationale_ids)),
+            "locator_fit_rationale_ledger_order_invalid",
+            "Rationale ledger records must be unique and ordered by rationale ID.",
+        )
+        for record in ledger["records"]:
+            v5.require(
+                record["rationale_sha256"]
+                == v5.canonical_hash(record, "rationale_sha256"),
+                "locator_fit_rationale_record_hash_mismatch",
+                "A rationale ledger record self-hash does not reconstruct.",
+                record["rationale_id"],
+            )
+            records[(ledger["ledger_id"], record["rationale_id"])] = record
+
+    result: dict[str, dict[str, str]] = {}
+    for decision in supplement["decisions"]:
+        if "public_safe_rationale" in decision:
+            result[decision["locator_id"]] = {
+                "rationale": decision["public_safe_rationale"],
+                "source": "authored_supplement",
+            }
+            continue
+        reference = decision["rationale_reference"]
+        ledger = ledgers.get(reference["ledger_id"])
+        record = records.get((reference["ledger_id"], reference["rationale_id"]))
+        v5.require(
+            ledger is not None
+            and record is not None
+            and ledger["ledger_sha256"] == reference["ledger_sha256"]
+            and record["rationale_sha256"] == reference["rationale_sha256"]
+            and record["locator_id"] == decision["locator_id"]
+            and record["path_id"] == decision["path_id"],
+            "locator_fit_rationale_reference_mismatch",
+            "A supplemental fit decision does not resolve to its exact validated rationale record.",
+            decision["locator_id"],
+        )
+        result[decision["locator_id"]] = {
+            "rationale": record["public_safe_rationale"],
+            "source": "validated_rationale_ledger",
+        }
+    return result
 
 
 def _validate_locator_fit_supplement(
@@ -2142,6 +2282,8 @@ def _build_v7_item_projection(
     historical_items: dict[str, Any],
     calculation: dict[str, Any],
     review: dict[str, Any],
+    locator_fit_supplement: Mapping[str, Any] | None,
+    locator_fit_supplement_path: Path | None,
     output_path: Path,
 ) -> dict[str, Any]:
     active_structure = _active_structure_projection(loaded["structure"], review)
@@ -2160,8 +2302,22 @@ def _build_v7_item_projection(
     v6_compatible = item_v6.build_v6_assessments(
         base, loaded["locator_documents"], active_structure
     )
-    result = build_v7_assessments(v6_compatible, calculation, review)
-    v5.validate_schema_document(result, "item-assessments-v4.schema.json", "Generated V7 item assessments")
+    supplemental_rationales = (
+        _resolve_locator_fit_rationales(
+            locator_fit_supplement, locator_fit_supplement_path
+        )
+        if locator_fit_supplement is not None
+        and locator_fit_supplement_path is not None
+        else {}
+    )
+    result = build_v7_assessments(
+        v6_compatible,
+        calculation,
+        review,
+        locator_documents=loaded["locator_documents"],
+        supplemental_fit_rationales=supplemental_rationales,
+    )
+    v5.validate_schema_document(result, "item-assessments-v5.schema.json", "Generated V7 item assessments")
     return result
 
 
@@ -2443,7 +2599,7 @@ def _migrate_calculation_view(
         calculation["calculation_sha256"] = v5.canonical_hash(
             calculation, "calculation_sha256"
         )
-    v5.validate_schema_document(calculation, "dimension-calculations-v3.schema.json", f"{label} V7 calculation")
+    v5.validate_schema_document(calculation, "dimension-calculations-v4.schema.json", f"{label} V7 calculation")
     _write_new(calculation_output, calculation)
     return {
         "loaded": loaded,
@@ -2527,7 +2683,7 @@ def _locator_fit_supplement_reference(
         **_artifact_reference(
             path,
             container,
-            schema_version=LOCATOR_FIT_SUPPLEMENT_SCHEMA,
+            schema_version=str(document["schema_version"]),
         ),
         "supplement_id": document["supplement_id"],
         "supplement_sha256": document["supplement_sha256"],
@@ -2778,6 +2934,10 @@ def _build_result_and_web(
         "defects": deepcopy(metadata.get("defects", [])),
         "examples": deepcopy(metadata.get("examples", [])),
         "item_grade_index": _artifact_reference(items_path, web_output, schema_version=ITEM_ASSESSMENT_SCHEMA) | {"grading_policy": ITEM_GRADING_POLICY, "summary": deepcopy(items["summary"]), "color_legend": deepcopy(items["color_legend"]), "interaction": {"color_source": "grade.color_token", "popover_source": "popover", "not_measured_behavior": "neutral_not_failure", "locator_string_language": "displayed_and_atomic_counts_separate"}},
+        "locator_explanations": [
+            deepcopy(item["locator_explanation"])
+            for item in items["locator_assessments"]
+        ],
         "migration_comparison": {
             "status": "v6_to_v7",
             "migration_record": _artifact_reference(migration_path, web_output, schema_version=MIGRATION_SCHEMA) | {"migration_sha256": migration["migration_sha256"]},
@@ -2926,7 +3086,7 @@ def command_migrate(args: argparse.Namespace) -> None:
             counterfactuals.append(migrated)
 
         projection_metadata = _build_projection_metadata(old_metadata, canonical, counterfactuals, metadata_output)
-        v5.validate_schema_document(projection_metadata, "v7-projection-metadata.schema.json", "Generated V7 projection metadata")
+        v5.validate_schema_document(projection_metadata, "v7-projection-metadata-v2.schema.json", "Generated V7 projection metadata")
         _write_new(metadata_output, projection_metadata)
         items = _build_v7_item_projection(
             loaded=canonical["loaded"],
@@ -2936,6 +3096,8 @@ def command_migrate(args: argparse.Namespace) -> None:
             historical_items=old_items,
             calculation=canonical["calculation"],
             review=canonical["review"],
+            locator_fit_supplement=canonical["locator_fit_supplement"],
+            locator_fit_supplement_path=canonical["locator_fit_supplement_path"],
             output_path=item_output,
         )
         _write_new(item_output, items)
@@ -3175,11 +3337,11 @@ def command_migrate(args: argparse.Namespace) -> None:
         )
         migration["migration_id"] = f"MIG-{v5.canonical_hash(migration)[:12].upper()}"
         migration["migration_sha256"] = v5.canonical_hash(migration, "migration_sha256")
-        v5.validate_schema_document(migration, "score-migration-v6-to-v7.schema.json", "Generated V6-to-V7 migration")
+        v5.validate_schema_document(migration, "score-migration-v6-to-v7-v2.schema.json", "Generated V6-to-V7 migration")
         _write_new(migration_output, migration)
         result, web = _build_result_and_web(canonical=canonical, items=items, items_path=item_output, metadata=projection_metadata, migration=migration, migration_path=migration_output, projection_metadata_path=metadata_output, counterfactuals=counterfactuals, result_output=result_output, web_output=web_output)
-        v5.validate_schema_document(result, "evaluation-result-v8.schema.json", "Generated V7 result")
-        v5.validate_schema_document(web, "web-report-v6.schema.json", "Generated V7 web report")
+        v5.validate_schema_document(result, "evaluation-result-v9.schema.json", "Generated V7 result")
+        v5.validate_schema_document(web, "web-report-v7.schema.json", "Generated V7 web report")
         _write_new(result_output, result)
         _write_new(web_output, web)
         receipt = {
@@ -3213,7 +3375,7 @@ def command_migrate(args: argparse.Namespace) -> None:
         }
         receipt["receipt_id"] = f"VAL-{v5.canonical_hash(receipt)[:12].upper()}"
         receipt["receipt_sha256"] = v5.canonical_hash(receipt, "receipt_sha256")
-        v5.validate_schema_document(receipt, "score-migration-v6-to-v7-validation.schema.json", "Generated V7 validation receipt")
+        v5.validate_schema_document(receipt, "score-migration-v6-to-v7-validation-v2.schema.json", "Generated V7 validation receipt")
         _write_new(receipt_output, receipt)
         v5.emit({"command": command, "ok": True, "evaluation_id": canonical["calculation"]["evaluation_id"], "historical_total": old_calc["total_score"], "v7_total": canonical["calculation"]["total_score"], "removed_historical_structure_defects": canonical["review"]["summary"]["removed_historical_defect_ids"], "counterfactual_view_count": len(counterfactuals), "migration_sha256": migration["migration_sha256"], "validation_receipt_sha256": receipt["receipt_sha256"], "output_directory": str(output_dir)})
     except (OSError, ValueError, v5.CalculationError, StructureReviewError) as exc:
@@ -3221,6 +3383,31 @@ def command_migrate(args: argparse.Namespace) -> None:
             error = {"code": exc.code, "message": exc.message, "details": exc.details}
         else:
             error = {"code": "migration_error", "message": str(exc)}
+        v5.emit({"command": command, "ok": False, "error": error}, 1)
+
+
+def command_validate_artifact(args: argparse.Namespace) -> None:
+    command = "validate-v7-artifact"
+    try:
+        path = Path(args.artifact).resolve()
+        document = v5.load_json(path, "V7 artifact")
+        schema_name = validate_v7_artifact_compatibility(
+            document, label="V7 artifact"
+        )
+        v5.emit(
+            {
+                "command": command,
+                "ok": True,
+                "artifact": str(path),
+                "schema_version": document["schema_version"],
+                "compatibility_schema": schema_name,
+            }
+        )
+    except (OSError, ValueError, v5.CalculationError) as exc:
+        if isinstance(exc, v5.CalculationError):
+            error = {"code": exc.code, "message": exc.message, "details": exc.details}
+        else:
+            error = {"code": "v7_artifact_validation_error", "message": str(exc)}
         v5.emit({"command": command, "ok": False, "error": error}, 1)
 
 
@@ -3253,6 +3440,12 @@ def build_parser() -> argparse.ArgumentParser:
     migrate.add_argument("--manifest", required=True)
     migrate.add_argument("--output-directory", required=True)
     migrate.set_defaults(func=command_migrate)
+    validate_artifact = subparsers.add_parser(
+        "validate-artifact",
+        help="Validate a historical or current V7 artifact through the explicit compatibility reader.",
+    )
+    validate_artifact.add_argument("--artifact", required=True)
+    validate_artifact.set_defaults(func=command_validate_artifact)
     return parser
 
 
