@@ -1,0 +1,399 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dimension-calculations-v4.schema.json",
+  "title": "Deterministic V7 two-axis subject-index dimension calculations",
+  "type": "object",
+  "required": ["schema_version", "calculation_id", "evaluation_id", "rubric_version", "calculation_profile", "audit_mode", "status", "evidence_identity", "input_artifacts", "diagnostic_item_grades", "publication_readiness_gates", "dimensions", "total_score", "maximum_score", "arithmetic_check", "calculation_sha256"],
+  "properties": {
+    "schema_version": {"const": "subject-index-dimension-calculations-v4"},
+    "calculation_id": {"type": "string", "pattern": "^CALC-[A-F0-9]{12}$"},
+    "evaluation_id": {"type": "string", "minLength": 1},
+    "rubric_version": {"const": "subject-index-rubric-v7"},
+    "calculation_profile": {"const": "subject-index-dimension-calculation-v3"},
+    "audit_mode": {"enum": ["full", "pilot"]},
+    "status": {"enum": ["scored", "not_scored_insufficient_evidence"]},
+    "evidence_identity": {"$ref": "dimension-calculations.schema.json#/properties/evidence_identity"},
+    "migration_context": {
+      "type": "object",
+      "required": ["from_rubric_version", "migration_schema_version", "migration_record_path", "historical_calculation_sha256", "historical_result_sha256", "historical_item_assessments_sha256", "historical_web_report_sha256", "historical_gate_outcomes_sha256", "gate_outcomes_action"],
+      "properties": {
+        "from_rubric_version": {"const": "subject-index-rubric-v6"},
+        "migration_schema_version": {"const": "subject-index-score-migration-v6-to-v7-v2"},
+        "migration_record_path": {"$ref": "score-migration.schema.json#/$defs/portablePath"},
+        "historical_calculation_sha256": {"$ref": "#/$defs/sha256"},
+        "historical_result_sha256": {"$ref": "#/$defs/sha256"},
+        "historical_item_assessments_sha256": {"$ref": "#/$defs/sha256"},
+        "historical_web_report_sha256": {"$ref": "#/$defs/sha256"},
+        "historical_gate_outcomes_sha256": {"$ref": "#/$defs/sha256"},
+        "gate_outcomes_action": {"const": "preserve_identically"}
+      },
+      "additionalProperties": false
+    },
+    "input_artifacts": {"type": "array", "minItems": 3, "items": {"$ref": "dimension-calculations.schema.json#/$defs/inputArtifact"}, "uniqueItems": true},
+    "diagnostic_item_grades": {
+      "type": "object",
+      "required": ["used_in_dimension_arithmetic", "policy", "required_policy_version", "expected_source_subjects"],
+      "properties": {
+        "used_in_dimension_arithmetic": {"const": false},
+        "policy": {"const": "separate_non_additive_display_layer_same_scale_as_locator_credit"},
+        "required_policy_version": {"const": "subject-index-item-grading-v3"},
+        "expected_source_subjects": {"$ref": "dimension-calculations.schema.json#/properties/diagnostic_item_grades/properties/expected_source_subjects"}
+      },
+      "additionalProperties": false
+    },
+    "publication_readiness_gates": {
+      "type": "object",
+      "required": ["used_in_score_arithmetic", "policy"],
+      "properties": {"used_in_score_arithmetic": {"const": false}, "policy": {"const": "separate_claim_restrictions_unchanged_from_v6"}},
+      "additionalProperties": false
+    },
+    "structure_locator_review": {
+      "type": "object",
+      "required": ["schema_version", "review_id", "review_sha256", "thresholds", "summary", "active_correction"],
+      "properties": {
+        "schema_version": {"const": "subject-index-structure-locator-review-v1"},
+        "review_id": {"type": "string", "pattern": "^STRUCTREV-[A-F0-9]{12}$"},
+        "review_sha256": {"$ref": "#/$defs/sha256"},
+        "thresholds": {"type": "object"},
+        "summary": {"type": "object"},
+        "active_correction": {
+          "type": "object",
+          "required": ["removed_defect_ids", "corrected_node_statuses", "review_required_path_ids", "historical_ledgers_mutated"],
+          "properties": {
+            "removed_defect_ids": {"type": "array", "items": {"type": "string", "pattern": "^DEFECT-"}, "uniqueItems": true},
+            "corrected_node_statuses": {"type": "array", "items": {"type": "object"}},
+            "review_required_path_ids": {"type": "array", "items": {"type": "string", "pattern": "^PATH-"}, "uniqueItems": true},
+            "historical_ledgers_mutated": {"const": false}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "locator_fit_compatibility": {
+      "description": "Score-free compatibility provenance. Unresolved records preserve every frozen non-fit field verbatim, including a legally reachable absent treatment class; unavailable treatment remains deterministic and cannot enter this group.",
+      "type": "object",
+      "required": ["rule", "classifications", "unresolved_before_supplement", "unresolved_after_supplement", "historical_defects_rewritten", "prose_inference_used"],
+      "properties": {
+        "rule": {"const": "F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1"},
+        "conflict_rule": {"const": "F-COMPAT-LEGACY-FIT-CONFLICT-TO-SUPPLEMENT-V1"},
+        "classifications": {"type": "array", "items": {"$ref": "#/$defs/compatibilityClassification"}},
+        "preflight_group_counts": {"$ref": "v7-locator-fit-preflight.schema.json#/$defs/groupCounts"},
+        "unresolved_reason_counts_before_supplement": {"$ref": "v7-locator-fit-preflight.schema.json#/$defs/unresolvedReasonCounts"},
+        "unresolved_records_before_supplement": {"type": "array", "items": {"$ref": "v7-locator-fit-preflight.schema.json#/$defs/unresolvedFit"}},
+        "unresolved_before_supplement": {"type": "integer", "minimum": 0},
+        "unresolved_after_supplement": {"type": "integer", "minimum": 0},
+        "historical_defects_rewritten": {"const": false},
+        "classifier_precedence_applied": {"const": false},
+        "aggregate_score_exposed_during_preflight": {"const": false},
+        "prose_inference_used": {"const": false}
+      },
+      "additionalProperties": false
+    },
+    "locator_fit_supplement": {
+      "type": "object",
+      "required": ["schema_version", "supplement_id", "supplement_sha256", "file_sha256", "scope_rule_id", "unresolved_set_sha256", "decision_count", "application", "numerical_credit_supplied"],
+      "properties": {
+        "schema_version": {"enum": ["subject-index-v7-locator-fit-supplement-v1", "subject-index-v7-locator-fit-supplement-v2"]},
+        "supplement_id": {"type": "string", "pattern": "^FITSUP-[A-F0-9]{12}$"},
+        "supplement_sha256": {"$ref": "#/$defs/sha256"},
+        "file_sha256": {"$ref": "#/$defs/sha256"},
+        "scope_rule_id": {"const": "FIT-V7-EXACT-UNRESOLVED-LOCATOR-SET-V1"},
+        "unresolved_set_sha256": {"$ref": "#/$defs/sha256"},
+        "decision_count": {"type": "integer", "minimum": 1},
+        "application": {"const": "complete_path_fit_only_in_memory"},
+        "numerical_credit_supplied": {"const": false}
+      },
+      "additionalProperties": false
+    },
+    "dimensions": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {"$ref": "#/$defs/dimension"},
+      "allOf": [
+        {"contains": {"properties": {"dimension_id": {"const": "meaningful_coverage"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "editorial_selectivity"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "conceptual_stance_fidelity"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "page_reference_reliability"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "findability_navigation"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"dimension_id": {"const": "mechanics_consistency"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1}
+      ]
+    },
+    "total_score": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+    "maximum_score": {"const": 100},
+    "arithmetic_check": {"type": "boolean"},
+    "calculation_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "decimal": {"type": "string", "pattern": "^-?[0-9]+(?:\\.[0-9]+)?$"},
+    "compatibilityClassification": {
+      "type": "object",
+      "required": ["locator_id", "path_id", "compatibility_rule_id", "fit_category", "fit_rule_id", "applicable_structured_defect_ids", "prose_inference_used"],
+      "properties": {
+        "locator_id": {"type": "string", "pattern": "^LOC-"},
+        "path_id": {"type": "string", "pattern": "^PATH-"},
+        "compatibility_rule_id": {"const": "F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1"},
+        "fit_category": {"enum": ["material_mismatch", "severe_mismatch", "no_fit"]},
+        "fit_rule_id": {"enum": ["F-MINOR-MISMATCH-035", "F-MAJOR-MISMATCH-015", "F-NO-FIT-000"]},
+        "applicable_structured_defect_ids": {"type": "array", "items": {"type": "string", "pattern": "^DEFECT-"}, "uniqueItems": true},
+        "prose_inference_used": {"const": false}
+      },
+      "additionalProperties": false
+    },
+    "reliabilityCompatibilityClassification": {
+      "type": "object",
+      "required": ["locator_id", "fit_category", "fit_rule_id", "compatibility_rule_ids", "applicable_structured_defect_ids"],
+      "properties": {
+        "locator_id": {"type": "string", "pattern": "^LOC-"},
+        "fit_category": {"enum": ["exact_fit", "material_partial_fit", "material_mismatch", "severe_mismatch", "no_fit"]},
+        "fit_rule_id": {"enum": ["F-MINOR-MISMATCH-035", "F-MAJOR-MISMATCH-015", "F-NO-FIT-000", "F-SUPPLEMENTAL-EXACT-100", "F-SUPPLEMENTAL-PARTIAL-070", "F-SUPPLEMENTAL-MISMATCH-035", "F-SUPPLEMENTAL-SEVERE-015", "F-SUPPLEMENTAL-NO-FIT-000"]},
+        "compatibility_rule_ids": {"$ref": "v7-locator-fit-preflight.schema.json#/$defs/compatibilityRuleIds"},
+        "applicable_structured_defect_ids": {"type": "array", "items": {"type": "string", "pattern": "^DEFECT-"}, "uniqueItems": true}
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "compatibility_rule_ids": {"const": ["F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1"]},
+            "fit_category": {"const": "material_mismatch"},
+            "fit_rule_id": {"const": "F-MINOR-MISMATCH-035"}
+          }
+        },
+        {
+          "properties": {
+            "compatibility_rule_ids": {"const": ["F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1"]},
+            "fit_category": {"const": "severe_mismatch"},
+            "fit_rule_id": {"const": "F-MAJOR-MISMATCH-015"}
+          }
+        },
+        {
+          "properties": {
+            "compatibility_rule_ids": {"const": ["F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1"]},
+            "fit_category": {"const": "no_fit"},
+            "fit_rule_id": {"const": "F-NO-FIT-000"}
+          }
+        },
+        {
+          "properties": {
+            "compatibility_rule_ids": {"const": ["F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1", "F-COMPAT-LEGACY-FIT-CONFLICT-TO-SUPPLEMENT-V1"]},
+            "fit_category": {"const": "exact_fit"},
+            "fit_rule_id": {"const": "F-SUPPLEMENTAL-EXACT-100"}
+          }
+        },
+        {
+          "properties": {
+            "compatibility_rule_ids": {"const": ["F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1", "F-COMPAT-LEGACY-FIT-CONFLICT-TO-SUPPLEMENT-V1"]},
+            "fit_category": {"const": "material_partial_fit"},
+            "fit_rule_id": {"const": "F-SUPPLEMENTAL-PARTIAL-070"}
+          }
+        },
+        {
+          "properties": {
+            "compatibility_rule_ids": {"const": ["F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1", "F-COMPAT-LEGACY-FIT-CONFLICT-TO-SUPPLEMENT-V1"]},
+            "fit_category": {"const": "material_mismatch"},
+            "fit_rule_id": {"const": "F-SUPPLEMENTAL-MISMATCH-035"}
+          }
+        },
+        {
+          "properties": {
+            "compatibility_rule_ids": {"const": ["F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1", "F-COMPAT-LEGACY-FIT-CONFLICT-TO-SUPPLEMENT-V1"]},
+            "fit_category": {"const": "severe_mismatch"},
+            "fit_rule_id": {"const": "F-SUPPLEMENTAL-SEVERE-015"}
+          }
+        },
+        {
+          "properties": {
+            "compatibility_rule_ids": {"const": ["F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1", "F-COMPAT-LEGACY-FIT-CONFLICT-TO-SUPPLEMENT-V1"]},
+            "fit_category": {"const": "no_fit"},
+            "fit_rule_id": {"const": "F-SUPPLEMENTAL-NO-FIT-000"}
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "uncertaintyTriple": {
+      "type": "object",
+      "required": ["lower", "central", "upper"],
+      "properties": {"lower": {"$ref": "#/$defs/decimal"}, "central": {"$ref": "#/$defs/decimal"}, "upper": {"$ref": "#/$defs/decimal"}},
+      "additionalProperties": false
+    },
+    "completeTierCounts": {
+      "type": "object",
+      "additionalProperties": {"type": "integer", "minimum": 0}
+    },
+    "judgmentCounts": {
+      "type": "object",
+      "required": ["supported", "partially_supported", "unsupported", "uninspectable", "not_measured"],
+      "properties": {
+        "supported": {"type": "integer", "minimum": 0},
+        "partially_supported": {"type": "integer", "minimum": 0},
+        "unsupported": {"type": "integer", "minimum": 0},
+        "uninspectable": {"type": "integer", "minimum": 0},
+        "not_measured": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "treatmentTierCounts": {
+      "type": "object",
+      "required": ["substantive", "mixed", "weak_presence", "absent", "invalid_destination", "uninspectable", "not_measured"],
+      "properties": {
+        "substantive": {"type": "integer", "minimum": 0},
+        "mixed": {"type": "integer", "minimum": 0},
+        "weak_presence": {"type": "integer", "minimum": 0},
+        "absent": {"type": "integer", "minimum": 0},
+        "invalid_destination": {"type": "integer", "minimum": 0},
+        "uninspectable": {"type": "integer", "minimum": 0},
+        "not_measured": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "fitTierCounts": {
+      "type": "object",
+      "required": ["exact_fit", "material_partial_fit", "material_mismatch", "severe_mismatch", "no_fit", "uninspectable", "not_measured"],
+      "properties": {
+        "exact_fit": {"type": "integer", "minimum": 0},
+        "material_partial_fit": {"type": "integer", "minimum": 0},
+        "material_mismatch": {"type": "integer", "minimum": 0},
+        "severe_mismatch": {"type": "integer", "minimum": 0},
+        "no_fit": {"type": "integer", "minimum": 0},
+        "uninspectable": {"type": "integer", "minimum": 0},
+        "not_measured": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "combinedCreditCounts": {
+      "type": "object",
+      "required": ["1", "0.7", "0.35", "0.25", "0.15", "0", "uninspectable", "not_measured"],
+      "properties": {
+        "1": {"type": "integer", "minimum": 0},
+        "0.7": {"type": "integer", "minimum": 0},
+        "0.35": {"type": "integer", "minimum": 0},
+        "0.25": {"type": "integer", "minimum": 0},
+        "0.15": {"type": "integer", "minimum": 0},
+        "0": {"type": "integer", "minimum": 0},
+        "uninspectable": {"type": "integer", "minimum": 0},
+        "not_measured": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "utilityAssignment": {
+      "type": "object",
+      "required": ["locator_id", "judgment", "treatment_class", "source_scope_status", "inspectability_state", "error_codes", "applicable_structured_defect_ids", "locator_severity", "effective_fit_severity", "treatment_category", "treatment_score", "fit_category", "fit_score", "treatment_rule_id", "fit_rule_id", "mapping_rule_id", "combined_credit", "diagnostic_grade", "disposition", "disposition_reason", "used_in_precision_numerator", "uncertainty_bounds"],
+      "properties": {
+        "locator_id": {"type": "string", "pattern": "^LOC-"},
+        "judgment": {"enum": ["supported", "partially_supported", "unsupported", "uninspectable", "not_measured"]},
+        "treatment_class": {"type": ["string", "null"]},
+        "source_scope_status": {"type": ["string", "null"]},
+        "inspectability_state": {"enum": ["inspectable", "known_excluded_nonindexable", "uninspectable_unavailable", "uninspectable_ambiguous", "not_measured"]},
+        "error_codes": {"type": "array", "items": {"enum": ["SCP", "COV", "SEL", "CON", "STA", "LOC_POS", "LOC_NEG", "CMP", "HED", "SUB", "XRF", "DEN", "MEC"]}, "uniqueItems": true},
+        "applicable_structured_defect_ids": {"type": "array", "items": {"type": "string", "pattern": "^DEFECT-"}, "uniqueItems": true},
+        "locator_severity": {"enum": ["none", "cosmetic", "minor", "major", "critical", null]},
+        "effective_fit_severity": {"enum": ["none", "cosmetic", "minor", "major", "critical", null]},
+        "treatment_category": {"enum": ["substantive", "mixed", "weak_presence", "absent", "invalid_destination", "uninspectable", "not_measured"]},
+        "treatment_score": {"enum": ["1", "0.7", "0.25", "0", null]},
+        "fit_category": {"enum": ["exact_fit", "material_partial_fit", "material_mismatch", "severe_mismatch", "no_fit", "uninspectable", "not_measured"]},
+        "fit_score": {"enum": ["1", "0.7", "0.35", "0.15", "0", null]},
+        "treatment_rule_id": {"type": "string", "pattern": "^T-[A-Z0-9-]+$"},
+        "fit_rule_id": {"type": "string", "pattern": "^F-[A-Z0-9-]+$"},
+        "mapping_rule_id": {"type": "string", "pattern": "^T-[A-Z0-9-]+\\+F-[A-Z0-9-]+(?:\\+F-COMPAT-LEGACY-CODE-SEVERITY-ONLY-V1(?:\\+F-COMPAT-LEGACY-FIT-CONFLICT-TO-SUPPLEMENT-V1)?)?\\+MIN$"},
+        "fit_classification_source": {"enum": ["frozen_uninspectable_state", "structured_no_fit_precedence", "frozen_supported_judgment", "frozen_partially_supported_judgment", "frozen_absent_treatment", "modern_structured_fit_evidence", "legacy_code_severity_compatibility", "frozen_weak_treatment_only", "supplemental_locator_fit", "not_measured"]},
+        "compatibility_rule_ids": {"$ref": "v7-locator-fit-preflight.schema.json#/$defs/compatibilityRuleIds"},
+        "supplemental_fit_decision_id": {"type": ["string", "null"], "pattern": "^FITDEC-[A-F0-9]{12}$"},
+        "supplemental_fit_evidence_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "combined_credit": {"enum": ["1", "0.7", "0.35", "0.25", "0.15", "0", null]},
+        "diagnostic_grade": {"enum": [100, 70, 35, 25, 15, 0, null]},
+        "disposition": {"enum": ["assessable", "bounded", "not_measured"]},
+        "disposition_reason": {"type": "string", "minLength": 1},
+        "used_in_precision_numerator": {"type": "boolean"},
+        "uncertainty_bounds": {"type": "object", "required": ["lower", "upper"], "properties": {"lower": {"$ref": "#/$defs/decimal"}, "upper": {"$ref": "#/$defs/decimal"}}, "additionalProperties": false}
+      },
+      "additionalProperties": false
+    },
+    "reliabilityProvenance": {
+      "type": "object",
+      "required": ["model", "original_locator_denominator", "assessable_locator_denominator", "uninspectable_locator_count", "not_measured_locator_count", "counts_by_judgment", "counts_by_treatment_class", "counts_by_treatment_tier", "counts_by_fit_tier", "counts_by_combined_credit_value", "locator_utility_assignments", "mapping_rejections", "treatment_score_numerator", "treatment_score_denominator", "mean_treatment_score", "fit_score_numerator", "fit_score_denominator", "mean_fit_score", "weighted_precision_numerator", "weighted_precision_denominator", "weighted_locator_precision", "strict_precision_numerator", "strict_precision_denominator", "strict_substantive_precision", "treatment_recall_numerator", "treatment_recall_denominator", "treatment_recall", "weighted_f1", "treatment_score_uncertainty", "fit_score_uncertainty", "strict_precision_uncertainty", "weighted_precision_uncertainty", "treatment_recall_uncertainty", "calculation_credit_source", "diagnostic_grade_formula", "diagnostic_grades_used_in_dimension_arithmetic", "pre_cap_rating", "cap_evaluations", "applied_cap", "uncertainty_lower", "uncertainty_upper", "rounding", "final_rating", "dimension_weight", "awarded_points"],
+      "properties": {
+        "model": {"const": "two_axis_independent_ceilings_minimum_v1"},
+        "original_locator_denominator": {"type": "integer", "minimum": 0},
+        "assessable_locator_denominator": {"type": "integer", "minimum": 0},
+        "uninspectable_locator_count": {"type": "integer", "minimum": 0},
+        "not_measured_locator_count": {"type": "integer", "minimum": 0},
+        "counts_by_judgment": {"$ref": "#/$defs/judgmentCounts"},
+        "counts_by_treatment_class": {"$ref": "#/$defs/completeTierCounts"},
+        "counts_by_treatment_tier": {"$ref": "#/$defs/treatmentTierCounts"},
+        "counts_by_fit_tier": {"$ref": "#/$defs/fitTierCounts"},
+        "counts_by_combined_credit_value": {"$ref": "#/$defs/combinedCreditCounts"},
+        "locator_utility_assignments": {"type": "array", "items": {"$ref": "#/$defs/utilityAssignment"}},
+        "mapping_rejections": {"type": "array", "maxItems": 0},
+        "compatibility_classifications": {"type": "array", "items": {"$ref": "#/$defs/reliabilityCompatibilityClassification"}},
+        "supplemental_fit_decision_count": {"type": "integer", "minimum": 0},
+        "treatment_score_numerator": {"$ref": "#/$defs/decimal"},
+        "treatment_score_denominator": {"type": "integer", "minimum": 0},
+        "mean_treatment_score": {"$ref": "#/$defs/decimal"},
+        "fit_score_numerator": {"$ref": "#/$defs/decimal"},
+        "fit_score_denominator": {"type": "integer", "minimum": 0},
+        "mean_fit_score": {"$ref": "#/$defs/decimal"},
+        "weighted_precision_numerator": {"$ref": "#/$defs/decimal"},
+        "weighted_precision_denominator": {"type": "integer", "minimum": 0},
+        "weighted_locator_precision": {"$ref": "#/$defs/decimal"},
+        "strict_precision_numerator": {"type": "integer", "minimum": 0},
+        "strict_precision_denominator": {"type": "integer", "minimum": 0},
+        "strict_substantive_precision": {"$ref": "#/$defs/decimal"},
+        "treatment_recall_numerator": {"type": "integer", "minimum": 0},
+        "treatment_recall_denominator": {"type": "integer", "minimum": 0},
+        "treatment_recall": {"$ref": "#/$defs/decimal"},
+        "weighted_f1": {"$ref": "#/$defs/decimal"},
+        "treatment_score_uncertainty": {"$ref": "#/$defs/uncertaintyTriple"},
+        "fit_score_uncertainty": {"$ref": "#/$defs/uncertaintyTriple"},
+        "strict_precision_uncertainty": {"$ref": "#/$defs/uncertaintyTriple"},
+        "weighted_precision_uncertainty": {"$ref": "#/$defs/uncertaintyTriple"},
+        "treatment_recall_uncertainty": {"$ref": "#/$defs/uncertaintyTriple"},
+        "calculation_credit_source": {"const": "locator_utility_assignments[].combined_credit"},
+        "diagnostic_grade_formula": {"const": "100 * combined_credit"},
+        "diagnostic_grades_used_in_dimension_arithmetic": {"const": false},
+        "pre_cap_rating": {"$ref": "dimension-calculations.schema.json#/$defs/decimal"},
+        "cap_evaluations": {"type": "array", "items": {"$ref": "dimension-calculations.schema.json#/$defs/cap"}},
+        "applied_cap": {"$ref": "dimension-calculations.schema.json#/$defs/appliedCap"},
+        "uncertainty_lower": {"$ref": "dimension-calculations.schema.json#/$defs/bound"},
+        "uncertainty_upper": {"$ref": "dimension-calculations.schema.json#/$defs/bound"},
+        "rounding": {"type": "object"},
+        "final_rating": {"type": ["number", "null"], "minimum": 0, "maximum": 5},
+        "dimension_weight": {"const": 25},
+        "awarded_points": {"type": ["number", "null"], "minimum": 0, "maximum": 25}
+      },
+      "additionalProperties": false
+    },
+    "dimension": {
+      "type": "object",
+      "required": ["dimension_id", "status", "formula_id", "input_roles", "input_artifacts", "denominators", "raw_status_counts", "credit_mappings", "components", "base_rating", "unrounded_rating", "cap_evaluations", "applied_cap", "pre_cap_rating", "post_cap_rating", "missing_data_bounds", "rounding", "final_rating", "dimension_weight", "awarded_points", "warnings"],
+      "properties": {
+        "dimension_id": {"enum": ["meaningful_coverage", "editorial_selectivity", "conceptual_stance_fidelity", "page_reference_reliability", "findability_navigation", "mechanics_consistency"]},
+        "status": {"enum": ["scored", "not_scored_incomplete_full_audit", "not_scored_insufficient_evidence"]},
+        "formula_id": {"type": "string", "pattern": "^subject-index-dimension-calculation-v3:"},
+        "input_roles": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "input_artifacts": {"type": "array", "minItems": 1, "items": {"$ref": "dimension-calculations.schema.json#/$defs/inputArtifact"}, "uniqueItems": true},
+        "denominators": {"type": "object", "required": ["components"], "properties": {"components": {"type": "array", "minItems": 1, "items": {"$ref": "dimension-calculations.schema.json#/$defs/denominator"}}}, "additionalProperties": false},
+        "raw_status_counts": {"type": "object"},
+        "credit_mappings": {"type": "object"},
+        "components": {"type": "array", "minItems": 1, "items": {"$ref": "dimension-calculations.schema.json#/$defs/component"}},
+        "base_rating": {"$ref": "dimension-calculations.schema.json#/$defs/decimal"},
+        "unrounded_rating": {"$ref": "dimension-calculations.schema.json#/$defs/decimal"},
+        "cap_evaluations": {"type": "array", "minItems": 1, "items": {"$ref": "dimension-calculations.schema.json#/$defs/cap"}},
+        "applied_cap": {"$ref": "dimension-calculations.schema.json#/$defs/appliedCap"},
+        "pre_cap_rating": {"$ref": "dimension-calculations.schema.json#/$defs/decimal"},
+        "post_cap_rating": {"$ref": "dimension-calculations.schema.json#/$defs/decimal"},
+        "missing_data_bounds": {"type": "object", "required": ["lower", "upper", "stable_rating", "stable_cap_outcome"], "properties": {"lower": {"$ref": "dimension-calculations.schema.json#/$defs/bound"}, "upper": {"$ref": "dimension-calculations.schema.json#/$defs/bound"}, "stable_rating": {"type": "boolean"}, "stable_cap_outcome": {"type": "boolean"}}, "additionalProperties": false},
+        "rounding": {"type": "object"},
+        "final_rating": {"type": ["number", "null"], "minimum": 0, "maximum": 5},
+        "dimension_weight": {"enum": [5, 15, 20, 25]},
+        "awarded_points": {"type": ["number", "null"], "minimum": 0},
+        "warnings": {"type": "array", "items": {"type": "string"}},
+        "reliability_provenance": {"$ref": "#/$defs/reliabilityProvenance"}
+      },
+      "allOf": [{"if": {"properties": {"dimension_id": {"const": "page_reference_reliability"}}, "required": ["dimension_id"]}, "then": {"required": ["reliability_provenance"]}, "else": {"not": {"required": ["reliability_provenance"]}}}],
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

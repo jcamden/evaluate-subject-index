@@ -1,0 +1,243 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "v7-locator-fit-supplement-v2.schema.json",
+  "title": "Hash-bound supplemental V7 complete-path-fit adjudication",
+  "description": "Transports separately authorized complete-path-fit category decisions for the exact mechanically unresolved set, including bare LOC_POS cases and eligible conflicts among individually valid historical structured classifiers. It does not amend history, declare a historical classifier correct, or carry any non-fit override or numerical credit or score.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "supplement_id",
+    "evaluation_id",
+    "candidate_identity",
+    "audit_mode",
+    "bindings",
+    "scope",
+    "decisions",
+    "rationale_ledgers",
+    "provenance",
+    "supplement_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "subject-index-v7-locator-fit-supplement-v2"
+    },
+    "supplement_id": {
+      "type": "string",
+      "pattern": "^FITSUP-[A-F0-9]{12}$"
+    },
+    "evaluation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "candidate_identity": {
+      "type": "object",
+      "required": ["candidate_id", "candidate_sha256"],
+      "properties": {
+        "candidate_id": {"type": "string", "minLength": 1},
+        "candidate_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "audit_mode": {
+      "enum": ["full", "pilot"]
+    },
+    "bindings": {
+      "type": "object",
+      "required": [
+        "v6_dimension_calculation_input_file_sha256",
+        "normalized_candidate_file_sha256",
+        "item_inventory_file_sha256",
+        "historical_v6_calculation_file_sha256",
+        "historical_v6_calculation_sha256",
+        "locator_audit_artifacts",
+        "missing_access_audit_artifacts",
+        "historical_structure_audit",
+        "chunk_manifest",
+        "migration_supplement",
+        "representation_correction_provenance_artifacts",
+        "calculation_input_artifact_set_sha256"
+      ],
+      "properties": {
+        "v6_dimension_calculation_input_file_sha256": {"$ref": "#/$defs/sha256"},
+        "normalized_candidate_file_sha256": {"$ref": "#/$defs/sha256"},
+        "item_inventory_file_sha256": {"$ref": "#/$defs/sha256"},
+        "historical_v6_calculation_file_sha256": {"$ref": "#/$defs/sha256"},
+        "historical_v6_calculation_sha256": {"$ref": "#/$defs/sha256"},
+        "locator_audit_artifacts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/boundArtifact"}
+        },
+        "missing_access_audit_artifacts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/boundArtifact"}
+        },
+        "historical_structure_audit": {"$ref": "#/$defs/boundArtifact"},
+        "chunk_manifest": {"$ref": "#/$defs/boundArtifact"},
+        "migration_supplement": {
+          "oneOf": [
+            {"$ref": "#/$defs/boundArtifact"},
+            {"type": "null"}
+          ]
+        },
+        "representation_correction_provenance_artifacts": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/boundArtifact"}
+        },
+        "calculation_input_artifact_set_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "scope": {
+      "type": "object",
+      "description": "The exact sorted unresolved locator set and canonical set hash produced before any supplement is read; invalid states are excluded.",
+      "required": ["rule_id", "unresolved_locator_ids", "unresolved_set_sha256"],
+      "properties": {
+        "rule_id": {"const": "FIT-V7-EXACT-UNRESOLVED-LOCATOR-SET-V1"},
+        "unresolved_locator_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "pattern": "^LOC-"},
+          "uniqueItems": true
+        },
+        "unresolved_set_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "decisions": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Prospective V7 complete-path-fit adjudications. A decision resolves the fit axis and never selects a winning historical classifier.",
+      "items": {
+        "type": "object",
+        "required": [
+          "decision_id",
+          "locator_id",
+          "path_id",
+          "fit_category",
+          "evidence_ids"
+        ],
+        "properties": {
+          "decision_id": {
+            "type": "string",
+            "pattern": "^FITDEC-[A-F0-9]{12}$"
+          },
+          "locator_id": {"type": "string", "pattern": "^LOC-"},
+          "path_id": {"type": "string", "pattern": "^PATH-"},
+          "fit_category": {
+            "enum": [
+              "exact_fit",
+              "material_partial_fit",
+              "material_mismatch",
+              "severe_mismatch",
+              "no_fit"
+            ]
+          },
+          "evidence_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1},
+            "uniqueItems": true
+          },
+          "public_safe_rationale": {"type": "string", "minLength": 1, "maxLength": 2000},
+          "rationale_reference": {
+            "type": "object",
+            "required": ["ledger_id", "ledger_sha256", "rationale_id", "rationale_sha256"],
+            "properties": {
+              "ledger_id": {"type": "string", "pattern": "^FITRATLED-[A-F0-9]{12}$"},
+              "ledger_sha256": {"$ref": "#/$defs/sha256"},
+              "rationale_id": {"type": "string", "pattern": "^FITRAT-[A-F0-9]{12}$"},
+              "rationale_sha256": {"$ref": "#/$defs/sha256"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "oneOf": [
+          {"required": ["public_safe_rationale"], "not": {"required": ["rationale_reference"]}},
+          {"required": ["rationale_reference"], "not": {"required": ["public_safe_rationale"]}}
+        ],
+        "additionalProperties": false
+      }
+    },
+    "rationale_ledgers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["schema_version", "artifact_path", "file_sha256", "ledger_id", "ledger_sha256"],
+        "properties": {
+          "schema_version": {"const": "subject-index-v7-locator-fit-rationale-ledger-v1"},
+          "artifact_path": {"$ref": "score-migration.schema.json#/$defs/portablePath"},
+          "file_sha256": {"$ref": "#/$defs/sha256"},
+          "ledger_id": {"type": "string", "pattern": "^FITRATLED-[A-F0-9]{12}$"},
+          "ledger_sha256": {"$ref": "#/$defs/sha256"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "authorization_id",
+        "authorization_scope",
+        "decision_origin",
+        "supplement_transports_authorized_decisions_only",
+        "score_only_migration_inspected_source_pages",
+        "score_only_migration_used_prose",
+        "historical_artifacts_modified",
+        "page_treatment_modified",
+        "judgment_modified",
+        "treatment_class_modified",
+        "source_scope_status_modified",
+        "defects_modified",
+        "gates_modified",
+        "non_fit_dimensions_modified",
+        "numerical_fit_credit_supplied",
+        "combined_credit_supplied",
+        "grade_supplied",
+        "dimension_score_supplied",
+        "total_score_supplied"
+      ],
+      "properties": {
+        "authorization_id": {"type": "string", "minLength": 1},
+        "authorization_scope": {"const": "supplemental_complete_path_fit_only"},
+        "decision_origin": {"const": "separately_authorized_semantic_adjudication"},
+        "supplement_transports_authorized_decisions_only": {"const": true},
+        "score_only_migration_inspected_source_pages": {"const": false},
+        "score_only_migration_used_prose": {"const": false},
+        "historical_artifacts_modified": {"const": false},
+        "page_treatment_modified": {"const": false},
+        "judgment_modified": {"const": false},
+        "treatment_class_modified": {"const": false},
+        "source_scope_status_modified": {"const": false},
+        "defects_modified": {"const": false},
+        "gates_modified": {"const": false},
+        "non_fit_dimensions_modified": {"const": false},
+        "numerical_fit_credit_supplied": {"const": false},
+        "combined_credit_supplied": {"const": false},
+        "grade_supplied": {"const": false},
+        "dimension_score_supplied": {"const": false},
+        "total_score_supplied": {"const": false}
+      },
+      "additionalProperties": false
+    },
+    "supplement_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "boundArtifact": {
+      "type": "object",
+      "required": ["role", "schema_version", "file_sha256"],
+      "properties": {
+        "role": {"type": "string", "minLength": 1},
+        "schema_version": {"type": "string", "minLength": 1},
+        "file_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -132,7 +132,7 @@ Publish exactly one profile-selected artifact:
 aggregate_only:
   validation/locator-audit-worker.<chunk-id>.json
 public_evaluation_artifacts:
-  candidate/locator-audits/locator-audit.<chunk-id>.v1.json
+  candidate/locator-audits/locator-audit.<chunk-id>.v2.json
 ```
 
 Do not perform missing-access judgments, global structure judgments, density calculations, scoring, item assessments, or web reporting. Do not modify normalized candidate content or the benchmark repository.
@@ -322,7 +322,7 @@ A public aggregate report must not contain:
 - Library identifiers or absolute local paths; or
 - credentials, secrets, or tokens.
 
-Under `public_evaluation_artifacts`, the one public file is instead the exact validated canonical `locator-audit-v1` or `missing-access-audit-v1` artifact at its deterministic `candidate/...` path. It must pass the stricter contract in [publication-profiles.md](publication-profiles.md): exact allowed keys at every judgment-bearing level, bounded strings, no raw/verbatim/quotation fields, no source or candidate PDF material, no coordinates or local/Library paths, and no secrets. The public file hash must equal the receipt's audit hash exactly.
+Under `public_evaluation_artifacts`, the one public file is instead the exact validated canonical `locator-audit-v2` or `missing-access-audit-v1` artifact at its deterministic `candidate/...` path. V2 locator workers answer page treatment and complete-path fit during the same source inspection, retain the locator-specific public-safe evidence summary, and add a separate public-safe fit rationale only for divergent axes, nonperfect fit, classifier conflict, or supplementation. Historical V1 locator artifacts remain valid compatibility inputs. The public artifact must pass the stricter contract in [publication-profiles.md](publication-profiles.md): exact allowed keys at every judgment-bearing level, bounded strings, no raw/verbatim/quotation fields, no source or candidate PDF material, no coordinates or local/Library paths, and no secrets. Its hash must equal the receipt's audit hash exactly.
 
 Generate public projections deterministically from a strict allowlist. Validate their schema, recursively reject forbidden keys, scan bounded free-text values, and inspect the exact outgoing diff. A passing schema alone does not establish publication safety.
 

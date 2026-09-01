@@ -6,14 +6,14 @@ Identities:
 
 - rubric `subject-index-rubric-v7`;
 - dimension profile `subject-index-dimension-calculation-v3`;
-- calculations `subject-index-dimension-calculations-v3`;
-- result `subject-index-evaluation-result-v8`;
+- calculations `subject-index-dimension-calculations-v4` for new V7.1 projections, with V3 compatibility;
+- result `subject-index-evaluation-result-v9` for new V7.1 projections, with V8 compatibility;
 - diagnostic policy `subject-index-item-grading-v3`;
-- item assessments `subject-index-item-assessments-v4`;
+- item assessments `subject-index-item-assessments-v5` for new V7.1 projections, with V4 compatibility;
 - native structure audit `structure-audit-v5`;
 - structure review `subject-index-structure-locator-review-v1`;
-- web report `subject-index-web-report-v6`; and
-- migration `subject-index-score-migration-v6-to-v7-v1` with validation receipt V1.
+- web report `subject-index-web-report-v7` for new V7.1 projections, with V6 compatibility; and
+- migration `subject-index-score-migration-v6-to-v7-v2` with validation receipt V2 for new projections, while V1 remains readable.
 
 V7 separates page treatment from complete-path fit and combines their deterministic frozen-evidence scores with `min(T,F)`. Treatment values are 1.00, 0.70, 0.25, and 0; fit values are 1.00, 0.70, 0.35, 0.15, and 0. Locator grade is exactly `100 × combined_credit`, while the canonical reliability calculation continues to use the locator-credit ledger rather than grade averages. Expected-treatment recall, weighted F1, strict precision, caps, gates, weights, uncertainty, and rounding remain unchanged.
 
@@ -48,7 +48,9 @@ Tooling patch `dimension-score-cli-v7.0.5` aligns the V7 locator-fit preflight s
 
 Tooling patch `dimension-score-cli-v7.0.6` removes process-dependent item-projection ordering when a path component is associated with multiple structured defects. Under `ITEM-PROJECTION-DEFECT-ID-ASC-V1`, applicability lookup preserves intentional path/node/locator source order, applicable defects are deduplicated by stable `defect_id`, and defect-derived `severity_caps` and `evidence_ids` arrays—including matching popover factors and the equivalent node/cross-reference projections—are emitted in ascending `defect_id` order. The patch changes serialization determinism only. Public schema identities and artifact shapes, score arithmetic, formulas, judgments, mappings, caps, thresholds, gates, and architecture behavior are unchanged; historical artifacts remain immutable.
 
-See [rubric-v7.md](rubric-v7.md), [locator-utility-v7.md](locator-utility-v7.md), [structure-audit-v7.md](structure-audit-v7.md), and [score-migration-v6-to-v7.md](score-migration-v6-to-v7.md).
+Tooling release `dimension-score-cli-v7.1.0` introduces forward-only explanation contracts without changing the V7 calculation profile or any arithmetic. New `locator-audit-v2` records retain a nonempty locator-specific public-safe evidence summary and conditionally authored complete-path-fit rationale. New `subject-index-v7-locator-fit-supplement-v2` decisions carry either public-safe rationale text or an exact hash-bound reference to a validated rationale ledger. New item V5 and web V7 projections preserve the evidence summary, both independent axis categories/scores/rules, rationale provenance, evidence IDs, defects, and the explicit minimum calculation. Routine supported, substantive, defect-free 100/100 locators may receive a mechanical fit explanation derived from the structured category and rule; divergent, nonperfect, conflicting, and supplemental cases require authored or ledger-backed fit rationale. Prose remains outside calculation logic, and invariance tests prove that explanation-only changes cannot affect categories, credits, grades, dimensions, caps, gates, or totals. Compatibility readers validate immutable locator-audit V1, supplement V1, calculation V3, item V4, result V8, web V6, migration V1, receipt V1, and projection-metadata V1 artifacts unchanged.
+
+See [rubric-v7.md](rubric-v7.md), [locator-utility-v7.md](locator-utility-v7.md), [structure-audit-v7.md](structure-audit-v7.md), [web-report-fields-v7.md](web-report-fields-v7.md), and [score-migration-v6-to-v7.md](score-migration-v6-to-v7.md).
 
 ## V6 — weighted locator relevance
 

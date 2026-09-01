@@ -68,6 +68,8 @@ An uninspectable destination contributes neutral lower and upper endpoints rathe
 
 A V6-to-V7 migration recalculates from frozen structured evidence. It does not reopen source pages, reinterpret rationale text, alter locator or missing-access judgments, or replace the historical result. It must stop if either locator axis or a delivered range grouping cannot be reconstructed without prose inference.
 
+For new evaluations, each locator publishes the source-grounded evidence summary created during inspection, then presents page treatment and complete-path fit as separate category/score/rule rows. A separate fit explanation is authored only when it adds information: divergent axis scores, nonperfect fit, classifier conflict, or supplemental fit. Straightforward 100/100 cases may use a mechanical statement derived from the structured category and rule. All explanation text is presentation metadata; only structured judgments and approved fields enter the calculation.
+
 The migration may remove a historical architecture penalty from the active V7 projection when structured records prove that the penalty rested only on expanded atomic pages being miscounted as displayed locators and neither corrected review trigger applies. It preserves the old defect unchanged as history. Conversely, a newly exposed numerical trigger cannot invent an architecture judgment; it remains `review_required` pending a narrow supplemental review.
 
 V7 was not tuned to reproduce any Oxford score. The Oxford-shaped locator string is a regression example used to test the counting rule, not a target result, and no Oxford evaluation artifact is migrated or modified by the methodology implementation.

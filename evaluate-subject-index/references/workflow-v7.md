@@ -8,8 +8,8 @@ V7 leaves source discovery, benchmark review/freeze, candidate preparation, loca
 2. Freeze a native `structure-audit-v5`, including structured decisions for every path triggered by the displayed-locator or long-range screens.
 3. Run V7 sufficiency preflight.
 4. Derive and validate `subject-index-structure-locator-review-v1` from the exact candidate, inventory, and structure bytes.
-5. Calculate `subject-index-dimension-calculations-v3`.
-6. Build `subject-index-item-assessments-v4`, result V8, web report V6, projection metadata, and validation receipt.
+5. Calculate `subject-index-dimension-calculations-v4` under the unchanged `subject-index-dimension-calculation-v3` profile.
+6. Build `subject-index-item-assessments-v5`, result V9, web report V7, projection metadata V2, and validation receipt V2. Preserve each locator's V2 evidence summary and conditionally authored fit rationale.
 
 An unreviewed trigger blocks a full score. The permitted follow-up is a narrowly scoped architecture review; source pages, locator-support judgments, missing-access audits, and unrelated structure decisions remain closed.
 
@@ -35,4 +35,4 @@ A V7 calculation-profile adoption invalidates only calculation-derived and displ
 
 Changing a V7 architecture decision is not a score-only recalculation unless the decision was already authorized and frozen. A new semantic decision invalidates the affected structure review and downstream V7 calculation/projections, but not unrelated source or candidate evidence.
 
-Changing a supplemental fit decision invalidates that view's locator-fit supplement and downstream calculation/projections. It never invalidates or rewrites the historical locator audit, structure audit, calculation input, or V6 projection.
+Changing a supplemental fit decision invalidates that view's locator-fit supplement and downstream calculation/projections. Changing only public-safe explanation text invalidates the explanation-bearing artifact hashes and projections, but cannot alter any structured category, credit, grade, dimension, gate, or total. Neither change invalidates or rewrites the historical locator audit, structure audit, calculation input, or V6 projection.

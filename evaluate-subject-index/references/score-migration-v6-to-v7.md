@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`subject-index-score-migration-v6-to-v7-v1` recalculates V7 from exact V6 frozen evidence. It never edits V6 artifacts and never reopens or reinterprets the evaluation.
+New V7.1 projections use `subject-index-score-migration-v6-to-v7-v2` to recalculate V7 from exact V6 frozen evidence. The V1 reader remains available for existing immutable migrations. Migration never edits V6 artifacts and never reopens or reinterprets the evaluation.
 
 ## Required inputs
 
@@ -21,7 +21,7 @@ historical structure audit, evaluation, and audit mode. It is not part of V6
 recalculation and cannot replace any V6
 input.
 
-When unsupplemented locator-fit preflight reports unresolved complete-path-fit states, an affected view may additionally reference one `subject-index-v7-locator-fit-supplement-v1`. This semantic input is created only after the stop. It binds the exact V6 calculation-input file, normalized candidate, inventory, historical V6 calculation file and self-hash, complete locator and missing-access artifact sets, historical structure audit, chunk manifest, any historical migration supplement, evaluation/candidate/audit identity, and counterfactual representation provenance. Every binding uses the exact file SHA-256; the supplement also has a stable identity and self-hash.
+When unsupplemented locator-fit preflight reports unresolved complete-path-fit states, an affected view may additionally reference one `subject-index-v7-locator-fit-supplement-v2`. This semantic input is created only after the stop. It binds the exact V6 calculation-input file, normalized candidate, inventory, historical V6 calculation file and self-hash, complete locator and missing-access artifact sets, historical structure audit, chunk manifest, any historical migration supplement, evaluation/candidate/audit identity, and counterfactual representation provenance. Every binding uses the exact file SHA-256; the supplement also has a stable identity and self-hash. Each new decision includes either `public_safe_rationale` or a record reference into a separately validated, hash-bound public-safe rationale ledger. V1 supplements remain valid historical inputs through the compatibility reader.
 
 The manifest records the methodology repository, exact V6 base commit, V7 implementation commit, evaluation repository/base commit, benchmark repository/current head, frozen benchmark commit, and frozen benchmark SHA-256. The migration verifies the old projection chain, recalculates V6 from its inputs, requires the candidate and inventory file hashes bound by the V6 evidence identity, and refuses a frozen benchmark SHA-256 that differs from the exact V6 calculation. A later benchmark head never silently rebinds the evaluation.
 
@@ -72,7 +72,11 @@ This is not a general contradiction waiver. Mismatched evaluation/candidate/audi
 
 ## Supplemental locator fit
 
-The supplement declares sorted unresolved `LOC-*` IDs and exactly one sorted decision per locator, including the matching `PATH-*`, one existing fit category, scoped evidence IDs, authorization provenance, and confirmations that history and non-fit judgments are unchanged. It cannot contain `T`, `F`, `L`, a grade, a dimension score, a total, or fields that modify judgment, treatment, scope, codes, severity, evidence, defects, or gates. Its job is transport of a separately authorized semantic decision, not methodology inference.
+The V2 supplement declares sorted unresolved `LOC-*` IDs and exactly one sorted decision per locator, including the matching `PATH-*`, one existing fit category, scoped evidence IDs, authorization provenance, a public-safe rationale or validated rationale-ledger reference, and confirmations that history and non-fit judgments are unchanged. It cannot contain `T`, `F`, `L`, a grade, a dimension score, a total, or fields that modify judgment, treatment, scope, codes, severity, evidence, defects, or gates. Its job is transport of a separately authorized semantic decision and its explanatory metadata, not methodology inference. Scoring reads the structured category only.
+
+## Explanation projection
+
+New migrations emit calculation V4, item V5, result V9, web-report V7, projection-metadata V2, migration V2, and receipt V2 artifacts. Item and web projections preserve the exact locator-audit evidence summary, expose both axis category/score/rule triples, carry required authored or ledger-backed fit rationale, retain evidence IDs and applicable structured defects, and show `min(T,F)`. Projection code must never substitute generic provenance text for the locator-specific evidence. Historical V7 artifact versions continue to validate without migration or rewriting.
 
 For a conflict-routed locator, the authorized decision comes from direct semantic adjudication of the complete path at the cited destination. The decision resolves only the prospective V7 fit axis. It neither states nor implies that one historical classifier was correct, and every historical record remains byte-identical. Ordinary bare-`LOC_POS` unresolved states retain their separate reason and remain unmapped without the same exact-scope authorization process.
 

@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "item-assessments-v5.schema.json",
+  "title": "V7 two-axis diagnostic item assessments",
+  "type": "object",
+  "required": ["schema_version", "grading_policy", "evaluation_id", "candidate_id", "candidate_sha256", "item_inventory_sha256", "item_inventory_artifact", "evidence_identity", "assessment_completeness", "audit_mode", "scope_complete", "grade_disclosure", "explanation_contract", "locator_grading_provenance", "structure_locator_review_binding", "color_legend", "locator_assessments", "path_assessments", "heading_node_assessments", "cross_reference_assessments", "source_subject_assessments", "summary"],
+  "properties": {
+    "schema_version": {"const": "subject-index-item-assessments-v5"},
+    "grading_policy": {"const": "subject-index-item-grading-v3"},
+    "evaluation_id": {"type": "string", "minLength": 1},
+    "candidate_id": {"type": "string", "minLength": 1},
+    "candidate_sha256": {"$ref": "#/$defs/sha256"},
+    "item_inventory_sha256": {"$ref": "#/$defs/sha256"},
+    "item_inventory_artifact": {"$ref": "item-assessments-v2.schema.json#/properties/item_inventory_artifact"},
+    "evidence_identity": {"$ref": "item-assessments-v2.schema.json#/properties/evidence_identity"},
+    "assessment_completeness": {"$ref": "item-assessments-v2.schema.json#/properties/assessment_completeness"},
+    "audit_mode": {"enum": ["full", "pilot"]},
+    "scope_complete": {"type": "boolean"},
+    "grade_disclosure": {"type": "string", "minLength": 1},
+    "explanation_contract": {
+      "type": "object",
+      "required": ["contract_version", "authored_evidence_is_primary", "prose_used_in_scoring", "legacy_compatibility_mode"],
+      "properties": {
+        "contract_version": {"const": "locator-explanations-v1"},
+        "authored_evidence_is_primary": {"const": true},
+        "prose_used_in_scoring": {"const": false},
+        "legacy_compatibility_mode": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "locator_grading_provenance": {
+      "type": "object",
+      "required": ["model", "page_treatment_mapping", "complete_path_fit_mapping", "combination_rule", "diagnostic_grade_rule", "calculation_credit_ledger_sha256", "diagnostic_grades_used_in_dimension_arithmetic", "selectivity_mapping_unchanged", "weak_presence_selectivity_credit", "counts_by_treatment_tier", "counts_by_fit_tier", "counts_by_combined_credit_value"],
+      "properties": {
+        "model": {"const": "two_axis_independent_ceilings_minimum_v1"},
+        "page_treatment_mapping": {"type": "object"},
+        "complete_path_fit_mapping": {"type": "object"},
+        "combination_rule": {"const": "min(page_treatment_score, complete_path_fit_score)"},
+        "diagnostic_grade_rule": {"const": "100 * combined_credit"},
+        "calculation_credit_ledger_sha256": {"$ref": "#/$defs/sha256"},
+        "diagnostic_grades_used_in_dimension_arithmetic": {"const": false},
+        "selectivity_mapping_unchanged": {"const": true},
+        "weak_presence_selectivity_credit": {"const": 0},
+        "counts_by_treatment_tier": {"$ref": "dimension-calculations-v4.schema.json#/$defs/treatmentTierCounts"},
+        "counts_by_fit_tier": {"$ref": "dimension-calculations-v4.schema.json#/$defs/fitTierCounts"},
+        "counts_by_combined_credit_value": {"$ref": "dimension-calculations-v4.schema.json#/$defs/combinedCreditCounts"}
+      },
+      "additionalProperties": false
+    },
+    "structure_locator_review_binding": {
+      "type": "object",
+      "required": ["schema_version", "review_id", "review_sha256"],
+      "properties": {
+        "schema_version": {"const": "subject-index-structure-locator-review-v1"},
+        "review_id": {"type": "string", "pattern": "^STRUCTREV-[A-F0-9]{12}$"},
+        "review_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "locator_fit_compatibility": {"description": "Projected score-free compatibility and unresolved-fit provenance; conflict supplementation never rewrites the locator's historical non-fit fields.", "$ref": "dimension-calculations-v4.schema.json#/properties/locator_fit_compatibility"},
+    "locator_fit_supplement": {"$ref": "dimension-calculations-v4.schema.json#/properties/locator_fit_supplement"},
+    "color_legend": {"$ref": "item-assessments.schema.json#/properties/color_legend"},
+    "locator_assessments": {
+      "type": "array",
+      "items": {
+        "allOf": [
+          {"$ref": "item-assessments.schema.json#/$defs/assessedItem"},
+          {
+            "type": "object",
+            "required": ["locator_id", "path_id", "dimension_reliability_credit", "locator_utility", "locator_explanation"],
+            "properties": {
+              "locator_id": {"type": "string", "pattern": "^LOC-"},
+              "path_id": {"type": "string", "pattern": "^PATH-"},
+              "dimension_reliability_credit": {"enum": ["1", "0.7", "0.35", "0.25", "0.15", "0", null]},
+              "locator_utility": {"$ref": "dimension-calculations-v4.schema.json#/$defs/utilityAssignment"},
+              "locator_explanation": {"$ref": "#/$defs/locatorExplanation"}
+            }
+          }
+        ]
+      }
+    },
+    "path_assessments": {
+      "type": "array",
+      "items": {
+        "allOf": [
+          {"$ref": "item-assessments.schema.json#/$defs/assessedItem"},
+          {
+            "type": "object",
+            "required": ["path_id", "locator_ids"],
+            "properties": {
+              "path_id": {"type": "string", "pattern": "^PATH-"},
+              "locator_ids": {"type": "array", "items": {"type": "string", "pattern": "^LOC-"}, "uniqueItems": true},
+              "locator_string_review": {"type": "object"}
+            }
+          }
+        ]
+      }
+    },
+    "heading_node_assessments": {"$ref": "item-assessments.schema.json#/properties/heading_node_assessments"},
+    "cross_reference_assessments": {"$ref": "item-assessments.schema.json#/properties/cross_reference_assessments"},
+    "source_subject_assessments": {"$ref": "item-assessments.schema.json#/properties/source_subject_assessments"},
+    "summary": {"type": "object"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "axisExplanation": {
+      "type": "object",
+      "required": ["category", "score", "rule_id", "rationale", "rationale_source"],
+      "properties": {
+        "category": {"type": "string", "minLength": 1},
+        "score": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+        "rule_id": {"type": "string", "minLength": 1},
+        "rationale": {"type": ["string", "null"], "minLength": 1},
+        "rationale_source": {"enum": ["authored_evidence_summary", "authored_locator_audit", "authored_supplement", "validated_rationale_ledger", "mechanical_structured_category_rule", "historical_contract_not_available"]}
+      },
+      "additionalProperties": false
+    },
+    "locatorExplanation": {
+      "type": "object",
+      "required": ["locator_id", "path_id", "evidence_summary", "page_treatment", "complete_path_fit", "combined_locator_utility", "evidence_ids", "structured_defect_ids", "fit_rationale_required"],
+      "properties": {
+        "locator_id": {"type": "string", "pattern": "^LOC-"},
+        "path_id": {"type": "string", "pattern": "^PATH-"},
+        "evidence_summary": {"type": "string", "minLength": 1},
+        "page_treatment": {"$ref": "#/$defs/axisExplanation"},
+        "complete_path_fit": {"$ref": "#/$defs/axisExplanation"},
+        "combined_locator_utility": {
+          "type": "object",
+          "required": ["rule_id", "calculation", "score", "credit"],
+          "properties": {
+            "rule_id": {"type": "string", "minLength": 1},
+            "calculation": {"type": "string", "minLength": 1},
+            "score": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+            "credit": {"type": ["string", "null"]}
+          },
+          "additionalProperties": false
+        },
+        "evidence_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "structured_defect_ids": {"type": "array", "items": {"type": "string", "pattern": "^DEFECT-"}, "uniqueItems": true},
+        "fit_rationale_required": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

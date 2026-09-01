@@ -603,7 +603,17 @@ def load_inputs(config_path: Path) -> dict[str, Any]:
     input_paths: list[Path] = []
     for index, record in enumerate(inputs["locator_audits"]):
         path, document, artifact = resolve_input(config_path, record, f"locator_audit[{index}]")
-        validate_schema_document(document, "locator-audit.schema.json", f"locator_audit[{index}]")
+        locator_schema = {
+            "locator-audit-v1": "locator-audit.schema.json",
+            "locator-audit-v2": "locator-audit-v2.schema.json",
+        }.get(document.get("schema_version"))
+        require(
+            locator_schema is not None,
+            "unsupported_locator_audit_schema",
+            "Locator audits must use the historical V1 contract or the current V2 explanation contract.",
+            document.get("schema_version"),
+        )
+        validate_schema_document(document, locator_schema, f"locator_audit[{index}]")
         locator_entries.append((document, artifact, path))
     for index, record in enumerate(inputs["missing_access_audits"]):
         path, document, artifact = resolve_input(config_path, record, f"missing_access_audit[{index}]")
@@ -924,7 +934,7 @@ def collect_ledgers(loaded: dict[str, Any]) -> dict[str, Any]:
     structure = loaded["structure"]
     identity = validate_ledger_set_integrity(loaded)
     for label, documents, versions in (
-        ("locator audit", loc_docs, {"locator-audit-v1"}),
+        ("locator audit", loc_docs, {"locator-audit-v1", "locator-audit-v2"}),
         ("missing-access audit", missing_docs, {"missing-access-audit-v1"}),
     ):
         for document in documents:
