@@ -28,37 +28,20 @@ from candidate_preparation_cli import (
     validate_self_hash,
 )
 from state_cli import (
-    STATE_SCHEMA_VERSION,
     STAGES,
     evaluation_mutation_lock,
     save_state,
     validate_state,
 )
+from schema_validation import schema_errors
 
-
-STATE_VERSION = STATE_SCHEMA_VERSION
-LOCATOR_AUDIT_VERSION = "locator-audit-v2"
-LOCATOR_AUDIT_COMPATIBILITY_VERSIONS = {LOCATOR_AUDIT_VERSION}
-MISSING_AUDIT_VERSION = "missing-access-audit-v1"
 
 AUDIT_KINDS = {"locator", "missing_access"}
 LOCATOR_STATUSES = {"supported", "partially_supported", "unsupported", "uninspectable"}
-LOCATOR_SCOPE_STATUSES = {"indexable", "excluded", "unavailable", "ambiguous"}
-TREATMENT_CLASSES = {
-    "substantive", "passing_mention", "attribution_only", "citation_only",
-    "incidental_example", "absent", "unavailable", "mixed",
-}
-LOCATOR_ERROR_CODES = {"SCP", "SEL", "CON", "STA", "LOC_POS", "CMP", "HED", "SUB"}
 SEVERITIES = {"none", "cosmetic", "minor", "major", "critical"}
-CONFIDENCES = {"high", "medium", "low"}
 COVERAGE_STATUSES = {"complete", "partial", "missing", "uninspectable"}
-STANCE_STATUSES = {"yes", "partly", "no", "not_applicable", "uninspectable"}
 TASK_STATUSES = {"succeeds", "partially_succeeds", "fails", "uninspectable"}
 TREATMENT_RECALL_STATUSES = {"found", "missed", "uninspectable"}
-FIRST_LOOKUP_STATUSES = {"yes", "partly", "no", "uninspectable"}
-ACCESS_MODES = {"direct", "cross_reference", "mixed", "none", "uninspectable"}
-UNCERTAINTY_STATUSES = {"none", "uncertain", "uninspectable"}
-MISSING_ERROR_CODES = {"SCP", "COV", "SEL", "CON", "STA", "LOC_POS", "LOC_NEG", "CMP", "HED", "SUB", "XRF", "DEN", "MEC"}
 PRIORITIES = {"essential", "major", "optional"}
 LOCATOR_CLASS_RANK = {"principal": 0, "synthesis_or_conclusion": 1, "supporting": 2, "incidental": 3}
 MISSING_ACCESS_EVIDENCE_MODE = "frozen_benchmark_and_canonical_locator_audits"
@@ -105,32 +88,23 @@ def validate_chunk_id(value: Any) -> str:
 
 
 def flatten_ranges(value: Any, field: str) -> list[int]:
-    require(isinstance(value, list), "invalid_ranges", f"{field} must be an array of inclusive page pairs.")
     pages: list[int] = []
-    for index, pair in enumerate(value):
-        require(
-            isinstance(pair, list) and len(pair) == 2
-            and all(isinstance(item, int) and not isinstance(item, bool) for item in pair)
-            and 1 <= pair[0] <= pair[1],
-            "invalid_ranges",
-            f"{field}[{index}] must be a one-based ascending pair.",
-        )
-        pages.extend(range(pair[0], pair[1] + 1))
+    for pair in value:
+        start, end = pair
+        require(start <= end, "invalid_ranges", f"{field} must contain ascending pairs.")
+        pages.extend(range(start, end + 1))
     require(not duplicate_values(pages), "overlapping_ranges", f"{field} contains overlapping ranges.")
     return pages
 
 
 def chunk_records(chunk_manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    chunks = chunk_manifest.get("chunks")
-    require(isinstance(chunks, list) and bool(chunks), "invalid_chunk_manifest", "Chunk manifest must contain a nonempty chunks array.")
     result: dict[str, dict[str, Any]] = {}
     orders: set[int] = set()
-    for record in chunks:
-        require(isinstance(record, dict), "invalid_chunk_manifest", "Every chunk must be an object.")
-        chunk_id = validate_chunk_id(record.get("chunk_id"))
+    for record in chunk_manifest["chunks"]:
+        chunk_id = record["chunk_id"]
         require(chunk_id not in result, "duplicate_chunk_id", f"Duplicate chunk ID: {chunk_id}")
-        order = record.get("packet_order")
-        require(isinstance(order, int) and not isinstance(order, bool) and order > 0 and order not in orders, "invalid_packet_order", f"Chunk {chunk_id} has an invalid packet order.")
+        order = record["packet_order"]
+        require(order not in orders, "invalid_packet_order", f"Chunk {chunk_id} repeats a packet order.")
         flatten_ranges(record.get("owned_document_page_ranges"), f"{chunk_id}.owned_document_page_ranges")
         flatten_ranges(record.get("context_document_page_ranges", []), f"{chunk_id}.context_document_page_ranges")
         orders.add(order)
@@ -154,7 +128,6 @@ def resolve_state_path(root: Path, value: str) -> Path:
 def load_canonical_run(state_path: Path) -> dict[str, Any]:
     state_path = state_path.resolve()
     state, state_bytes, state_file_sha256 = load_json_snapshot(state_path, "Canonical evaluation state")
-    require(state.get("schema_version") == STATE_VERSION, "unsupported_state", f"Expected {STATE_VERSION}.")
     root = state_path.parent
     errors, warnings = validate_state(state, state_path=state_path, check_files=True)
     require(not errors, "canonical_state_invalid", "Canonical evaluation state failed validation.", errors)
@@ -182,10 +155,10 @@ def state_record_for_path(run: dict[str, Any], path: Path, required: bool = True
     return matches[0]
 
 
-def validate_json_identity_file(path: Path, label: str, schema_version: str | set[str], own_hash_field: str | None = None) -> tuple[dict[str, Any], bytes, str]:
+def validate_json_identity_file(path: Path, label: str, schema_name: str, own_hash_field: str | None = None) -> tuple[dict[str, Any], bytes, str]:
     document, payload, digest = load_json_snapshot(path.resolve(), label)
-    accepted = {schema_version} if isinstance(schema_version, str) else schema_version
-    require(document.get("schema_version") in accepted, "schema_mismatch", f"{label} must use one of {sorted(accepted)}.")
+    errors = schema_errors(document, schema_name)
+    require(not errors, "schema_validation_failed", f"{label} is structurally invalid.", errors)
     if own_hash_field is not None:
         validate_self_hash(document, own_hash_field, label)
     return document, payload, digest
@@ -194,12 +167,12 @@ def validate_json_identity_file(path: Path, label: str, schema_version: str | se
 def load_frozen_inputs(args: argparse.Namespace, audit_kind: str) -> dict[str, Any]:
     run = load_canonical_run(Path(args.state))
     state = run["state"]
-    page_map, page_map_bytes, page_map_file_sha = validate_json_identity_file(Path(args.page_map), "Page map", "page-map-v1", "page_map_sha256")
-    chunks, chunk_bytes, chunk_file_sha = validate_json_identity_file(Path(args.chunk_manifest), "Chunk manifest", "chunk-manifest-v1", "chunk_manifest_sha256")
-    policy, policy_bytes, policy_file_sha = validate_json_identity_file(Path(args.policy), "Evaluation policy", {"subject-index-evaluation-policy-v3"}, "policy_sha256")
-    benchmark, benchmark_bytes, benchmark_file_sha = validate_json_identity_file(Path(args.benchmark), "Frozen benchmark", "source-subject-benchmark-v2", "benchmark_sha256")
-    candidate, candidate_bytes, candidate_file_sha = validate_json_identity_file(Path(args.normalized_candidate), "Normalized candidate", "candidate-index-v2")
-    inventory, inventory_bytes, inventory_file_sha = validate_json_identity_file(Path(args.item_inventory), "Item inventory", "subject-index-item-inventory-v2")
+    page_map, page_map_bytes, page_map_file_sha = validate_json_identity_file(Path(args.page_map), "Page map", "page-map.schema.json", "page_map_sha256")
+    chunks, chunk_bytes, chunk_file_sha = validate_json_identity_file(Path(args.chunk_manifest), "Chunk manifest", "chunk-manifest.schema.json", "chunk_manifest_sha256")
+    policy, policy_bytes, policy_file_sha = validate_json_identity_file(Path(args.policy), "Evaluation policy", "evaluation-policy-v3.schema.json", "policy_sha256")
+    benchmark, benchmark_bytes, benchmark_file_sha = validate_json_identity_file(Path(args.benchmark), "Frozen benchmark", "source-benchmark.schema.json", "benchmark_sha256")
+    candidate, candidate_bytes, candidate_file_sha = validate_json_identity_file(Path(args.normalized_candidate), "Normalized candidate", "candidate-index-v2.schema.json")
+    inventory, inventory_bytes, inventory_file_sha = validate_json_identity_file(Path(args.item_inventory), "Item inventory", "item-inventory-v2.schema.json")
 
     for path in (Path(args.page_map), Path(args.chunk_manifest), Path(args.policy), Path(args.benchmark), Path(args.normalized_candidate), Path(args.item_inventory)):
         state_record_for_path(run, path.resolve())
@@ -289,39 +262,24 @@ def load_frozen_inputs(args: argparse.Namespace, audit_kind: str) -> dict[str, A
 def packet_assignment_index(packet: dict[str, Any]) -> tuple[dict[str, dict[str, Any]], dict[str, list[str]]]:
     assignments: dict[str, dict[str, Any]] = {}
     paths: dict[str, list[str]] = {}
-    packet_paths = packet.get("paths")
-    require(isinstance(packet_paths, list), "locator_packet_shape", "Locator packet paths must be an array.")
-    for path_index, record in enumerate(packet_paths):
-        require(isinstance(record, dict), "locator_packet_shape", f"Locator packet paths[{path_index}] must be an object.")
-        path_id = require_nonempty_string(record.get("path_id"), f"packet.paths[{path_index}].path_id")
-        heading_path = record.get("heading_path")
-        require(
-            isinstance(heading_path, list) and bool(heading_path)
-            and all(isinstance(item, str) and bool(item.strip()) for item in heading_path),
-            "locator_packet_shape",
-            f"Packet {path_id} must preserve a complete nonempty heading path.",
-        )
+    packet_paths = packet["paths"]
+    for record in packet_paths:
+        path_id = record["path_id"]
+        heading_path = record["heading_path"]
         require(path_id not in paths or paths[path_id] == heading_path, "locator_packet_shape", f"Packet path ID {path_id} has conflicting heading paths.")
         paths[path_id] = heading_path
-        values = record.get("locator_assignments")
-        require(isinstance(values, list), "locator_packet_shape", f"Packet {path_id} locator_assignments must be an array.")
-        for assignment in values:
-            require(isinstance(assignment, dict), "locator_packet_shape", f"Packet {path_id} has a non-object assignment.")
-            locator_id = require_nonempty_string(assignment.get("locator_id"), f"packet.{path_id}.locator_id")
+        for assignment in record["locator_assignments"]:
+            locator_id = assignment["locator_id"]
             require(locator_id not in assignments, "duplicate_locator_assignment", f"Locator packet repeats assignment {locator_id}.")
-            require(assignment.get("mapping_status") == "resolved", "unresolved_locator_assignment", f"Parallel locator packet contains unresolved assignment {locator_id}.")
-            require(isinstance(assignment.get("document_page"), int) and not isinstance(assignment.get("document_page"), bool), "locator_packet_shape", f"Assignment {locator_id} lacks one resolved document page.")
-            require(isinstance(assignment.get("source_page_label"), str), "locator_packet_shape", f"Assignment {locator_id} lacks a source page-label string.")
             assignments[locator_id] = {**assignment, "path_id": path_id, "heading_path": heading_path}
-    summary = packet.get("summary")
-    require(isinstance(summary, dict), "locator_packet_shape", "Locator packet summary is required.")
+    summary = packet["summary"]
     require(summary.get("path_count") == len(packet_paths), "locator_packet_count_mismatch", "Locator packet path count does not recompute.")
     require(summary.get("locator_assignment_count") == len(assignments), "locator_packet_count_mismatch", "Locator packet assignment count does not recompute.")
     return assignments, paths
 
 
 def validate_locator_packet(path: Path, frozen: dict[str, Any], chunk_id: str) -> dict[str, Any]:
-    packet, payload, digest = validate_json_identity_file(path, "Candidate locator packet", "candidate-locator-chunk-v1")
+    packet, payload, digest = validate_json_identity_file(path, "Candidate locator packet", "candidate-locator-chunk.schema.json")
     require(packet.get("candidate_id") == frozen["candidate_id"], "locator_packet_identity_mismatch", "Locator packet candidate ID differs.")
     require(packet.get("candidate_sha256") == frozen["candidate_sha256"], "locator_packet_identity_mismatch", "Locator packet candidate hash differs.")
     require(packet.get("page_map_sha256") == frozen["identities"]["page_map_sha256"], "locator_packet_identity_mismatch", "Locator packet page-map hash differs.")
@@ -341,18 +299,13 @@ def validate_locator_packet(path: Path, frozen: dict[str, Any], chunk_id: str) -
 def candidate_path_index(candidate: dict[str, Any]) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
     paths: dict[str, dict[str, Any]] = {}
     locators: dict[str, dict[str, Any]] = {}
-    records = candidate.get("records")
-    require(isinstance(records, list), "candidate_shape", "Normalized candidate records must be an array.")
-    for record in records:
-        require(isinstance(record, dict), "candidate_shape", "Every normalized candidate record must be an object.")
-        path_id = record.get("path_id")
-        require(isinstance(path_id, str) and path_id not in paths, "candidate_shape", f"Duplicate or missing candidate path ID: {path_id}")
+    for record in candidate["records"]:
+        path_id = record["path_id"]
+        require(path_id not in paths, "candidate_shape", f"Duplicate candidate path ID: {path_id}")
         paths[path_id] = record
-        assignments = record.get("locator_assignments")
-        require(isinstance(assignments, list), "candidate_shape", f"Candidate {path_id} locator_assignments must be an array.")
-        for assignment in assignments:
-            locator_id = assignment.get("locator_id") if isinstance(assignment, dict) else None
-            require(isinstance(locator_id, str) and locator_id not in locators, "candidate_shape", f"Duplicate or missing candidate locator ID: {locator_id}")
+        for assignment in record["locator_assignments"]:
+            locator_id = assignment["locator_id"]
+            require(locator_id not in locators, "candidate_shape", f"Duplicate candidate locator ID: {locator_id}")
             locators[locator_id] = {**assignment, "path_id": path_id, "heading_path": record.get("heading_path")}
     return paths, locators
 
@@ -390,30 +343,25 @@ def build_missing_worksets(frozen: dict[str, Any]) -> dict[str, dict[str, Any]]:
     subject_owner: dict[str, str] = {}
     subject_priority: dict[str, str] = {}
     scored_subjects: dict[str, dict[str, Any]] = {}
-    subjects = frozen["benchmark"].get("subjects")
-    require(isinstance(subjects, list), "benchmark_shape", "Frozen benchmark subjects must be an array.")
+    subjects = frozen["benchmark"]["subjects"]
     for subject in subjects:
-        require(isinstance(subject, dict), "benchmark_shape", "Every frozen subject must be an object.")
         priority = subject.get("priority")
         if priority not in PRIORITIES:
             continue
-        subject_id = require_nonempty_string(subject.get("subject_id"), "benchmark.subject_id")
+        subject_id = subject["subject_id"]
         require(subject_id not in scored_subjects, "duplicate_subject_id", f"Frozen benchmark repeats {subject_id}.")
-        evidence = subject.get("evidence")
-        require(isinstance(evidence, list) and bool(evidence), "missing_access_ownership", f"Scored subject {subject_id} has no evidence for chunk ownership.")
+        evidence = subject["evidence"]
         candidates: list[tuple[int, int, int, str]] = []
         treatments_by_identity: dict[tuple[int, str], dict[str, Any]] = {}
         subject_evidence_ids: set[str] = set()
         for item in evidence:
-            require(isinstance(item, dict), "benchmark_shape", f"Subject {subject_id} contains non-object evidence.")
-            page = item.get("document_page")
-            require(isinstance(page, int) and not isinstance(page, bool) and page in owners, "missing_access_ownership", f"Subject {subject_id} evidence lacks a uniquely owned document page.")
+            page = item["document_page"]
+            require(page in owners, "missing_access_ownership", f"Subject {subject_id} evidence lacks a uniquely owned document page.")
             locator_class = item.get("locator_class", "supporting")
-            require(locator_class in LOCATOR_CLASS_RANK, "benchmark_shape", f"Subject {subject_id} evidence has invalid locator_class {locator_class}.")
             chunk_id = owners[page]
             candidates.append((LOCATOR_CLASS_RANK[locator_class], packet_order[chunk_id], page, chunk_id))
             if locator_class != "incidental":
-                evidence_id = require_nonempty_string(item.get("evidence_id"), f"benchmark.{subject_id}.evidence_id")
+                evidence_id = item["evidence_id"]
                 require(evidence_id not in subject_evidence_ids, "duplicate_benchmark_evidence_id", f"Subject {subject_id} repeats benchmark evidence ID {evidence_id}.")
                 subject_evidence_ids.add(evidence_id)
                 treatment_id = deterministic_treatment_id(subject_id, page, locator_class)
@@ -429,7 +377,7 @@ def build_missing_worksets(frozen: dict[str, Any]) -> dict[str, dict[str, Any]]:
                 require(treatment["treatment_id"] == treatment_id, "treatment_identity_collision", f"Treatment identity collision for {subject_id} page {page} class {locator_class}.")
                 treatment["evidence_ids"].append(evidence_id)
                 source_evidence_id = item.get("source_evidence_id")
-                if isinstance(source_evidence_id, str) and source_evidence_id.strip():
+                if source_evidence_id is not None:
                     treatment["source_evidence_ids"].append(source_evidence_id)
         treatments = list(treatments_by_identity.values())
         for treatment in treatments:
@@ -458,16 +406,13 @@ def build_missing_worksets(frozen: dict[str, Any]) -> dict[str, dict[str, Any]]:
         worksets[owner]["subject_ids"].append(subject_id)
         worksets[owner]["treatments"].extend(treatments)
 
-    tasks = frozen["benchmark"].get("reader_tasks")
-    require(isinstance(tasks, list), "benchmark_shape", "Frozen benchmark reader_tasks must be an array.")
+    tasks = frozen["benchmark"]["reader_tasks"]
     seen_tasks: set[str] = set()
     for task in tasks:
-        require(isinstance(task, dict), "benchmark_shape", "Every reader task must be an object.")
-        task_id = require_nonempty_string(task.get("task_id"), "benchmark.reader_task.task_id")
+        task_id = task["task_id"]
         require(task_id not in seen_tasks, "duplicate_reader_task", f"Frozen benchmark repeats {task_id}.")
         seen_tasks.add(task_id)
-        subject_ids = task.get("subject_ids")
-        require(isinstance(subject_ids, list) and bool(subject_ids), "benchmark_shape", f"Reader task {task_id} must reference subjects.")
+        subject_ids = task["subject_ids"]
         explicit_owner = task.get("owner_chunk_id")
         if explicit_owner is not None:
             require(explicit_owner in worksets, "missing_access_ownership", f"Reader task {task_id} owner_chunk_id is not a frozen chunk.")
@@ -487,30 +432,21 @@ def build_missing_worksets(frozen: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return worksets
 
 
-def validate_evidence_ids(value: Any, field: str) -> list[str]:
-    require(isinstance(value, list) and bool(value) and all(isinstance(item, str) and bool(item.strip()) for item in value), "parallel_evidence_required", f"{field} must contain one or more evidence IDs.")
-    require(not duplicate_values(value), "duplicate_evidence_id", f"{field} contains duplicate evidence IDs.")
-    return value
-
-
 def validate_locator_audit(artifact: dict[str, Any], frozen: dict[str, Any], packet: dict[str, Any], chunk_id: str) -> dict[str, Any]:
-    schema_version = artifact.get("schema_version")
-    require(schema_version in LOCATOR_AUDIT_COMPATIBILITY_VERSIONS, "audit_schema", f"Expected one of {sorted(LOCATOR_AUDIT_COMPATIBILITY_VERSIONS)}.")
+    errors = schema_errors(artifact, "locator-audit-v2.schema.json")
+    require(not errors, "schema_validation_failed", "Locator audit is structurally invalid.", errors)
     require(artifact.get("evaluation_id") == frozen["state"].get("evaluation_id"), "audit_identity_mismatch", "Locator audit evaluation ID differs.")
     require(artifact.get("candidate_sha256") == frozen["candidate_sha256"], "audit_identity_mismatch", "Locator audit candidate hash differs.")
     require(artifact.get("chunk_id") == chunk_id, "audit_chunk_mismatch", "Locator audit names a different chunk.")
     expected = list(packet["assignments"])
     require(artifact.get("expected_locator_ids") == expected or set(artifact.get("expected_locator_ids", [])) == set(expected), "locator_denominator_mismatch", "Locator audit expected IDs differ from the exact packet.")
-    require(not duplicate_values(artifact.get("expected_locator_ids", [])), "duplicate_locator_assignment", "Locator audit expected IDs contain duplicates.")
-    judgments = artifact.get("judgments")
-    require(isinstance(judgments, list), "audit_shape", "Locator audit judgments must be an array.")
+    judgments = artifact["judgments"]
     ids: list[str] = []
     judgment_counts = Counter({key: 0 for key in sorted(LOCATOR_STATUSES)})
     severity_counts = Counter({key: 0 for key in sorted(SEVERITIES)})
     error_counts: Counter[str] = Counter()
-    for index, judgment in enumerate(judgments):
-        require(isinstance(judgment, dict), "audit_shape", f"Locator judgment {index} must be an object.")
-        locator_id = require_nonempty_string(judgment.get("locator_id"), f"judgments[{index}].locator_id")
+    for judgment in judgments:
+        locator_id = judgment["locator_id"]
         ids.append(locator_id)
         assignment = packet["assignments"].get(locator_id)
         require(assignment is not None, "foreign_chunk_assignment", f"Locator audit contains foreign assignment {locator_id}.")
@@ -518,39 +454,16 @@ def validate_locator_audit(artifact: dict[str, Any], frozen: dict[str, Any], pac
         require(judgment.get("complete_heading_path") == assignment["heading_path"], "complete_path_mismatch", f"Locator judgment {locator_id} does not preserve the complete heading path.")
         require(judgment.get("document_page") == assignment.get("document_page"), "locator_assignment_mismatch", f"Locator judgment {locator_id} document page differs.")
         require(judgment.get("source_page_label") == assignment.get("source_page_label"), "locator_assignment_mismatch", f"Locator judgment {locator_id} source label differs.")
-        require(judgment.get("source_scope_status") in LOCATOR_SCOPE_STATUSES, "audit_judgment", f"Locator {locator_id} has invalid source_scope_status.")
-        require(judgment.get("treatment_class") in TREATMENT_CLASSES, "audit_judgment", f"Locator {locator_id} has invalid treatment_class.")
-        status = judgment.get("judgment")
-        require(status in LOCATOR_STATUSES, "audit_judgment", f"Locator {locator_id} has invalid judgment.")
-        require(judgment.get("confidence") in CONFIDENCES, "audit_judgment", f"Locator {locator_id} has invalid confidence.")
-        severity = judgment.get("severity")
-        require(severity in SEVERITIES, "audit_judgment", f"Locator {locator_id} has invalid severity.")
-        require_nonempty_string(judgment.get("evidence_summary"), f"judgments[{index}].evidence_summary", 2000)
-        routine_perfect = (
-            status == "supported"
-            and judgment.get("treatment_class") == "substantive"
-            and judgment.get("source_scope_status") == "indexable"
-            and not judgment.get("error_codes")
-            and severity in {"none", "cosmetic"}
-        )
-        if schema_version == LOCATOR_AUDIT_VERSION and not routine_perfect:
-            require_nonempty_string(
-                judgment.get("fit_rationale"),
-                f"judgments[{index}].fit_rationale",
-                2000,
-            )
-        validate_evidence_ids(judgment.get("evidence_ids"), f"judgments[{index}].evidence_ids")
-        codes = judgment.get("error_codes")
-        require(isinstance(codes, list) and all(code in LOCATOR_ERROR_CODES for code in codes), "audit_error_code", f"Locator {locator_id} contains a disallowed worker error code.")
-        require(not duplicate_values(codes), "audit_error_code", f"Locator {locator_id} repeats an error code.")
+        status = judgment["judgment"]
+        severity = judgment["severity"]
+        codes = judgment["error_codes"]
         judgment_counts[status] += 1
         severity_counts[severity] += 1
         error_counts.update(codes)
     duplicates = duplicate_values(ids)
     require(not duplicates, "duplicate_locator_assignment", "Locator audit repeats assignment IDs.", duplicates)
     require(set(ids) == set(expected), "missing_locator_assignment", "Locator audit does not judge the exact packet assignment set.", {"missing": sorted(set(expected) - set(ids)), "foreign": sorted(set(ids) - set(expected))})
-    completion = artifact.get("completion")
-    require(isinstance(completion, dict), "audit_completion", "Locator audit completion record is required.")
+    completion = artifact["completion"]
     require(completion.get("expected") == len(expected) and completion.get("judged") == len(ids) and completion.get("unique") is True and completion.get("complete") is True, "audit_completion", "Locator audit completion denominators do not recompute.")
     return {
         "locator_ids": ids,
@@ -563,7 +476,8 @@ def validate_locator_audit(artifact: dict[str, Any], frozen: dict[str, Any], pac
 
 
 def validate_missing_access_audit(artifact: dict[str, Any], frozen: dict[str, Any], workset: dict[str, Any], chunk_id: str) -> dict[str, Any]:
-    require(artifact.get("schema_version") == MISSING_AUDIT_VERSION, "audit_schema", f"Expected {MISSING_AUDIT_VERSION}.")
+    errors = schema_errors(artifact, "missing-access-audit.schema.json")
+    require(not errors, "schema_validation_failed", "Missing-access audit is structurally invalid.", errors)
     require(artifact.get("evaluation_id") == frozen["state"].get("evaluation_id"), "audit_identity_mismatch", "Missing-access audit evaluation ID differs.")
     require(artifact.get("candidate_sha256") == frozen["candidate_sha256"], "audit_identity_mismatch", "Missing-access audit candidate hash differs.")
     require(artifact.get("benchmark_sha256") == frozen["benchmark"]["benchmark_sha256"], "audit_identity_mismatch", "Missing-access audit benchmark hash differs.")
@@ -571,9 +485,9 @@ def validate_missing_access_audit(artifact: dict[str, Any], frozen: dict[str, An
     expected_subjects = workset["subject_ids"]
     expected_tasks = workset["reader_task_ids"]
     expected_treatments = workset["treatment_ids"]
-    require(set(artifact.get("expected_subject_ids", [])) == set(expected_subjects) and not duplicate_values(artifact.get("expected_subject_ids", [])), "subject_denominator_mismatch", "Missing-access expected subjects differ from deterministic ownership.")
-    require(set(artifact.get("expected_reader_task_ids", [])) == set(expected_tasks) and not duplicate_values(artifact.get("expected_reader_task_ids", [])), "reader_task_denominator_mismatch", "Missing-access reader tasks differ from deterministic ownership.")
-    require(set(artifact.get("expected_treatment_ids", [])) == set(expected_treatments) and not duplicate_values(artifact.get("expected_treatment_ids", [])), "treatment_denominator_mismatch", "Missing-access treatments differ from deterministic ownership.")
+    require(set(artifact["expected_subject_ids"]) == set(expected_subjects), "subject_denominator_mismatch", "Missing-access expected subjects differ from deterministic ownership.")
+    require(set(artifact["expected_reader_task_ids"]) == set(expected_tasks), "reader_task_denominator_mismatch", "Missing-access reader tasks differ from deterministic ownership.")
+    require(set(artifact["expected_treatment_ids"]) == set(expected_treatments), "treatment_denominator_mismatch", "Missing-access treatments differ from deterministic ownership.")
 
     subject_index = {item.get("subject_id"): item for item in frozen["benchmark"].get("subjects", []) if isinstance(item, dict)}
     candidate_path_ids = {item.get("path_id") for item in frozen["inventory"].get("paths", []) if isinstance(item, dict)}
@@ -581,8 +495,7 @@ def validate_missing_access_audit(artifact: dict[str, Any], frozen: dict[str, An
     workset_treatments_by_subject: dict[str, list[dict[str, Any]]] = {}
     for treatment in workset["treatments"]:
         workset_treatments_by_subject.setdefault(treatment["subject_id"], []).append(treatment)
-    subject_judgments = artifact.get("subject_judgments")
-    require(isinstance(subject_judgments, list), "audit_shape", "Missing-access subject_judgments must be an array.")
+    subject_judgments = artifact["subject_judgments"]
     subject_ids: list[str] = []
     coverage_counts = Counter({key: 0 for key in sorted(COVERAGE_STATUSES)})
     access_counts = Counter({key: 0 for key in ("direct_only", "cross_reference_only", "both", "none", "uninspectable")})
@@ -590,76 +503,49 @@ def validate_missing_access_audit(artifact: dict[str, Any], frozen: dict[str, An
     error_code_counts: Counter[str] = Counter()
     subject_recall_records: dict[str, dict[str, Any]] = {}
     reported_missed_treatments: dict[str, set[tuple[int, str]]] = {}
-    for index, judgment in enumerate(subject_judgments):
-        require(isinstance(judgment, dict), "audit_shape", f"subject_judgments[{index}] must be an object.")
-        subject_id = require_nonempty_string(judgment.get("subject_id"), f"subject_judgments[{index}].subject_id")
+    for judgment in subject_judgments:
+        subject_id = judgment["subject_id"]
         subject_ids.append(subject_id)
         require(subject_id in expected_subjects, "foreign_chunk_subject", f"Missing-access audit contains foreign subject {subject_id}.")
         expected_subject = subject_index[subject_id]
         require(judgment.get("priority") == expected_subject.get("priority"), "subject_identity_mismatch", f"Subject {subject_id} priority differs from benchmark.")
-        coverage = judgment.get("coverage")
-        require(coverage in COVERAGE_STATUSES, "audit_judgment", f"Subject {subject_id} has invalid coverage.")
-        require(isinstance(judgment.get("direct_access"), bool) and isinstance(judgment.get("cross_reference_access"), bool), "audit_judgment", f"Subject {subject_id} access-route fields must be boolean.")
-        require(judgment.get("stance_preserved") in STANCE_STATUSES, "audit_judgment", f"Subject {subject_id} has invalid stance status.")
-        require(judgment.get("severity") in {"none", "minor", "major", "critical"}, "audit_judgment", f"Subject {subject_id} has invalid severity.")
-        require(judgment.get("confidence") in CONFIDENCES, "audit_judgment", f"Subject {subject_id} has invalid confidence.")
-        require(judgment.get("realistic_first_lookup_success") in FIRST_LOOKUP_STATUSES, "audit_judgment", f"Subject {subject_id} must record realistic first-lookup success.")
-        validate_evidence_ids(judgment.get("evidence_ids"), f"subject_judgments[{index}].evidence_ids")
-        matched = judgment.get("matched_path_ids")
-        require(isinstance(matched, list) and not duplicate_values(matched) and set(matched).issubset(candidate_path_ids), "matched_path_mismatch", f"Subject {subject_id} matched paths are invalid.")
+        coverage = judgment["coverage"]
+        matched = judgment["matched_path_ids"]
+        require(set(matched).issubset(candidate_path_ids), "matched_path_mismatch", f"Subject {subject_id} matched paths are invalid.")
         expected_pages = sorted({item["document_page"] for item in workset_treatments_by_subject.get(subject_id, [])})
-        found = judgment.get("found_document_pages")
-        missed = judgment.get("missed_document_pages")
+        found = judgment["found_document_pages"]
+        missed = judgment["missed_document_pages"]
         require(judgment.get("expected_document_pages") == expected_pages, "treatment_page_mismatch", f"Subject {subject_id} expected pages differ from benchmark.")
-        require(isinstance(found, list) and isinstance(missed, list) and not duplicate_values(found) and not duplicate_values(missed), "treatment_page_mismatch", f"Subject {subject_id} page accounting is malformed.")
         require(not (set(found) & set(missed)) and set(found) | set(missed) == set(expected_pages), "treatment_page_mismatch", f"Subject {subject_id} found/missed pages do not partition expected pages.")
-        locator_recall = judgment.get("locator_recall")
-        require(isinstance(locator_recall, dict), "locator_recall_missing", f"Subject {subject_id} must record locator recall separately from concept coverage.")
+        locator_recall = judgment["locator_recall"]
         require(locator_recall.get("expected") == len(expected_pages) and locator_recall.get("found") == len(found) and locator_recall.get("missed") == len(missed), "locator_recall_mismatch", f"Subject {subject_id} locator-recall counts do not match its exact page accounting.")
         expected_rate = None if not expected_pages else len(found) / len(expected_pages)
         if "rate" in locator_recall:
             require(locator_recall.get("rate") == expected_rate, "locator_recall_mismatch", f"Subject {subject_id} locator-recall rate does not recompute.")
-        treatment_recall = judgment.get("treatment_recall")
-        require(isinstance(treatment_recall, dict) and set(treatment_recall) == {"principal", "supporting", "synthesis_or_conclusion"}, "treatment_recall_missing", f"Subject {subject_id} must preserve all three treatment-class denominators.")
+        treatment_recall = judgment["treatment_recall"]
         for locator_class in ("principal", "supporting", "synthesis_or_conclusion"):
-            class_record = treatment_recall.get(locator_class)
-            require(isinstance(class_record, dict), "treatment_recall_missing", f"Subject {subject_id} lacks {locator_class} treatment recall.")
+            class_record = treatment_recall[locator_class]
             expected_class_pages = sorted(item["document_page"] for item in workset_treatments_by_subject.get(subject_id, []) if item["locator_class"] == locator_class)
             found_class = class_record.get("found_document_pages")
             missed_class = class_record.get("missed_document_pages")
             uninspectable_class = class_record.get("uninspectable_document_pages")
             require(class_record.get("expected_document_pages") == expected_class_pages, "treatment_recall_mismatch", f"Subject {subject_id} {locator_class} expected pages differ from ownership plan.")
-            require(isinstance(found_class, list) and isinstance(missed_class, list) and isinstance(uninspectable_class, list) and not duplicate_values(found_class) and not duplicate_values(missed_class) and not duplicate_values(uninspectable_class), "treatment_recall_mismatch", f"Subject {subject_id} {locator_class} treatment page accounting is malformed.")
             treatment_sets = [set(found_class), set(missed_class), set(uninspectable_class)]
             require(not any(treatment_sets[left] & treatment_sets[right] for left in range(3) for right in range(left + 1, 3)) and set().union(*treatment_sets) == set(expected_class_pages), "treatment_recall_mismatch", f"Subject {subject_id} {locator_class} treatment pages do not partition found, missed, and uninspectable denominators.")
-        missing_routes = judgment.get("missing_routes")
-        require(isinstance(missing_routes, list), "missing_route_accounting", f"Subject {subject_id} must record missing routes as an array.")
+        missing_routes = judgment["missing_routes"]
         route_types: list[str] = []
-        for route_index, route in enumerate(missing_routes):
-            require(isinstance(route, dict) and route.get("route_type") in {"direct", "cross_reference"}, "missing_route_accounting", f"Subject {subject_id} has an invalid missing route.")
+        for route in missing_routes:
             route_types.append(route["route_type"])
-            require_nonempty_string(route.get("reason_code"), f"subject_judgments[{index}].missing_routes[{route_index}].reason_code", 128)
-            validate_evidence_ids(route.get("evidence_ids"), f"subject_judgments[{index}].missing_routes[{route_index}].evidence_ids")
         require(not duplicate_values(route_types), "missing_route_accounting", f"Subject {subject_id} repeats a missing route type.")
         require(("direct" in route_types) == (not judgment["direct_access"]) and ("cross_reference" in route_types) == (not judgment["cross_reference_access"]), "missing_route_accounting", f"Subject {subject_id} missing routes do not match its access judgments.")
-        missed_records = judgment.get("missed_treatments")
-        require(isinstance(missed_records, list), "missed_treatment_accounting", f"Subject {subject_id} must record missed treatments as an array.")
+        missed_records = judgment["missed_treatments"]
         missed_keys: set[tuple[int, str]] = set()
-        for missed_index, record in enumerate(missed_records):
-            require(isinstance(record, dict) and isinstance(record.get("document_page"), int) and record.get("locator_class") in {"principal", "supporting", "synthesis_or_conclusion"}, "missed_treatment_accounting", f"Subject {subject_id} has an invalid missed-treatment record.")
+        for record in missed_records:
             key = (record["document_page"], record["locator_class"])
             require(key not in missed_keys, "missed_treatment_accounting", f"Subject {subject_id} repeats a missed treatment.")
             missed_keys.add(key)
-            require_nonempty_string(record.get("reason_code"), f"subject_judgments[{index}].missed_treatments[{missed_index}].reason_code", 128)
-            validate_evidence_ids(record.get("evidence_ids"), f"subject_judgments[{index}].missed_treatments[{missed_index}].evidence_ids")
         reported_missed_treatments[subject_id] = missed_keys
-        uncertainty = judgment.get("uncertainty")
-        require(isinstance(uncertainty, dict) and uncertainty.get("status") in UNCERTAINTY_STATUSES, "uncertainty_missing", f"Subject {subject_id} must record uncertainty explicitly.")
-        if uncertainty["status"] != "none":
-            require_nonempty_string(uncertainty.get("reason"), f"subject_judgments[{index}].uncertainty.reason", 1000)
-            validate_evidence_ids(uncertainty.get("evidence_ids"), f"subject_judgments[{index}].uncertainty.evidence_ids")
-        codes = judgment.get("error_codes")
-        require(isinstance(codes, list) and not duplicate_values(codes) and set(codes).issubset(MISSING_ERROR_CODES), "audit_error_code", f"Subject {subject_id} has invalid error-code accounting.")
+        codes = judgment["error_codes"]
         coverage_counts[coverage] += 1
         severity_counts[judgment["severity"]] += 1
         error_code_counts.update(codes)
@@ -670,46 +556,38 @@ def validate_missing_access_audit(artifact: dict[str, Any], frozen: dict[str, An
     require(not duplicate_values(subject_ids), "duplicate_subject_judgment", "Missing-access audit repeats subject judgments.")
     require(set(subject_ids) == set(expected_subjects), "missing_subject_judgment", "Missing-access audit does not contain the exact owned subject set.")
 
-    task_results = artifact.get("reader_task_results")
-    require(isinstance(task_results, list), "audit_shape", "reader_task_results must be an array.")
+    task_results = artifact["reader_task_results"]
     task_ids: list[str] = []
     task_counts = Counter({key: 0 for key in sorted(TASK_STATUSES)})
     task_index = {item.get("task_id"): item for item in frozen["benchmark"].get("reader_tasks", []) if isinstance(item, dict)}
-    for index, result in enumerate(task_results):
-        require(isinstance(result, dict), "audit_shape", f"reader_task_results[{index}] must be an object.")
-        task_id = require_nonempty_string(result.get("task_id"), f"reader_task_results[{index}].task_id")
+    for result in task_results:
+        task_id = result["task_id"]
         task_ids.append(task_id)
         require(task_id in expected_tasks, "foreign_chunk_reader_task", f"Missing-access audit contains foreign reader task {task_id}.")
-        status = result.get("result")
-        require(status in TASK_STATUSES, "audit_judgment", f"Reader task {task_id} has invalid result.")
-        validate_evidence_ids(result.get("evidence_ids"), f"reader_task_results[{index}].evidence_ids")
+        status = result["result"]
         require(result.get("subject_ids") == task_index[task_id].get("subject_ids"), "reader_task_identity_mismatch", f"Reader task {task_id} subject order differs from the frozen benchmark.")
         require(result.get("access_mode") in ACCESS_MODES, "audit_judgment", f"Reader task {task_id} must record its tested access mode.")
-        matched = result.get("matched_path_ids")
-        require(isinstance(matched, list) and not duplicate_values(matched) and set(matched).issubset(candidate_path_ids), "matched_path_mismatch", f"Reader task {task_id} matched paths are invalid.")
-        require(result.get("severity") in SEVERITIES and result.get("confidence") in CONFIDENCES, "audit_judgment", f"Reader task {task_id} must record severity and confidence.")
+        matched = result["matched_path_ids"]
+        require(set(matched).issubset(candidate_path_ids), "matched_path_mismatch", f"Reader task {task_id} matched paths are invalid.")
         severity_counts[result["severity"]] += 1
         task_counts[status] += 1
     require(not duplicate_values(task_ids), "duplicate_reader_task_judgment", "Missing-access audit repeats reader tasks.")
     require(set(task_ids) == set(expected_tasks), "missing_reader_task_judgment", "Missing-access audit does not contain the exact owned reader-task set.")
 
     expected_treatment_index = {item["treatment_id"]: item for item in workset["treatments"]}
-    treatment_judgments = artifact.get("treatment_judgments")
-    require(isinstance(treatment_judgments, list), "audit_shape", "treatment_judgments must be an array.")
+    treatment_judgments = artifact["treatment_judgments"]
     treatment_ids: list[str] = []
     treatment_counts = Counter({key: 0 for key in sorted(TREATMENT_RECALL_STATUSES)})
     treatment_by_subject: dict[str, dict[str, dict[str, list[int]]]] = {}
-    for index, judgment in enumerate(treatment_judgments):
-        require(isinstance(judgment, dict), "audit_shape", f"treatment_judgments[{index}] must be an object.")
-        treatment_id = require_nonempty_string(judgment.get("treatment_id"), f"treatment_judgments[{index}].treatment_id")
+    for judgment in treatment_judgments:
+        treatment_id = judgment["treatment_id"]
         treatment_ids.append(treatment_id)
         expected = expected_treatment_index.get(treatment_id)
         require(expected is not None, "foreign_chunk_treatment", f"Missing-access audit contains foreign treatment {treatment_id}.")
         for field in ("subject_id", "document_page", "locator_class"):
             require(judgment.get(field) == expected[field], "treatment_identity_mismatch", f"Treatment {treatment_id} field {field} differs from benchmark workset.")
-        status = judgment.get("status")
-        require(status in TREATMENT_RECALL_STATUSES, "audit_judgment", f"Treatment {treatment_id} has invalid status.")
-        evidence_ids = validate_evidence_ids(judgment.get("evidence_ids"), f"treatment_judgments[{index}].evidence_ids")
+        status = judgment["status"]
+        evidence_ids = judgment["evidence_ids"]
         require(
             set(expected["evidence_ids"]).issubset(evidence_ids),
             "treatment_evidence_incomplete",
@@ -735,29 +613,20 @@ def validate_missing_access_audit(artifact: dict[str, Any], frozen: dict[str, An
         ("reader_task_completion", len(expected_tasks), len(task_ids)),
         ("treatment_completion", len(expected_treatments), len(treatment_ids)),
     ):
-        completion = artifact.get(field)
-        require(isinstance(completion, dict), "audit_completion", f"{field} is required.")
+        completion = artifact[field]
         require(completion.get("expected") == expected_count and completion.get("judged") == actual_count and completion.get("complete") is True, "audit_completion", f"{field} denominators do not recompute.")
         if "unique" in completion:
             require(completion.get("unique") is True, "audit_completion", f"{field}.unique must be true.")
 
     dependency_defects = list(artifact.get("dependency_defects", []))
     for subject in subject_judgments:
-        nested = subject.get("dependency_defects", [])
-        require(isinstance(nested, list), "dependency_defect_shape", "Subject dependency_defects must be an array.")
-        dependency_defects.extend(nested)
-    require(isinstance(dependency_defects, list) and all(isinstance(item, dict) for item in dependency_defects), "dependency_defect_shape", "dependency_defects must be an array of objects.")
+        dependency_defects.extend(subject.get("dependency_defects", []))
     defect_ids = [item.get("defect_id") for item in dependency_defects]
     require(all(isinstance(item, str) and item for item in defect_ids) and not duplicate_values(defect_ids), "dependency_defect_shape", "Dependency defects require unique IDs.")
     for defect in dependency_defects:
-        require(defect.get("dependency_type") == "locator_audit" and defect.get("disposition") == "reported_without_reinterpretation", "dependency_defect_shape", f"Dependency defect {defect.get('defect_id')} must identify locator_audit and prohibit silent reinterpretation.")
         require(defect.get("locator_id") in candidate_locators, "dependency_defect_locator", f"Dependency defect {defect.get('defect_id')} names an unknown locator.")
         coverage_subject_ids = defect.get("coverage_subject_ids")
-        require(isinstance(coverage_subject_ids, list) and bool(coverage_subject_ids) and not duplicate_values(coverage_subject_ids) and set(coverage_subject_ids).issubset(expected_subjects), "dependency_defect_shape", f"Dependency defect {defect.get('defect_id')} lacks valid coverage subject IDs.")
-        require_nonempty_string(defect.get("observed_conflict"), f"dependency_defect[{defect.get('defect_id')}].observed_conflict", 2000)
-        require(defect.get("confidence") in CONFIDENCES, "dependency_defect_shape", f"Dependency defect {defect.get('defect_id')} lacks confidence.")
-        require_nonempty_string(defect.get("required_adjudication"), f"dependency_defect[{defect.get('defect_id')}].required_adjudication", 1000)
-        validate_evidence_ids(defect.get("evidence_ids"), f"dependency_defect[{defect.get('defect_id')}].evidence_ids")
+        require(set(coverage_subject_ids).issubset(expected_subjects), "dependency_defect_shape", f"Dependency defect {defect.get('defect_id')} lacks valid coverage subject IDs.")
     locator_expected = sum(len(item.get("expected_document_pages", [])) for item in subject_judgments)
     locator_found = sum(len(item.get("found_document_pages", [])) for item in subject_judgments)
     locator_missed = sum(len(item.get("missed_document_pages", [])) for item in subject_judgments)
@@ -805,7 +674,8 @@ def load_locator_audit_set(paths: list[str], frozen: dict[str, Any]) -> dict[str
     for raw_path in paths:
         path = Path(raw_path).resolve()
         artifact, payload, digest = load_json_snapshot(path, "Canonical locator audit")
-        require(artifact.get("schema_version") in LOCATOR_AUDIT_COMPATIBILITY_VERSIONS, "locator_audit_set_schema", f"Expected one of {sorted(LOCATOR_AUDIT_COMPATIBILITY_VERSIONS)}.")
+        errors = schema_errors(artifact, "locator-audit-v2.schema.json")
+        require(not errors, "schema_validation_failed", "Canonical locator audit is structurally invalid.", errors)
         require(artifact.get("evaluation_id") == frozen["state"].get("evaluation_id"), "locator_audit_set_identity", "Locator audit evaluation identity differs.")
         require(artifact.get("candidate_sha256") == frozen["candidate_sha256"], "locator_audit_set_identity", "Locator audit candidate identity differs.")
         chunk_id = validate_chunk_id(artifact.get("chunk_id"))

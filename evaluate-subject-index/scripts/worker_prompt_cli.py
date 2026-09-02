@@ -5,14 +5,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import stat
 import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-
-CHUNK_ID = re.compile(r"^CHUNK-[0-9]{3,}$")
+from schema_validation import schema_errors
 
 
 class PromptSpecError(ValueError):
@@ -22,12 +20,6 @@ class PromptSpecError(ValueError):
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise PromptSpecError(message)
-
-
-def text_field(value: dict[str, Any], name: str) -> str:
-    result = value.get(name)
-    require(isinstance(result, str) and result.strip() == result and bool(result), f"{name} must be a nonempty string")
-    return result
 
 
 def relative_path(value: str, name: str) -> str:
@@ -43,31 +35,18 @@ def library_path(value: str, name: str) -> str:
 
 
 def validate_spec(spec: dict[str, Any]) -> None:
-    require(spec.get("schema_version") == "locator-worker-prompt-pack-v3", "unsupported schema_version")
-    for name in ("evaluation_id", "candidate_id", "checkpoint_filename"):
-        text_field(spec, name)
-    library_path(text_field(spec, "checkpoint_library_root"), "checkpoint_library_root")
-    library_path(text_field(spec, "worker_library_root"), "worker_library_root")
-    chunks = spec.get("chunks")
-    require(isinstance(chunks, list) and bool(chunks), "chunks must be a nonempty array")
+    errors = schema_errors(spec, "locator-worker-prompt-pack.schema.json")
+    require(not errors, "prompt pack is structurally invalid: " + "; ".join(errors))
+    library_path(spec["checkpoint_library_root"], "checkpoint_library_root")
+    library_path(spec["worker_library_root"], "worker_library_root")
     seen: set[str] = set()
-    for index, chunk in enumerate(chunks):
-        require(isinstance(chunk, dict), f"chunks[{index}] must be an object")
-        chunk_id = text_field(chunk, "chunk_id")
-        require(bool(CHUNK_ID.fullmatch(chunk_id)), f"chunks[{index}].chunk_id is invalid")
-        require(chunk_id not in seen, f"duplicate chunk_id: {chunk_id}")
-        seen.add(chunk_id)
-        for name in ("source_unit", "owned_document_pages"):
-            text_field(chunk, name)
-        require(
-            isinstance(chunk.get("expected_locator_assignments"), int)
-            and chunk["expected_locator_assignments"] >= 0,
-            f"chunks[{index}].expected_locator_assignments must be a nonnegative integer",
-        )
+    for index, chunk in enumerate(spec["chunks"]):
+        require(chunk["chunk_id"] not in seen, f"duplicate chunk_id: {chunk['chunk_id']}")
+        seen.add(chunk["chunk_id"])
         for name in ("locator_packet_path", "source_materialize_path", "sidecar_materialize_path"):
-            relative_path(text_field(chunk, name), f"chunks[{index}].{name}")
+            relative_path(chunk[name], f"chunks[{index}].{name}")
         for name in ("source_library_path", "sidecar_library_path"):
-            library_path(text_field(chunk, name), f"chunks[{index}].{name}")
+            library_path(chunk[name], f"chunks[{index}].{name}")
 
 
 def validate_checkpoint(spec: dict[str, Any], checkpoint: Path) -> None:
@@ -86,8 +65,10 @@ def validate_checkpoint(spec: dict[str, Any], checkpoint: Path) -> None:
             metadata = json.loads(archive.read("bundle-metadata.json").decode("utf-8"))
     except (OSError, zipfile.BadZipFile, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise PromptSpecError(f"checkpoint is invalid: {exc}") from exc
-    require(isinstance(state, dict) and state.get("schema_version") == "subject-index-evaluation-state-v5", "checkpoint evaluation state schema is unsupported")
-    require(isinstance(metadata, dict) and metadata.get("schema_version") == "subject-index-bundle-v2", "checkpoint bundle schema is unsupported")
+    state_errors = schema_errors(state, "evaluation-state.schema.json")
+    metadata_errors = schema_errors(metadata, "bundle-metadata.schema.json")
+    require(not state_errors, "checkpoint evaluation state is structurally invalid: " + "; ".join(state_errors))
+    require(not metadata_errors, "checkpoint bundle metadata is structurally invalid: " + "; ".join(metadata_errors))
     require(set(names) == set(metadata.get("included_paths", [])) | {"bundle-metadata.json"}, "checkpoint members differ from bundle metadata")
     require(state.get("evaluation_id") == spec["evaluation_id"], "checkpoint evaluation_id differs from prompt pack")
 
@@ -137,7 +118,6 @@ def main() -> int:
     args = parser.parse_args()
     try:
         spec = json.loads(Path(args.input).read_text(encoding="utf-8"))
-        require(isinstance(spec, dict), "input must be a JSON object")
         validate_spec(spec)
         validate_checkpoint(spec, Path(args.checkpoint))
         output = Path(args.output)

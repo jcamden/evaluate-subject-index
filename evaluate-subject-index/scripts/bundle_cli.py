@@ -11,7 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from state_cli import STATE_SCHEMA_VERSION, load_state, resolve_artifact_path, validate_state
+from state_cli import load_state, resolve_artifact_path, validate_state
+from schema_validation import schema_errors
 
 
 BUNDLE_SCHEMA_VERSION = "subject-index-bundle-v2"
@@ -59,8 +60,6 @@ def default_output(root: Path, evaluation_id: str, command: str, profile: str) -
 def load_run(state_path: Path) -> tuple[dict[str, Any], Path]:
     state_path = state_path.resolve()
     state = load_state(state_path)
-    if state.get("schema_version") != STATE_SCHEMA_VERSION:
-        fail("unsupported_state", f"Expected {STATE_SCHEMA_VERSION}; legacy state is not supported.")
     errors, _ = validate_state(state, state_path=state_path)
     if errors:
         fail("invalid_state", "The evaluation state is not checkpointable.", errors)
@@ -94,6 +93,9 @@ def command_package(args: argparse.Namespace) -> None:
         "included_paths": sorted(included),
         "excluded": sorted(excluded, key=lambda item: item["path"]),
     }
+    metadata_errors = schema_errors(metadata, "bundle-metadata.schema.json")
+    if metadata_errors:
+        fail("invalid_bundle_metadata", "Generated bundle metadata is invalid.", metadata_errors)
     output = Path(args.output).resolve() if args.output else default_output(root, state["evaluation_id"], args.command, args.profile)
     if output.exists() and not args.force:
         fail("output_exists", f"Refusing to overwrite existing bundle: {output}")
@@ -150,8 +152,9 @@ def command_import(args: argparse.Namespace) -> None:
                 if info.is_dir() or is_symlink_member(info):
                     fail("unsupported_member", f"Bundle contains an unsupported member: {info.filename}")
             metadata = json.loads(archive.read("bundle-metadata.json").decode("utf-8"))
-            if not isinstance(metadata, dict) or metadata.get("schema_version") != BUNDLE_SCHEMA_VERSION:
-                fail("unsupported_bundle", f"Expected {BUNDLE_SCHEMA_VERSION}; legacy bundles are not supported.")
+            metadata_errors = schema_errors(metadata, "bundle-metadata.schema.json")
+            if metadata_errors:
+                fail("invalid_bundle_metadata", "Bundle metadata is invalid.", metadata_errors)
             declared = set(metadata.get("included_paths", [])) | {"bundle-metadata.json"}
             if set(names) != declared:
                 fail("bundle_inventory_mismatch", "Bundle members differ from its inventory.")

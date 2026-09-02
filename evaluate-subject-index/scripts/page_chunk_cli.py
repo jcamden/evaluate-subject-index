@@ -11,6 +11,8 @@ import unicodedata
 from pathlib import Path
 from typing import Any
 
+from schema_validation import schema_errors
+
 
 def emit(payload: dict[str, Any], exit_code: int = 0) -> None:
     print(json.dumps(payload, indent=2, ensure_ascii=False))
@@ -34,6 +36,12 @@ def load_json(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         fail("invalid_root", f"JSON root must be an object: {path}")
     return value
+
+
+def require_schema(value: Any, schema_name: str, label: str) -> None:
+    errors = schema_errors(value, schema_name)
+    if errors:
+        fail("schema_validation_failed", f"{label} is structurally invalid.", errors)
 
 
 def save_json(path: Path, value: dict[str, Any]) -> None:
@@ -158,24 +166,14 @@ def expand_ranges(ranges: Any, field: str) -> list[int]:
 
 def command_expand_page_map(args: argparse.Namespace) -> None:
     source = load_json(Path(args.input))
-    if source.get("schema_version") != "page-map-input-v1":
-        fail("schema_version", "Expected page-map-input-v1")
-    count = source.get("document_page_count")
-    if not isinstance(count, int) or count < 1:
-        fail("document_page_count", "document_page_count must be a positive integer")
-    source_sha256 = source.get("source_sha256")
-    if not isinstance(source_sha256, str) or not re.fullmatch(r"[a-f0-9]{64}", source_sha256):
-        fail("source_sha256", "source_sha256 must be a lowercase SHA-256 digest")
-    segments = source.get("segments")
-    if not isinstance(segments, list) or not segments:
-        fail("segments", "segments must be a nonempty array")
+    require_schema(source, "page-map-input.schema.json", "Page-map input")
+    count = source["document_page_count"]
+    source_sha256 = source["source_sha256"]
+    segments = source["segments"]
 
     records: dict[int, dict[str, Any]] = {}
     errors: list[str] = []
     for segment in segments:
-        if not isinstance(segment, dict):
-            errors.append("Every segment must be an object")
-            continue
         mapping_id = str(segment.get("mapping_id", ""))
         mode = segment.get("mode")
         try:
@@ -195,9 +193,6 @@ def command_expand_page_map(args: argparse.Namespace) -> None:
         labels: list[str | None]
         if mode == "sequence":
             label_start = segment.get("label_start")
-            if not isinstance(label_start, str):
-                errors.append(f"{mapping_id}.label_start must be a string")
-                continue
             prefix = str(segment.get("prefix", ""))
             suffix = str(segment.get("suffix", ""))
             try:
@@ -207,11 +202,8 @@ def command_expand_page_map(args: argparse.Namespace) -> None:
                 continue
         elif mode == "explicit":
             raw_labels = segment.get("labels")
-            if not isinstance(raw_labels, list) or len(raw_labels) != page_total:
+            if len(raw_labels) != page_total:
                 errors.append(f"{mapping_id}.labels must contain exactly {page_total} values")
-                continue
-            if not all(label is None or isinstance(label, str) for label in raw_labels):
-                errors.append(f"{mapping_id}.labels values must be strings or null")
                 continue
             labels = raw_labels
         else:
@@ -258,6 +250,7 @@ def command_expand_page_map(args: argparse.Namespace) -> None:
         "page_map_sha256": None,
     }
     output["page_map_sha256"] = canonical_hash(output, "page_map_sha256")
+    require_schema(output, "page-map.schema.json", "Page map")
     output_path = Path(args.output)
     save_json(output_path, output)
     emit({
@@ -273,13 +266,11 @@ def command_expand_page_map(args: argparse.Namespace) -> None:
 def command_validate_chunks(args: argparse.Namespace) -> None:
     manifest = load_json(Path(args.input))
     page_map = load_json(Path(args.page_map))
-    if manifest.get("schema_version") != "chunk-manifest-v1":
-        fail("schema_version", "Expected chunk-manifest-v1")
+    require_schema(manifest, "chunk-manifest-input.schema.json", "Chunk-manifest input")
+    require_schema(page_map, "page-map.schema.json", "Page map")
     if manifest.get("user_approved") is not True:
         fail("approval_required", "chunk manifest must record user_approved: true")
     chunks = manifest.get("chunks")
-    if not isinstance(chunks, list) or not chunks:
-        fail("chunks", "chunks must be a nonempty array")
     count = page_map.get("document_page_count")
     in_scope = {record["document_page"] for record in page_map.get("pages", []) if record.get("in_evaluation_scope")}
     owners: dict[int, str] = {}
@@ -288,14 +279,11 @@ def command_validate_chunks(args: argparse.Namespace) -> None:
     packet_orders: set[int] = set()
     for chunk in chunks:
         chunk_id = chunk.get("chunk_id")
-        if not isinstance(chunk_id, str) or not chunk_id.startswith("CHUNK-"):
-            errors.append(f"Invalid chunk_id: {chunk_id}")
-            continue
         if chunk_id in chunk_ids:
             errors.append(f"Duplicate chunk_id: {chunk_id}")
         chunk_ids.add(chunk_id)
         packet_order = chunk.get("packet_order")
-        if not isinstance(packet_order, int) or packet_order < 1 or packet_order in packet_orders:
+        if packet_order in packet_orders:
             errors.append(f"Invalid or duplicate packet_order for {chunk_id}: {packet_order}")
         else:
             packet_orders.add(packet_order)
@@ -335,6 +323,7 @@ def command_validate_chunks(args: argparse.Namespace) -> None:
     }
     output["chunk_manifest_sha256"] = None
     output["chunk_manifest_sha256"] = canonical_hash(output, "chunk_manifest_sha256")
+    require_schema(output, "chunk-manifest.schema.json", "Chunk manifest")
     output_path = Path(args.output)
     save_json(output_path, output)
     emit({
@@ -357,6 +346,8 @@ def command_split_pdf(args: argparse.Namespace) -> None:
         fail("source_not_found", f"Source PDF does not exist: {source_path}")
     page_map = load_json(Path(args.page_map))
     manifest = load_json(Path(args.chunks))
+    require_schema(page_map, "page-map.schema.json", "Page map")
+    require_schema(manifest, "chunk-manifest.schema.json", "Chunk manifest")
     actual_source_hash = sha256_file(source_path)
     if page_map.get("source_sha256") != actual_source_hash:
         fail("source_hash_mismatch", "Source PDF does not match the source_sha256 frozen in the page map")
@@ -426,12 +417,11 @@ def command_filter_candidate(args: argparse.Namespace) -> None:
     candidate = load_json(Path(args.candidate))
     page_map = load_json(Path(args.page_map))
     manifest = load_json(Path(args.chunks))
-    candidate_schema = candidate.get("schema_version")
-    if candidate_schema != "candidate-index-v2":
-        fail("schema_version", "Expected candidate-index-v2")
+    require_schema(candidate, "candidate-index-v2.schema.json", "Normalized candidate")
+    require_schema(page_map, "page-map.schema.json", "Page map")
+    require_schema(manifest, "chunk-manifest.schema.json", "Chunk manifest")
     benchmark_lock = load_json(Path(args.benchmark_lock))
-    if benchmark_lock.get("schema_version") != "candidate-benchmark-lock-v1":
-        fail("invalid_benchmark_lock", "Expected candidate-benchmark-lock-v1")
+    require_schema(benchmark_lock, "candidate-benchmark-lock.schema.json", "Benchmark lock")
     if benchmark_lock.get("lock_sha256") != canonical_hash(benchmark_lock, "lock_sha256"):
         fail("invalid_benchmark_lock_hash", "Benchmark lock canonical hash does not recompute")
     if benchmark_lock.get("candidate_id") != candidate.get("candidate_id"):
@@ -464,8 +454,6 @@ def command_filter_candidate(args: argparse.Namespace) -> None:
     exceptions: list[dict[str, Any]] = []
     for record in candidate.get("records", []):
         assignments = record.get("locator_assignments", [])
-        if not isinstance(assignments, list):
-            fail("candidate_shape", f"locator_assignments must be an array for {record.get('record_id')}")
         by_chunk: dict[str, list[dict[str, Any]]] = {}
         resolved_total = 0
         for assignment in assignments:
@@ -520,6 +508,7 @@ def command_filter_candidate(args: argparse.Namespace) -> None:
                 "locator_assignment_count": sum(len(path["locator_assignments"]) for path in paths),
             },
         }
+        require_schema(packet, "candidate-locator-chunk.schema.json", f"Locator packet {chunk_id}")
         packet_path = output_dir / f"candidate-locator-{chunk_id}.json"
         save_json(packet_path, packet)
         written.append({"chunk_id": chunk_id, "path": str(packet_path.resolve()), **packet["summary"]})

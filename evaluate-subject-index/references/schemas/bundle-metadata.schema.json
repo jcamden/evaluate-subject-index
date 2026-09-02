@@ -8,21 +8,18 @@
     "evaluation_id",
     "profile",
     "created_at",
-    "state_sha256",
-    "manifest_sha256",
     "included_paths",
     "excluded"
   ],
   "properties": {
-    "schema_version": {"const": "subject-index-bundle-v1"},
+    "schema_version": {"const": "subject-index-bundle-v2"},
     "evaluation_id": {"type": "string", "minLength": 1},
     "profile": {"enum": ["portable", "private-complete"]},
     "created_at": {"type": "string"},
-    "state_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-    "manifest_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "included_paths": {
       "type": "array",
-      "items": {"type": "string", "minLength": 1}
+      "items": {"$ref": "#/$defs/relativePath"},
+      "uniqueItems": true
     },
     "excluded": {
       "type": "array",
@@ -30,12 +27,15 @@
         "type": "object",
         "required": ["path", "reason"],
         "properties": {
-          "path": {"type": "string", "minLength": 1},
-          "reason": {"type": "string", "minLength": 1}
+          "path": {"$ref": "#/$defs/relativePath"},
+          "reason": {"enum": ["restricted_by_portable_profile", "export_artifact_not_nested", "not_currently_accessible"]}
         },
         "additionalProperties": false
       }
     }
   },
-  "additionalProperties": true
+  "$defs": {
+    "relativePath": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"}
+  },
+  "additionalProperties": false
 }

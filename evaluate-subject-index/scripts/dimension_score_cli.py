@@ -19,7 +19,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
-import jsonschema
+from schema_validation import schema_errors
 
 
 RUBRIC_VERSION = "subject-index-rubric-v5"
@@ -135,7 +135,6 @@ FIVE = Decimal(5)
 HALF = Decimal("0.5")
 HUNDRED = Decimal(100)
 SIX_PLACES = Decimal("0.000001")
-SCHEMA_ROOT = Path(__file__).resolve().parents[1] / "references" / "schemas"
 
 
 class CalculationError(ValueError):
@@ -311,38 +310,13 @@ def load_json(path: Path, label: str) -> dict[str, Any]:
     return value
 
 
-def schema_store() -> dict[str, dict[str, Any]]:
-    store: dict[str, dict[str, Any]] = {}
-    for path in SCHEMA_ROOT.glob("*.json"):
-        # Ledger instances are loaded with Decimal so schema numeric keywords
-        # (notably historical ``multipleOf: 0.5``) must use the same numeric
-        # type.  Mixing Decimal instances with binary-float schema constants
-        # raises inside jsonschema before it can return a validation error.
-        document = json.loads(path.read_text(encoding="utf-8"), parse_float=Decimal)
-        store[path.resolve().as_uri()] = document
-        store[path.name] = document
-    return store
-
-
 def validate_schema_document(document: dict[str, Any], schema_name: str, label: str) -> None:
-    schema_path = SCHEMA_ROOT / schema_name
-    schema = json.loads(schema_path.read_text(encoding="utf-8"), parse_float=Decimal)
-    resolver = jsonschema.RefResolver(
-        base_uri=schema_path.resolve().as_uri(),
-        referrer=schema,
-        store=schema_store(),
-    )
-    errors = sorted(
-        jsonschema.Draft202012Validator(schema, resolver=resolver).iter_errors(document),
-        key=lambda item: list(item.absolute_path),
-    )
+    errors = schema_errors(document, schema_name)
     if errors:
-        error = errors[0]
-        location = ".".join(map(str, error.absolute_path)) or "<root>"
         raise CalculationError(
             "input_schema_validation_failed",
-            f"{label} does not satisfy {schema_name} at {location}: {error.message}",
-            {"schema": schema_name, "path": location, "error_count": len(errors)},
+            f"{label} does not satisfy {schema_name}: {errors[0]}",
+            {"schema": schema_name, "error_count": len(errors), "errors": errors},
         )
 
 

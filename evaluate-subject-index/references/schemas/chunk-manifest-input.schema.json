@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "chunk-manifest-input.schema.json",
+  "title": "User-approved document-page chunk plan",
+  "type": "object",
+  "required": ["schema_version", "document_page_basis", "user_approved", "require_full_scope_coverage", "chunks"],
+  "properties": {
+    "schema_version": {"const": "chunk-manifest-v1"},
+    "document_page_basis": {"const": "one_based_inclusive"},
+    "user_approved": {"const": true},
+    "require_full_scope_coverage": {"type": "boolean"},
+    "chunks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["chunk_id", "title", "source_units", "owned_document_page_ranges", "context_document_page_ranges", "packet_order"],
+        "properties": {
+          "chunk_id": {"type": "string", "pattern": "^CHUNK-"},
+          "title": {"type": "string"},
+          "source_units": {"type": "array", "items": {"type": "string"}},
+          "owned_document_page_ranges": {"$ref": "#/$defs/ranges"},
+          "context_document_page_ranges": {"$ref": "#/$defs/ranges"},
+          "packet_order": {"type": "integer", "minimum": 1}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "$defs": {
+    "ranges": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "prefixItems": [{"type": "integer", "minimum": 1}, {"type": "integer", "minimum": 1}],
+        "minItems": 2,
+        "maxItems": 2
+      }
+    }
+  },
+  "additionalProperties": true
+}

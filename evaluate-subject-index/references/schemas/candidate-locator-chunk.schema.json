@@ -21,7 +21,21 @@
           "record_id": {"type": "string"},
           "path_id": {"type": "string"},
           "heading_path": {"type": "array", "minItems": 1, "items": {"type": "string"}},
-          "locator_assignments": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+          "locator_assignments": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["locator_id", "mapping_status", "document_page", "source_page_label"],
+              "properties": {
+                "locator_id": {"type": "string", "pattern": "^LOC-"},
+                "mapping_status": {"const": "resolved"},
+                "document_page": {"type": "integer", "minimum": 1},
+                "source_page_label": {"type": "string"}
+              },
+              "additionalProperties": true
+            }
+          },
           "other_locator_assignment_count": {"type": "integer", "minimum": 0}
         },
         "additionalProperties": true

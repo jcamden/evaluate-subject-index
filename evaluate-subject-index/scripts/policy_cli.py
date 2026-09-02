@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from schema_validation import schema_errors
+
 
 POLICY_SCHEMA = "subject-index-evaluation-policy-v3"
 POLICY_PROFILE = "subject-index-standard-policy-v7"
@@ -157,12 +159,6 @@ def canonical_hash(payload: dict[str, Any], own_hash_field: str) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def require_hash(value: Any, field: str) -> str:
-    if not isinstance(value, str) or len(value) != 64 or any(ch not in "0123456789abcdef" for ch in value):
-        raise ValueError(f"{field} must be a lowercase SHA-256 value")
-    return value
-
-
 def unique_strings(values: list[Any], field: str) -> list[str]:
     result: list[str] = []
     seen: set[str] = set()
@@ -177,10 +173,9 @@ def unique_strings(values: list[Any], field: str) -> list[str]:
 
 def read_input(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(value, dict):
-        raise ValueError("Policy build input must be a JSON object")
-    if value.get("schema_version") != "subject-index-policy-build-input-v1":
-        raise ValueError("Unsupported policy build input schema_version")
+    errors = schema_errors(value, "policy-build-input.schema.json")
+    if errors:
+        raise ValueError("Policy build input is structurally invalid: " + "; ".join(errors))
     return value
 
 
@@ -191,20 +186,7 @@ def build_policy(source: dict[str, Any], standard_path: Path) -> dict[str, Any]:
     span = scope.get("document_page_span")
     if not (isinstance(span, list) and len(span) == 2 and all(isinstance(item, int) for item in span) and span[0] <= span[1]):
         raise ValueError("source_scope.document_page_span must be an ascending integer pair")
-    if audience.get("basis") not in {"inferred", "user_supplied"}:
-        raise ValueError("audience.basis must be inferred or user_supplied")
-    if audience.get("confidence") not in {"high", "medium", "low"}:
-        raise ValueError("audience.confidence must be high, medium, or low")
-    if not audience.get("label") or not audience.get("rationale"):
-        raise ValueError("audience requires label and rationale")
-    if audit.get("mode", "full") not in {"full", "pilot"}:
-        raise ValueError("audit_design.mode must be full or pilot")
     deviations = source.get("deviations", [])
-    if not isinstance(deviations, list):
-        raise ValueError("deviations must be an array")
-    for deviation in deviations:
-        if not isinstance(deviation, dict) or not all(deviation.get(key) for key in ("path", "replacement", "rationale", "provenance")):
-            raise ValueError("Every deviation requires path, replacement, rationale, and provenance")
 
     stamp = now()
     policy: dict[str, Any] = {
@@ -215,10 +197,10 @@ def build_policy(source: dict[str, Any], standard_path: Path) -> dict[str, Any]:
             "standard_policy_sha256": sha256_file(standard_path),
         },
         "source_scope": {
-            "source_sha256": require_hash(scope.get("source_sha256"), "source_scope.source_sha256"),
+            "source_sha256": scope["source_sha256"],
             "document_page_span": span,
-            "page_map_sha256": require_hash(scope.get("page_map_sha256"), "source_scope.page_map_sha256"),
-            "chunk_manifest_sha256": require_hash(scope.get("chunk_manifest_sha256"), "source_scope.chunk_manifest_sha256"),
+            "page_map_sha256": scope["page_map_sha256"],
+            "chunk_manifest_sha256": scope["chunk_manifest_sha256"],
             "included": unique_strings(DEFAULT_INCLUDED + list(scope.get("source_specific_included", [])), "source_scope.included"),
             "excluded": unique_strings(DEFAULT_EXCLUDED + list(scope.get("source_specific_excluded", [])), "source_scope.excluded"),
             "availability": scope.get("availability", {}),
@@ -261,6 +243,9 @@ def build_policy(source: dict[str, Any], standard_path: Path) -> dict[str, Any]:
         "policy_sha256": None,
     }
     policy["policy_sha256"] = canonical_hash(policy, "policy_sha256")
+    errors = schema_errors(policy, "evaluation-policy-v3.schema.json")
+    if errors:
+        raise ValueError("Generated policy is structurally invalid: " + "; ".join(errors))
     return policy
 
 

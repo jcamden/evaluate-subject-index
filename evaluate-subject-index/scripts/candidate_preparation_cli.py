@@ -15,12 +15,11 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
-from candidate_layout_adapters import extract_candidate_layout, validate_layout_contract
+from candidate_layout_adapters import extract_candidate_layout
 from benchmark_review_cli import final_benchmark_structure_errors
 from item_grade_cli import build_inventory
 from state_cli import (
     STAGES,
-    STATE_SCHEMA_VERSION,
     artifact_id as state_artifact_id,
     evaluation_mutation_lock,
     next_stage,
@@ -28,24 +27,9 @@ from state_cli import (
     save_state,
     validate_state,
 )
+from schema_validation import schema_errors
 
 
-SUPPORTED_STATES = {STATE_SCHEMA_VERSION}
-PROVENANCE_FIELDS = (
-    "candidate_bytes",
-    "internal_pdf_completeness",
-    "structural_continuity",
-    "source_edition_compatibility",
-    "locator_page_map_compatibility",
-    "authoritative_copy_fidelity",
-)
-PROVENANCE_STATUSES = {
-    "verified",
-    "not_independently_verified",
-    "incomplete",
-    "conflicting_evidence",
-    "not_applicable",
-}
 PRIVATE_ARTIFACT_KEYS = (
     "candidate_ref",
     "layout_profile",
@@ -237,20 +221,9 @@ def validate_self_hash(value: dict[str, Any], field: str, label: str) -> None:
     require(recorded == canonical_hash(value, field), "canonical_hash_mismatch", f"{label} canonical hash does not recompute.")
 
 
-def validate_provenance(provenance: dict[str, Any], file_origin: str) -> list[str]:
-    errors: list[str] = []
-    for field in PROVENANCE_FIELDS:
-        record = provenance.get(field)
-        if not isinstance(record, dict):
-            errors.append(f"provenance.{field} must be an object")
-            continue
-        if record.get("status") not in PROVENANCE_STATUSES:
-            errors.append(f"provenance.{field}.status is invalid")
-        if not isinstance(record.get("rationale"), str) or not record.get("rationale"):
-            errors.append(f"provenance.{field}.rationale must be non-empty")
-    if file_origin in {"reconstructed_pdf", "transcription"} and provenance.get("authoritative_copy_fidelity", {}).get("claimed_original_publisher_pdf"):
-        errors.append("A reconstructed PDF or transcription cannot claim to be an original publisher PDF")
-    return errors
+def require_schema(value: Any, schema_name: str, label: str) -> None:
+    errors = schema_errors(value, schema_name)
+    require(not errors, "schema_validation_failed", f"{label} is structurally invalid.", errors)
 
 
 def load_source_identities(
@@ -263,13 +236,13 @@ def load_source_identities(
 ) -> dict[str, Any]:
     documents = documents or {}
     state = documents.get("state") or load_json(state_path, "Evaluation state")
-    require(state.get("schema_version") in SUPPORTED_STATES, "unsupported_state", f"Candidate preparation requires {STATE_SCHEMA_VERSION}.")
     page_map = documents.get("page_map") or load_json(page_map_path, "Page map")
     chunks = documents.get("chunk_manifest") or load_json(chunk_manifest_path, "Chunk manifest")
     policy = documents.get("policy") or load_json(policy_path, "Evaluation policy")
-    require(page_map.get("schema_version") == "page-map-v1", "invalid_page_map", "Expected page-map-v1.")
-    require(chunks.get("schema_version") == "chunk-manifest-v1", "invalid_chunk_manifest", "Expected chunk-manifest-v1.")
-    require(policy.get("schema_version") == "subject-index-evaluation-policy-v3", "invalid_policy", "Expected subject-index-evaluation-policy-v3.")
+    require_schema(state, "evaluation-state.schema.json", "Evaluation state")
+    require_schema(page_map, "page-map.schema.json", "Page map")
+    require_schema(chunks, "chunk-manifest.schema.json", "Chunk manifest")
+    require_schema(policy, "evaluation-policy-v3.schema.json", "Evaluation policy")
     validate_self_hash(page_map, "page_map_sha256", "Page map")
     validate_self_hash(chunks, "chunk_manifest_sha256", "Chunk manifest")
     validate_self_hash(policy, "policy_sha256", "Evaluation policy")
@@ -592,13 +565,10 @@ def locator_assignments_for_display(
 
 
 def normalize_layout(layout: dict[str, Any], page_map: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
-    layout_errors = validate_layout_contract(layout)
-    require(not layout_errors, "invalid_layout_extraction", "Layout extraction failed the common adapter contract.", layout_errors)
-    candidate_id = str(layout.get("candidate_id", ""))
-    candidate_sha = require_sha256(layout.get("candidate_sha256"), "layout.candidate_sha256")
-    require(candidate_id, "candidate_identity", "Layout extraction requires candidate_id.")
-    require(layout.get("schema_version") == "candidate-layout-extraction-v1", "layout_schema", "Expected candidate-layout-extraction-v1.")
-    require(page_map.get("schema_version") == "page-map-v1", "page_map_schema", "Expected page-map-v1.")
+    require_schema(layout, "candidate-layout-extraction.schema.json", "Candidate layout extraction")
+    require_schema(page_map, "page-map.schema.json", "Page map")
+    candidate_id = layout["candidate_id"]
+    candidate_sha = layout["candidate_sha256"]
     lookup, index_by_document_page, pages = page_map_lookup(page_map)
     _, _, lines = flatten_layout(layout)
     groups = merge_continuation_lines(lines)
@@ -866,11 +836,11 @@ def build_candidate_ref(
     file_origin: str,
     provenance: dict[str, Any],
 ) -> dict[str, Any]:
-    errors = validate_provenance(provenance, file_origin)
-    require(not errors, "invalid_provenance", "Candidate provenance is invalid.", errors)
+    if file_origin in {"reconstructed_pdf", "transcription"} and provenance.get("authoritative_copy_fidelity", {}).get("claimed_original_publisher_pdf"):
+        require(False, "invalid_provenance", "A reconstructed PDF or transcription cannot claim to be an original publisher PDF.")
     candidate_sha = sha256_file(candidate_path)
     require(candidate_sha == layout.get("candidate_sha256"), "candidate_hash_mismatch", "Candidate bytes do not match the layout extraction hash.")
-    require(provenance["candidate_bytes"]["status"] == "verified", "candidate_bytes_unverified", "Candidate preparation requires verified candidate bytes.")
+    require(provenance.get("candidate_bytes", {}).get("status") == "verified", "candidate_bytes_unverified", "Candidate preparation requires verified candidate bytes.")
     return {
         "schema_version": "candidate-ref-v1",
         "candidate_id": layout.get("candidate_id"),
@@ -945,6 +915,7 @@ def command_extract(args: argparse.Namespace) -> None:
     geometry = load_json(Path(args.geometry_input), "Synthetic geometry input") if args.geometry_input else None
     result = extract_candidate_layout(candidate_path, args.candidate_id, args.adapter, geometry)
     result["source_sha256"] = source_sha
+    require_schema(result, "candidate-layout-extraction.schema.json", "Candidate layout extraction")
     output = Path(args.output).resolve()
     require(not output.exists() or args.force, "output_exists", f"Refusing to overwrite {output}")
     save_json(output, result)
@@ -967,6 +938,7 @@ def command_normalize(args: argparse.Namespace) -> None:
     candidate_path = Path(args.candidate_file).resolve()
     layout_input_path = Path(args.layout).resolve()
     layout = load_json(layout_input_path, "Candidate layout extraction")
+    require_schema(layout, "candidate-layout-extraction.schema.json", "Candidate layout extraction")
     require(layout.get("candidate_id") == args.candidate_id, "candidate_id_mismatch", "Command candidate ID does not match layout extraction.")
     identities = load_source_identities(state_path, page_map_path, chunk_manifest_path, policy_path, args.source_edition)
     require(layout.get("source_sha256") in {None, identities["source_sha256"]}, "source_hash_mismatch", "Layout extraction source identity conflicts with the preparation state.")
@@ -980,6 +952,15 @@ def command_normalize(args: argparse.Namespace) -> None:
     paths = paths_for_normalization_output(output_root, args.candidate_id)
     existing = [str(path) for path in paths.values() if path.exists()]
     require(not existing or args.force, "output_exists", "Refusing to overwrite existing preparation artifacts.", existing)
+    for document, schema_name, label in (
+        (candidate_ref, "candidate-ref.schema.json", "Candidate reference"),
+        (layout_profile, "candidate-layout-profile.schema.json", "Candidate layout profile"),
+        (layout, "candidate-layout-extraction.schema.json", "Candidate layout extraction"),
+        (candidate, "candidate-index-v2.schema.json", "Normalized candidate"),
+        (inventory, "item-inventory-v2.schema.json", "Item inventory"),
+        (exceptions, "candidate-normalization-exceptions.schema.json", "Normalization exceptions"),
+    ):
+        require_schema(document, schema_name, label)
     save_json(paths["candidate_ref"], candidate_ref)
     save_json(paths["layout_profile"], layout_profile)
     save_json(paths["layout_extraction"], layout)
@@ -992,6 +973,7 @@ def command_normalize(args: argparse.Namespace) -> None:
         "item_inventory": sha256_file(paths["item_inventory"]),
         "normalization_exceptions": sha256_file(paths["normalization_exceptions"]),
     }
+    require_schema(report, "candidate-normalization-report.schema.json", "Normalization report")
     save_json(paths["normalization_report"], report)
     qa = build_qa_template(
         layout,
@@ -1002,6 +984,7 @@ def command_normalize(args: argparse.Namespace) -> None:
         exceptions,
     )
     qa["source_sha256"] = identities["source_sha256"]
+    require_schema(qa, "candidate-normalization-qa.schema.json", "Normalization QA")
     save_json(paths["normalization_qa"], qa)
     emit({
         "command": "normalize-candidate-layout",
@@ -1066,20 +1049,12 @@ def _validate_correction(
 ) -> list[str]:
     errors: list[str] = []
     correction_id = correction.get("correction_id")
-    if not isinstance(correction_id, str) or not correction_id:
-        errors.append("Every correction requires correction_id")
     before = correction.get("before")
     after = correction.get("after")
-    if not isinstance(before, str) or before not in layout_texts:
+    if before not in layout_texts:
         errors.append(f"Correction {correction_id} before text is not present in the delivered layout")
-    if not isinstance(after, str) or after not in candidate_texts:
+    if after not in candidate_texts:
         errors.append(f"Correction {correction_id} after text is not present in the normalized candidate")
-    if correction.get("reproduction_only") is not True:
-        errors.append(f"Correction {correction_id} must attest reproduction_only=true")
-    if correction.get("editorial_improvement") is not False:
-        errors.append(f"Correction {correction_id} must attest editorial_improvement=false")
-    if not isinstance(correction.get("reason"), str) or not correction.get("reason"):
-        errors.append(f"Correction {correction_id} requires a reason")
     return errors
 
 
@@ -1108,20 +1083,19 @@ def validate_private_preparation(
     qa = documents["normalization_qa"]
     errors: list[str] = []
 
-    expected_schemas = {
-        "candidate_ref": "candidate-ref-v1",
-        "layout_profile": "candidate-layout-profile-v1",
-        "layout_extraction": "candidate-layout-extraction-v1",
-        "candidate_index": "candidate-index-v2",
-        "item_inventory": "subject-index-item-inventory-v2",
-        "normalization_exceptions": "candidate-normalization-exceptions-v1",
-        "normalization_report": "candidate-normalization-report-v1",
-        "normalization_qa": "candidate-normalization-qa-v1",
+    schemas = {
+        "candidate_ref": "candidate-ref.schema.json",
+        "layout_profile": "candidate-layout-profile.schema.json",
+        "layout_extraction": "candidate-layout-extraction.schema.json",
+        "candidate_index": "candidate-index-v2.schema.json",
+        "item_inventory": "item-inventory-v2.schema.json",
+        "normalization_exceptions": "candidate-normalization-exceptions.schema.json",
+        "normalization_report": "candidate-normalization-report.schema.json",
+        "normalization_qa": "candidate-normalization-qa.schema.json",
     }
-    for key, schema in expected_schemas.items():
-        if documents[key].get("schema_version") != schema:
-            errors.append(f"{key} must use {schema}")
-    errors.extend(validate_layout_contract(layout))
+    for key, schema_name in schemas.items():
+        errors.extend(f"{key}: {error}" for error in schema_errors(documents[key], schema_name))
+    require(not errors, "schema_validation_failed", "Candidate preparation artifacts are structurally invalid.", errors)
     normalized_id = normalize_candidate_id(candidate_id)
     for key, document in documents.items():
         if document.get("candidate_id") not in {None, candidate_id, normalized_id}:
@@ -1154,8 +1128,6 @@ def validate_private_preparation(
     ):
         if policy_ref.get(key) != expected:
             errors.append(f"Candidate policy {key} differs from the frozen input")
-    if candidate_ref.get("file_origin") not in {"delivered_pdf", "reconstructed_pdf", "transcription"}:
-        errors.append("Candidate file_origin is invalid")
     expected_pdf_reference = {
         "page_count": layout.get("pdf", {}).get("page_count"),
         "producer": layout.get("pdf", {}).get("producer"),
@@ -1167,7 +1139,8 @@ def validate_private_preparation(
         errors.append("Layout extraction source identity differs from the frozen state")
     if report.get("source_sha256") != identities["source_sha256"]:
         errors.append("Normalization report source identity differs from the frozen state")
-    errors.extend(validate_provenance(candidate_ref.get("provenance", {}), str(candidate_ref.get("file_origin", ""))))
+    if candidate_ref["file_origin"] in {"reconstructed_pdf", "transcription"} and candidate_ref["provenance"]["authoritative_copy_fidelity"].get("claimed_original_publisher_pdf"):
+        errors.append("A reconstructed PDF or transcription cannot claim to be an original publisher PDF")
 
     if candidate.get("page_map_sha256") != identities["page_map_sha256"]:
         errors.append("Normalized candidate does not identify the frozen page map")
@@ -1188,8 +1161,6 @@ def validate_private_preparation(
         "exception_id": [item.get("exception_id") for item in exceptions.get("exceptions", [])],
     }
     for label, values in id_groups.items():
-        if any(not isinstance(value, str) or not value for value in values):
-            errors.append(f"Every {label} must be a non-empty string")
         duplicates = _duplicate_values(values)
         if duplicates:
             errors.append(f"Duplicate {label} values: {duplicates}")
@@ -1255,32 +1226,20 @@ def validate_private_preparation(
     expected = expected_qa_inventory(layout, candidate, exceptions)
     if qa.get("expected") != expected:
         errors.append("QA expected inventory is not the exact current normalization inventory")
-    reviewed = qa.get("reviewed") if isinstance(qa.get("reviewed"), dict) else {}
+    reviewed = qa["reviewed"]
     for key, values in expected.items():
-        actual = reviewed.get(key)
-        if not isinstance(actual, list):
-            errors.append(f"QA reviewed.{key} must be an array")
-            continue
-        try:
-            duplicates = _duplicate_values(actual)
-            actual_set = set(actual)
-        except TypeError:
-            errors.append(f"QA reviewed.{key} contains a non-scalar value")
-            continue
-        if duplicates:
-            errors.append(f"QA reviewed.{key} contains duplicates")
-        if actual_set != set(values):
+        if set(reviewed[key]) != set(values):
             errors.append(f"QA reviewed.{key} is not the exact expected set")
 
     expected_pages = expected_page_reviews(layout, candidate, exceptions)
-    actual_pages = qa.get("page_reviews") if isinstance(qa.get("page_reviews"), list) else []
-    if _duplicate_values([item.get("candidate_pdf_page") for item in actual_pages if isinstance(item, dict)]):
+    actual_pages = qa["page_reviews"]
+    if _duplicate_values([item["candidate_pdf_page"] for item in actual_pages]):
         errors.append("QA page_reviews contains duplicate pages")
-    if {item.get("candidate_pdf_page") for item in actual_pages if isinstance(item, dict)} != {item["candidate_pdf_page"] for item in expected_pages}:
+    if {item["candidate_pdf_page"] for item in actual_pages} != {item["candidate_pdf_page"] for item in expected_pages}:
         errors.append("QA page_reviews does not cover every candidate PDF page exactly once")
     page_expected_by_id = {item["candidate_pdf_page"]: item for item in expected_pages}
     for review in actual_pages:
-        if not isinstance(review, dict) or review.get("candidate_pdf_page") not in page_expected_by_id:
+        if review["candidate_pdf_page"] not in page_expected_by_id:
             continue
         baseline = page_expected_by_id[review["candidate_pdf_page"]]
         for field in ("region_ids", "line_ids", "first_record_id", "last_record_id", "first_line_id", "last_line_id", "record_count", "line_count", "continuation_line_ids", "exception_ids"):
@@ -1294,8 +1253,8 @@ def validate_private_preparation(
     _, _, layout_lines = flatten_layout(layout)
     layout_texts = {str(line.get("original_displayed_form")) for line in layout_lines}
     candidate_texts = {str(record.get("original_displayed_form")) for record in candidate.get("records", [])}
-    top_corrections = qa.get("corrections") if isinstance(qa.get("corrections"), list) else []
-    page_corrections = [item for page in actual_pages if isinstance(page, dict) for item in page.get("corrections", []) if isinstance(item, dict)]
+    top_corrections = qa["corrections"]
+    page_corrections = [item for page in actual_pages for item in page["corrections"]]
     correction_ids = [item.get("correction_id") for item in top_corrections]
     if _duplicate_values(correction_ids):
         errors.append("QA corrections contains duplicate correction_id values")
@@ -1304,14 +1263,10 @@ def validate_private_preparation(
     for correction in top_corrections:
         errors.extend(_validate_correction(correction, layout_texts, candidate_texts))
 
-    dispositions = qa.get("exception_dispositions") if isinstance(qa.get("exception_dispositions"), list) else []
-    disposition_ids = [item.get("exception_id") for item in dispositions if isinstance(item, dict)]
+    dispositions = qa["exception_dispositions"]
+    disposition_ids = [item["exception_id"] for item in dispositions]
     if _duplicate_values(disposition_ids) or set(disposition_ids) != set(expected["exception_ids"]):
         errors.append("QA exception dispositions are not the exact exception set")
-    for disposition in dispositions:
-        if not isinstance(disposition, dict) or disposition.get("disposition") not in {"confirmed_unresolved", "confirmed_malformed", "confirmed_faithful", "resolved_by_reproduction_correction"}:
-            errors.append("Every QA exception requires an allowed explicit disposition")
-
     expected_hashes = {
         "normalized_candidate_file_sha256": sha256_file(paths["candidate_index"]),
         "item_inventory_file_sha256": sha256_file(paths["item_inventory"]),
@@ -1320,7 +1275,7 @@ def validate_private_preparation(
     for field, digest in expected_hashes.items():
         if qa.get(field) != digest:
             errors.append(f"QA {field} does not match the reviewed bytes")
-    completion = qa.get("completion") if isinstance(qa.get("completion"), dict) else {}
+    completion = qa["completion"]
     for field in ("all_denominators_complete", "all_exceptions_dispositioned", "candidate_reproduction_confirmed", "complete"):
         if completion.get(field) is not True:
             errors.append(f"QA completion.{field} must be true")
@@ -1388,7 +1343,8 @@ def command_register(args: argparse.Namespace) -> None:
     require(not errors, "benchmark_invalid", "Final benchmark is invalid.", errors)
     with evaluation_mutation_lock(state_path):
         state = load_json(state_path, "Canonical evaluation state")
-        require(state.get("schema_version") == STATE_SCHEMA_VERSION, "unsupported_state", f"Expected {STATE_SCHEMA_VERSION}.")
+        errors, _ = validate_state(state, state_path=state_path)
+        require(not errors, "canonical_state_invalid", "Canonical evaluation state failed validation.", errors)
         require(state.get("stages", {}).get("benchmark_freeze", {}).get("status") == "completed", "benchmark_stage_incomplete", "Freeze the benchmark before registering a candidate.")
         require(benchmark.get("evaluation_id") == state.get("evaluation_id"), "benchmark_identity_mismatch", "Benchmark and evaluation IDs differ.")
         require(benchmark.get("source_sha256") == state.get("source", {}).get("sha256"), "benchmark_identity_mismatch", "Benchmark and source identities differ.")

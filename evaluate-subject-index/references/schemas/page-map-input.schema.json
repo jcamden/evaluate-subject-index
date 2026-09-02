@@ -32,6 +32,16 @@
           "in_evaluation_scope": {"type": "boolean"},
           "accepts_index_locators": {"type": "boolean"}
         },
+        "allOf": [
+          {
+            "if": {"properties": {"mode": {"const": "sequence"}}, "required": ["mode"]},
+            "then": {"required": ["label_style", "label_start"]}
+          },
+          {
+            "if": {"properties": {"mode": {"const": "explicit"}}, "required": ["mode"]},
+            "then": {"required": ["labels"]}
+          }
+        ],
         "additionalProperties": true
       }
     }

@@ -38,6 +38,7 @@
     },
     "candidate": {
       "type": ["object", "null"],
+      "required": ["candidate_id", "sha256", "schema_version", "normalized_path", "item_inventory_path", "benchmark_path", "benchmark_sha256"],
       "properties": {
         "candidate_id": {"type": "string", "minLength": 1},
         "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
@@ -51,7 +52,7 @@
     },
     "configuration": {
       "type": "object",
-      "required": ["audit_mode", "index_type", "intended_readership", "output_format", "storage_mode"],
+      "required": ["audit_mode", "index_type", "intended_readership", "readership_provenance", "output_format", "storage_mode", "policy_profile", "rubric_version", "scoring_identity"],
       "properties": {
         "audit_mode": {"enum": ["full", "pilot"]},
         "index_type": {"const": "subject_index"},
@@ -85,17 +86,26 @@
     },
     "stages": {
       "type": "object",
-      "minProperties": 14,
-      "additionalProperties": {
-        "type": "object",
-        "required": ["status", "updated_at", "notes"],
-        "properties": {
-          "status": {"enum": ["not_started", "in_progress", "completed", "blocked"]},
-          "updated_at": {"type": ["string", "null"]},
-          "notes": {"type": "array", "items": {"type": "string"}}
-        },
-        "additionalProperties": true
-      }
+      "required": ["initialize", "page_mapping", "chunk_definition", "define_policy", "source_chunk_preparation", "source_subject_discovery", "benchmark_synthesis", "benchmark_review", "benchmark_freeze", "candidate_normalization", "locator_chunk_preparation", "locator_audit", "missing_access_audit", "structure_audit", "scoring", "web_report"],
+      "properties": {
+        "initialize": {"$ref": "#/$defs/stage"},
+        "page_mapping": {"$ref": "#/$defs/stage"},
+        "chunk_definition": {"$ref": "#/$defs/stage"},
+        "define_policy": {"$ref": "#/$defs/stage"},
+        "source_chunk_preparation": {"$ref": "#/$defs/stage"},
+        "source_subject_discovery": {"$ref": "#/$defs/stage"},
+        "benchmark_synthesis": {"$ref": "#/$defs/stage"},
+        "benchmark_review": {"$ref": "#/$defs/stage"},
+        "benchmark_freeze": {"$ref": "#/$defs/stage"},
+        "candidate_normalization": {"$ref": "#/$defs/stage"},
+        "locator_chunk_preparation": {"$ref": "#/$defs/stage"},
+        "locator_audit": {"$ref": "#/$defs/stage"},
+        "missing_access_audit": {"$ref": "#/$defs/stage"},
+        "structure_audit": {"$ref": "#/$defs/stage"},
+        "scoring": {"$ref": "#/$defs/stage"},
+        "web_report": {"$ref": "#/$defs/stage"}
+      },
+      "additionalProperties": false
     },
     "artifacts": {
       "type": "array",
@@ -103,7 +113,7 @@
         "type": "object",
         "required": ["artifact_id", "stage", "artifact_type", "path", "sha256", "media_type", "visibility", "retention", "frozen", "recorded_at"],
         "properties": {
-          "stage": {"type": "string"},
+          "stage": {"enum": ["initialize", "page_mapping", "chunk_definition", "define_policy", "source_chunk_preparation", "source_subject_discovery", "benchmark_synthesis", "benchmark_review", "benchmark_freeze", "candidate_normalization", "locator_chunk_preparation", "locator_audit", "missing_access_audit", "structure_audit", "scoring", "web_report"]},
           "artifact_type": {"type": "string"},
           "path": {
             "type": "string",
@@ -126,6 +136,16 @@
     "blockers": {"type": "array", "items": {"type": "object"}}
   },
   "$defs": {
+    "stage": {
+      "type": "object",
+      "required": ["status", "updated_at", "notes"],
+      "properties": {
+        "status": {"enum": ["not_started", "in_progress", "completed", "blocked"]},
+        "updated_at": {"type": ["string", "null"]},
+        "notes": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
     "relativePath": {
       "type": "string",
       "minLength": 1,

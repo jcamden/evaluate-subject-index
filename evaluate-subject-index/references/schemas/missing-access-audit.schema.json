@@ -3,7 +3,7 @@
   "$id": "missing-access-audit.schema.json",
   "title": "Missing access audit batch",
   "type": "object",
-  "required": ["schema_version", "evaluation_id", "benchmark_sha256", "candidate_sha256", "chunk_id", "expected_subject_ids", "subject_judgments", "completion"],
+  "required": ["schema_version", "evaluation_id", "benchmark_sha256", "candidate_sha256", "chunk_id", "expected_subject_ids", "expected_reader_task_ids", "expected_treatment_ids", "subject_judgments", "reader_task_results", "treatment_judgments", "reader_task_completion", "treatment_completion", "completion"],
   "properties": {
     "schema_version": {"const": "missing-access-audit-v1"},
     "evaluation_id": {"type": "string"},
@@ -18,7 +18,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["subject_id", "priority", "coverage", "direct_access", "cross_reference_access", "stance_preserved", "matched_path_ids", "expected_document_pages", "found_document_pages", "missed_document_pages", "severity", "confidence"],
+        "required": ["subject_id", "priority", "coverage", "direct_access", "cross_reference_access", "stance_preserved", "matched_path_ids", "expected_document_pages", "found_document_pages", "missed_document_pages", "severity", "confidence", "realistic_first_lookup_success", "treatment_recall", "locator_recall", "missing_routes", "missed_treatments", "error_codes", "evidence_ids", "uncertainty"],
         "properties": {
           "subject_id": {"type": "string", "pattern": "^SUBJ-"},
           "priority": {"enum": ["essential", "major", "optional"]},
@@ -26,10 +26,10 @@
           "direct_access": {"type": "boolean"},
           "cross_reference_access": {"type": "boolean"},
           "stance_preserved": {"enum": ["yes", "partly", "no", "not_applicable", "uninspectable"]},
-          "matched_path_ids": {"type": "array", "items": {"type": "string"}},
-          "expected_document_pages": {"type": "array", "items": {"type": "integer"}},
-          "found_document_pages": {"type": "array", "items": {"type": "integer"}},
-          "missed_document_pages": {"type": "array", "items": {"type": "integer"}},
+          "matched_path_ids": {"type": "array", "items": {"type": "string", "pattern": "^PATH-"}, "uniqueItems": true},
+          "expected_document_pages": {"$ref": "#/$defs/pageSet"},
+          "found_document_pages": {"$ref": "#/$defs/pageSet"},
+          "missed_document_pages": {"$ref": "#/$defs/pageSet"},
           "severity": {"enum": ["none", "minor", "major", "critical"]},
           "confidence": {"enum": ["high", "medium", "low"]},
           "realistic_first_lookup_success": {"enum": ["yes", "partly", "no", "uninspectable"]},
@@ -39,6 +39,7 @@
             "type": "array",
             "items": {
               "type": "object",
+              "required": ["route_type", "reason_code", "evidence_ids"],
               "properties": {
                 "route_type": {"enum": ["direct", "cross_reference"]},
                 "reason_code": {"type": "string", "minLength": 1},
@@ -51,6 +52,7 @@
             "type": "array",
             "items": {
               "type": "object",
+              "required": ["document_page", "locator_class", "reason_code", "evidence_ids"],
               "properties": {
                 "document_page": {"type": "integer", "minimum": 1},
                 "locator_class": {"enum": ["principal", "supporting", "synthesis_or_conclusion"]},
@@ -68,26 +70,23 @@
           "evidence_ids": {"$ref": "#/$defs/evidenceIds"},
           "uncertainty": {
             "type": "object",
+            "required": ["status"],
             "properties": {
               "status": {"enum": ["none", "uncertain", "uninspectable"]},
               "reason": {"type": "string"},
               "evidence_ids": {"$ref": "#/$defs/evidenceIds"}
             },
+            "allOf": [
+              {
+                "if": {"properties": {"status": {"enum": ["uncertain", "uninspectable"]}}, "required": ["status"]},
+                "then": {"required": ["reason", "evidence_ids"]}
+              }
+            ],
             "additionalProperties": true
           },
           "dependency_defects": {
             "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "defect_id": {"type": "string", "pattern": "^DEFECT-"},
-                "dependency_type": {"const": "locator_audit"},
-                "locator_id": {"type": "string", "pattern": "^LOC-"},
-                "summary": {"type": "string"},
-                "evidence_ids": {"$ref": "#/$defs/evidenceIds"}
-              },
-              "additionalProperties": true
-            }
+            "items": {"$ref": "#/$defs/dependencyDefect"}
           }
         },
         "additionalProperties": true
@@ -97,6 +96,7 @@
       "type": "array",
       "items": {
         "type": "object",
+        "required": ["task_id", "subject_ids", "result", "access_mode", "matched_path_ids", "severity", "confidence", "evidence_ids"],
         "properties": {
           "task_id": {"type": "string", "pattern": "^TASK-"},
           "subject_ids": {"type": "array", "items": {"type": "string", "pattern": "^SUBJ-"}, "uniqueItems": true},
@@ -114,6 +114,7 @@
       "type": "array",
       "items": {
         "type": "object",
+        "required": ["treatment_id", "subject_id", "document_page", "locator_class", "status", "evidence_ids"],
         "properties": {
           "treatment_id": {"type": "string", "pattern": "^TREAT-"},
           "subject_id": {"type": "string", "pattern": "^SUBJ-"},
@@ -127,6 +128,10 @@
     },
     "reader_task_completion": {"$ref": "#/$defs/exactCompletion"},
     "treatment_completion": {"$ref": "#/$defs/exactCompletion"},
+    "dependency_defects": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/dependencyDefect"}
+    },
     "completion": {
       "type": "object",
       "required": ["expected", "judged", "complete"],
@@ -162,6 +167,7 @@
     "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "evidenceIds": {
       "type": "array",
+      "minItems": 1,
       "items": {"type": "string", "pattern": "^EVID-"},
       "uniqueItems": true
     },
@@ -170,8 +176,26 @@
       "items": {"type": "integer", "minimum": 1},
       "uniqueItems": true
     },
+    "dependencyDefect": {
+      "type": "object",
+      "required": ["defect_id", "dependency_type", "disposition", "locator_id", "coverage_subject_ids", "observed_conflict", "confidence", "required_adjudication", "evidence_ids"],
+      "properties": {
+        "defect_id": {"type": "string", "pattern": "^DEFECT-"},
+        "dependency_type": {"const": "locator_audit"},
+        "disposition": {"const": "reported_without_reinterpretation"},
+        "locator_id": {"type": "string", "pattern": "^LOC-"},
+        "coverage_subject_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^SUBJ-"}, "uniqueItems": true},
+        "observed_conflict": {"type": "string", "minLength": 1, "maxLength": 2000},
+        "confidence": {"enum": ["high", "medium", "low"]},
+        "required_adjudication": {"type": "string", "minLength": 1, "maxLength": 1000},
+        "summary": {"type": "string"},
+        "evidence_ids": {"$ref": "#/$defs/evidenceIds"}
+      },
+      "additionalProperties": true
+    },
     "recallCounts": {
       "type": "object",
+      "required": ["expected", "found", "missed"],
       "properties": {
         "expected": {"type": "integer", "minimum": 0},
         "found": {"type": "integer", "minimum": 0},
@@ -182,6 +206,7 @@
     },
     "treatmentClassPages": {
       "type": "object",
+      "required": ["expected_document_pages", "found_document_pages", "missed_document_pages", "uninspectable_document_pages"],
       "properties": {
         "expected_document_pages": {"$ref": "#/$defs/pageSet"},
         "found_document_pages": {"$ref": "#/$defs/pageSet"},
@@ -192,6 +217,7 @@
     },
     "treatmentRecall": {
       "type": "object",
+      "required": ["principal", "supporting", "synthesis_or_conclusion"],
       "properties": {
         "principal": {"$ref": "#/$defs/treatmentClassPages"},
         "supporting": {"$ref": "#/$defs/treatmentClassPages"},
@@ -211,6 +237,7 @@
     },
     "exactCompletion": {
       "type": "object",
+      "required": ["expected", "judged", "complete"],
       "properties": {
         "expected": {"type": "integer", "minimum": 0},
         "judged": {"type": "integer", "minimum": 0},

@@ -67,6 +67,8 @@
         "additionalProperties": true
       }
     },
+    "exclusions": {"type": "array"},
+    "uncertainties": {"type": "array"},
     "synthesis": {
       "type": "object",
       "required": ["whole_source_pass_complete", "all_chunk_artifacts_reconciled", "candidate_unseen"],

@@ -13,12 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from state_cli import STATE_SCHEMA_VERSION, evaluation_mutation_lock, save_state
-
-
-CHUNK_SCHEMA_VERSION = "source-subject-chunk-v1"
-VALID_PRIORITIES = {"essential", "major", "optional", "exclude_by_default"}
-VALID_LOCATOR_CLASSES = {"principal", "supporting", "synthesis_or_conclusion", "incidental"}
+from state_cli import evaluation_mutation_lock, save_state
+from schema_validation import schema_errors
 
 
 def now() -> str:
@@ -72,20 +68,16 @@ def safe_relative_path(value: str) -> str:
 def load_run(state_path: Path) -> tuple[dict[str, Any], Path]:
     state_path = state_path.resolve()
     state = load_json(state_path, "Evaluation state")
-    if state.get("schema_version") != STATE_SCHEMA_VERSION:
-        fail("unsupported_state", f"Expected {STATE_SCHEMA_VERSION}.")
+    errors = schema_errors(state, "evaluation-state.schema.json")
+    if errors:
+        fail("invalid_state", "Evaluation state is structurally invalid.", errors)
     root = state_path.parent
     return state, root
 
 
 def chunk_records(chunk_manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    records = chunk_manifest.get("chunks")
-    if not isinstance(records, list):
-        fail("invalid_chunk_manifest", "chunk-manifest.json must contain a chunks array.")
     result: dict[str, dict[str, Any]] = {}
-    for record in records:
-        if not isinstance(record, dict) or not isinstance(record.get("chunk_id"), str):
-            fail("invalid_chunk_manifest", "Every chunk record must have a string chunk_id.")
+    for record in chunk_manifest["chunks"]:
         chunk_id = record["chunk_id"]
         if chunk_id in result:
             fail("duplicate_chunk_id", f"Duplicate chunk ID in manifest: {chunk_id}")
@@ -94,16 +86,9 @@ def chunk_records(chunk_manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def flatten_ranges(ranges: Any, label: str) -> list[int]:
-    if not isinstance(ranges, list):
-        fail("invalid_chunk_manifest", f"{label} must be an array of inclusive pairs.")
     pages: list[int] = []
     for value in ranges:
-        if not (
-            isinstance(value, list)
-            and len(value) == 2
-            and all(isinstance(item, int) for item in value)
-            and value[0] <= value[1]
-        ):
+        if value[0] > value[1]:
             fail("invalid_chunk_manifest", f"Invalid range in {label}: {value}")
         pages.extend(range(value[0], value[1] + 1))
     return pages
@@ -123,15 +108,13 @@ def validate_subject_artifact(
     chunk_manifest: dict[str, Any],
     require_blindness: bool,
 ) -> dict[str, Any]:
-    errors: list[str] = []
-    if artifact.get("schema_version") != CHUNK_SCHEMA_VERSION:
-        errors.append(f"schema_version must be {CHUNK_SCHEMA_VERSION}.")
+    errors = schema_errors(artifact, "source-subject-chunk.schema.json")
+    if errors:
+        fail("invalid_worker_artifact", f"Source-subject artifact is structurally invalid: {artifact_path}", errors)
+    errors = []
     if artifact.get("evaluation_id") != state.get("evaluation_id"):
         errors.append("evaluation_id does not match canonical state.")
-    chunk = artifact.get("chunk")
-    if not isinstance(chunk, dict):
-        errors.append("chunk must be an object.")
-        chunk = {}
+    chunk = artifact["chunk"]
     chunk_id = chunk.get("chunk_id")
     records = chunk_records(chunk_manifest)
     expected = records.get(chunk_id)
@@ -149,13 +132,8 @@ def validate_subject_artifact(
     blindness = artifact.get("candidate_blindness")
     if require_blindness and blindness != "preserved":
         errors.append("worker discovery requires candidate_blindness=preserved.")
-    elif blindness not in {"preserved", "compromised", "not_claimed"}:
-        errors.append("candidate_blindness has an invalid value.")
 
-    page_review = artifact.get("page_review")
-    if not isinstance(page_review, dict):
-        errors.append("page_review must be an object.")
-        page_review = {}
+    page_review = artifact["page_review"]
     expected_count = len(expected_owned)
     if page_review.get("expected_owned_pages") != expected_count:
         errors.append("page_review.expected_owned_pages does not match chunk ownership.")
@@ -163,79 +141,41 @@ def validate_subject_artifact(
         errors.append("Every owned page must be recorded as reviewed.")
     if page_review.get("complete") is not True:
         errors.append("page_review.complete must be true.")
-    word_count = page_review.get("indexable_source_words")
-    if not isinstance(word_count, int) or word_count < 0:
-        errors.append("page_review.indexable_source_words must be a nonnegative integer.")
+    word_count = page_review["indexable_source_words"]
 
-    provenance = artifact.get("provenance")
-    if not isinstance(provenance, dict):
-        errors.append("provenance must be an object for parallel discovery.")
-        provenance = {}
-    subjects = artifact.get("subjects")
-    if not isinstance(subjects, list):
-        errors.append("subjects must be an array.")
-        subjects = []
+    provenance = artifact["provenance"]
+    subjects = artifact["subjects"]
     identifiers: set[str] = set()
     priorities = {key: 0 for key in ("essential", "major", "optional", "exclude_by_default")}
     evidence_count = 0
     owned_set = set(expected_owned)
     for index, subject in enumerate(subjects):
-        if not isinstance(subject, dict):
-            errors.append(f"subjects[{index}] must be an object.")
-            continue
-        required = ("local_subject_id", "label", "priority", "meaning", "stance", "acceptable_access", "evidence")
-        missing = [key for key in required if key not in subject]
-        if missing:
-            errors.append(f"subjects[{index}] is missing required fields: {missing}")
-        identifier = subject.get("local_subject_id")
-        if not isinstance(identifier, str) or not identifier:
-            errors.append(f"subjects[{index}].local_subject_id must be a nonempty string.")
-        elif identifier in identifiers:
+        identifier = subject["local_subject_id"]
+        if identifier in identifiers:
             errors.append(f"Duplicate local_subject_id: {identifier}")
         else:
             identifiers.add(identifier)
         priority = subject.get("priority")
-        if priority not in VALID_PRIORITIES:
-            errors.append(f"subjects[{index}].priority is invalid: {priority}")
-        else:
-            priorities[priority] += 1
-        if not isinstance(subject.get("acceptable_access"), list):
-            errors.append(f"subjects[{index}].acceptable_access must be an array.")
-        evidence = subject.get("evidence")
-        if not isinstance(evidence, list) or not evidence:
-            errors.append(f"subjects[{index}].evidence must be a nonempty array.")
-            continue
-        for evidence_index, item in enumerate(evidence):
+        priorities[priority] += 1
+        evidence = subject["evidence"]
+        for item in evidence:
             evidence_count += 1
-            if not isinstance(item, dict):
-                errors.append(f"subjects[{index}].evidence[{evidence_index}] must be an object.")
-                continue
             page = item.get("document_page")
             if page not in owned_set:
                 errors.append(f"Evidence page must be owned by {chunk_id}: {page}")
-            label = item.get("source_page_label")
-            if label is not None and not isinstance(label, str):
-                errors.append(f"source_page_label must be a string or null at subjects[{index}].evidence[{evidence_index}].")
-            if item.get("locator_class") not in VALID_LOCATOR_CLASSES:
-                errors.append(f"Invalid locator_class at subjects[{index}].evidence[{evidence_index}].")
-            if not isinstance(item.get("evidence_summary"), str) or not item.get("evidence_summary"):
-                errors.append(f"evidence_summary must be a nonempty paraphrase at subjects[{index}].evidence[{evidence_index}].")
 
     assessment = artifact.get("discovery_assessment")
-    if isinstance(assessment, dict):
+    if assessment is not None:
         if assessment.get("subject_count") not in {None, len(subjects)}:
             errors.append("discovery_assessment.subject_count does not match subjects.")
         recorded_priorities = assessment.get("priority_counts")
-        if isinstance(recorded_priorities, dict):
+        if recorded_priorities is not None:
             for key, value in priorities.items():
                 if recorded_priorities.get(key, 0) != value:
                     errors.append(f"discovery_assessment.priority_counts.{key} does not match subjects.")
         if assessment.get("density_used_as_subject_quota") not in {None, False}:
             errors.append("Parallel discovery must not use density as a subject quota.")
 
-    for key in ("exclusions", "uncertainties"):
-        if not isinstance(artifact.get(key), list):
-            errors.append(f"{key} must be an array.")
     if errors:
         fail(
             "invalid_worker_artifact",
@@ -281,6 +221,9 @@ def validated_inputs(args: argparse.Namespace) -> tuple[dict[str, Any], Path, di
     state, root = load_run(state_path)
     state["_state_path"] = str(state_path)
     chunk_manifest = load_json(Path(args.chunk_manifest).resolve(), "Chunk manifest")
+    structural = schema_errors(chunk_manifest, "chunk-manifest.schema.json")
+    if structural:
+        fail("invalid_chunk_manifest", "Chunk manifest is structurally invalid.", structural)
     chunk_records(chunk_manifest)
     supplied: list[tuple[Path, dict[str, Any], dict[str, Any]]] = []
     seen: set[str] = set()

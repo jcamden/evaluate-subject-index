@@ -16,6 +16,10 @@ The active workflow uses these primary identities:
 
 ## Contract rules
 
+- JSON Schema is the single source of truth for artifact structure: required fields,
+  types, enums, and nested object shapes live in `references/schemas/`.
+- Python validators enforce only semantics that span fields or artifacts, such as
+  identity agreement, exact workset coverage, ownership, and recomputed totals.
 - `evaluation-state.json` is the only control inventory.
 - Registered paths are relative to the evaluation root and unique.
 - Stable IDs and content hashes join related records and detect accidental input mix-ups.
@@ -23,4 +27,4 @@ The active workflow uses these primary identities:
 - Explanation fields are metadata, not calculation inputs.
 - Checkpoint import validates safe ZIP structure, inventory membership, and current state shape; it does not require a previously published checksum.
 
-Older schema files remain in `references/schemas/` temporarily because broad schema consolidation is deferred during TypeScript feasibility work. Runtime commands do not advertise migration or compatibility entry points.
+Runtime commands accept current schemas only; they do not advertise migration or compatibility entry points.

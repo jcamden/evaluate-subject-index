@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from schema_validation import schema_errors
+
 
 STAGES = [
     "initialize", "page_mapping", "chunk_definition", "define_policy",
@@ -178,16 +180,11 @@ def validate_state(
     """Validate the single current state document and its accessible artifacts."""
     errors: list[str] = []
     warnings: list[str] = []
-    required = {"schema_version", "evaluation_id", "source", "configuration", "stages", "artifacts", "blockers"}
-    missing = sorted(required - set(state))
-    if missing:
-        errors.append(f"Missing required keys: {missing}")
-    if state.get("schema_version") != STATE_SCHEMA_VERSION:
-        errors.append(f"schema_version must be {STATE_SCHEMA_VERSION}; legacy state is not supported.")
+    structural = schema_errors(state, "evaluation-state.schema.json")
+    if structural:
+        return [f"State schema: {error}" for error in structural], warnings
 
-    configuration = state.get("configuration") if isinstance(state.get("configuration"), dict) else {}
-    if configuration.get("storage_mode") not in {"local", "library", "hybrid"}:
-        errors.append("configuration.storage_mode must be local, library, or hybrid.")
+    configuration = state["configuration"]
     expected_identity = {"rubric_version": SCORE_RUBRIC_VERSION, "dimension_calculation_profile": DIMENSION_CALCULATION_PROFILE}
     if configuration.get("scoring_identity") != expected_identity:
         errors.append("configuration.scoring_identity must select the current V7 profile.")
@@ -195,14 +192,8 @@ def validate_state(
     stages = state.get("stages") if isinstance(state.get("stages"), dict) else {}
     completed_prefix = True
     for name in STAGES:
-        record = stages.get(name)
-        if not isinstance(record, dict):
-            errors.append(f"Missing stage record: {name}")
-            completed_prefix = False
-            continue
+        record = stages[name]
         status = record.get("status")
-        if status not in VALID_STATUSES:
-            errors.append(f"Invalid status for {name}: {status}")
         if status == "completed" and not completed_prefix:
             errors.append(f"Stage {name} is completed before all dependencies are complete.")
         if status != "completed":
@@ -215,26 +206,13 @@ def validate_state(
     if not (isinstance(span, list) and len(span) == 2 and all(isinstance(item, int) for item in span) and span[0] <= span[1]):
         errors.append("source.document_page_span must be an ascending integer pair.")
 
-    artifacts = state.get("artifacts")
-    if not isinstance(artifacts, list):
-        errors.append("artifacts must be an array.")
-        artifacts = []
+    artifacts = state["artifacts"]
     seen: set[str] = set()
     for artifact in artifacts:
-        if not isinstance(artifact, dict):
-            errors.append("Every artifact must be an object.")
-            continue
-        stored = artifact.get("path")
-        if not isinstance(stored, str):
-            errors.append("Every artifact needs a path.")
-            continue
+        stored = artifact["path"]
         if stored in seen:
             errors.append(f"Duplicate artifact path: {stored}")
         seen.add(stored)
-        if artifact.get("visibility") not in VALID_VISIBILITY:
-            errors.append(f"Invalid artifact visibility: {stored}")
-        if artifact.get("retention") not in VALID_RETENTION:
-            errors.append(f"Invalid artifact retention: {stored}")
         try:
             local = resolve_artifact_path(state_path, stored) if state_path else Path(stored)
         except ValueError as exc:

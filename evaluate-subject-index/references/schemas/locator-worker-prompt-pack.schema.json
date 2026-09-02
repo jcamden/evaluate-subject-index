@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "locator-worker-prompt-pack.schema.json",
+  "title": "Locator worker prompt pack",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "evaluation_id",
+    "candidate_id",
+    "checkpoint_filename",
+    "checkpoint_library_root",
+    "worker_library_root",
+    "chunks"
+  ],
+  "properties": {
+    "schema_version": {"const": "locator-worker-prompt-pack-v3"},
+    "evaluation_id": {"type": "string", "minLength": 1},
+    "candidate_id": {"type": "string", "minLength": 1},
+    "checkpoint_filename": {"type": "string", "minLength": 1},
+    "checkpoint_library_root": {"type": "string", "minLength": 1},
+    "worker_library_root": {"type": "string", "minLength": 1},
+    "chunks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "chunk_id",
+          "source_unit",
+          "owned_document_pages",
+          "expected_locator_assignments",
+          "locator_packet_path",
+          "source_materialize_path",
+          "sidecar_materialize_path",
+          "source_library_path",
+          "sidecar_library_path"
+        ],
+        "properties": {
+          "chunk_id": {"type": "string", "pattern": "^CHUNK-[0-9]{3,}$"},
+          "source_unit": {"type": "string", "minLength": 1},
+          "owned_document_pages": {"type": "string", "minLength": 1},
+          "expected_locator_assignments": {"type": "integer", "minimum": 0},
+          "locator_packet_path": {"type": "string", "minLength": 1},
+          "source_materialize_path": {"type": "string", "minLength": 1},
+          "sidecar_materialize_path": {"type": "string", "minLength": 1},
+          "source_library_path": {"type": "string", "minLength": 1},
+          "sidecar_library_path": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      },
+      "uniqueItems": true
+    }
+  },
+  "additionalProperties": false
+}

@@ -3,7 +3,7 @@
   "$id": "candidate-normalization-report.schema.json",
   "title": "Private candidate normalization report",
   "type": "object",
-  "required": ["schema_version", "candidate_id", "candidate_sha256", "source_sha256", "page_map_sha256", "adapter", "counts", "status", "benchmark_lock_status", "candidate_quality_judgments_performed", "private_artifact_hashes"],
+  "required": ["schema_version", "candidate_id", "candidate_sha256", "source_sha256", "page_map_sha256", "adapter", "counts", "status", "candidate_quality_judgments_performed", "private_artifact_hashes"],
   "properties": {
     "schema_version": {"const": "candidate-normalization-report-v1"},
     "candidate_id": {"type": "string", "minLength": 1},
@@ -13,7 +13,6 @@
     "adapter": {"type": "object"},
     "counts": {"type": "object"},
     "status": {"enum": ["awaiting_full_normalization_qa", "complete", "blocked"]},
-    "benchmark_lock_status": {"enum": ["pending_final_benchmark", "locked"]},
     "candidate_quality_judgments_performed": {"const": false},
     "private_artifact_hashes": {
       "type": "object",
@@ -22,5 +21,5 @@
     },
     "limitations": {"type": "array", "items": {"type": "string"}}
   },
-  "additionalProperties": true
+  "additionalProperties": false
 }
