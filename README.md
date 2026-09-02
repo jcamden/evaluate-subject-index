@@ -71,3 +71,11 @@ python -m unittest discover -s evaluate-subject-index/tests -p 'test_*.py' -v
 ```
 
 The GitHub workflow parses schemas and fixtures, compiles helpers, and runs the unit suite without duplicating those tests in long inline shell scripts.
+
+## License
+
+Copyright (c) 2026 John Camden.
+
+This project is licensed under the GNU Affero General Public License, version 3 only (`AGPL-3.0-only`). See [LICENSE](LICENSE). Third-party components remain subject to their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+PyMuPDF and MuPDF are available under the GNU AGPL v3 or a separate commercial license from Artifex. This repository uses them under the GNU AGPL v3 and does not grant an Artifex commercial license.
