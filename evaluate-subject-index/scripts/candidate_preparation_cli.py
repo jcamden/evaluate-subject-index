@@ -17,7 +17,7 @@ from typing import Any, Iterable
 
 from candidate_layout_adapters import extract_candidate_layout
 from benchmark_review_cli import final_benchmark_structure_errors
-from item_grade_cli import build_inventory
+from item_projection_core import build_inventory
 from state_cli import (
     STAGES,
     artifact_id as state_artifact_id,

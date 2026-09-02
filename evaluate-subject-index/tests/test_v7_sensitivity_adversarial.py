@@ -16,7 +16,7 @@ sys.path.insert(0, str(TESTS))
 from locator_utility import FIT_SCORES  # noqa: E402
 
 try:
-    import dimension_score_cli as v5  # noqa: E402
+    import scoring_core as v5  # noqa: E402
     import dimension_score_v7_cli as v7  # noqa: E402
 except ModuleNotFoundError:
     v5 = None

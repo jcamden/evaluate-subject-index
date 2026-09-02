@@ -11,7 +11,7 @@
 - web report: `subject-index-web-report-v7`
 - locator audit: `locator-audit-v2`
 
-Runtime commands accept these current identities only. Older schemas remain in the repository temporarily while a TypeScript migration is considered; they are not a supported workflow.
+Runtime commands accept these current identities only. Dormant historical schemas are not retained.
 
 ## Locator utility
 

@@ -10,8 +10,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Mapping
 
-import dimension_score_cli as v5
-import item_grade_cli as legacy
+import item_projection_core as items
+import scoring_core as v5
 from structure_locator_review import (
     StructureReviewError,
     canonical_hash as structure_review_hash,
@@ -200,7 +200,7 @@ def _structure_metric_summary(review: Mapping[str, Any]) -> str:
 
 
 def build_v7_assessments(
-    v6_compatible_items: Mapping[str, Any],
+    base_items: Mapping[str, Any],
     calculation: Mapping[str, Any],
     structure_review: Mapping[str, Any],
     locator_documents: list[Mapping[str, Any]] | None = None,
@@ -208,16 +208,16 @@ def build_v7_assessments(
 ) -> dict[str, Any]:
     """Project locator grades and structure metrics without changing evidence."""
 
-    if v6_compatible_items.get("schema_version") != "subject-index-item-assessments-v3":
-        raise ValueError("v6_item_assessments_required")
+    if base_items.get("schema_version") != "subject-index-item-assessments-v3":
+        raise ValueError("base_item_assessments_required")
     if calculation.get("schema_version") != "subject-index-dimension-calculations-v4":
         raise ValueError("v7_calculation_required")
-    if v6_compatible_items.get("evaluation_id") != calculation.get("evaluation_id"):
+    if base_items.get("evaluation_id") != calculation.get("evaluation_id"):
         raise ValueError("item_calculation_evaluation_mismatch")
-    if v6_compatible_items.get("evidence_identity") != calculation.get("evidence_identity"):
+    if base_items.get("evidence_identity") != calculation.get("evidence_identity"):
         raise ValueError("item_calculation_evidence_identity_mismatch")
 
-    result = deepcopy(v6_compatible_items)
+    result = deepcopy(base_items)
     provenance = _reliability(calculation)["reliability_provenance"]
     assignments = {
         item["locator_id"]: item
@@ -248,7 +248,7 @@ def build_v7_assessments(
         )
         legacy_compatibility_mode = legacy_compatibility_mode or legacy_compatibility
         score = assignment["diagnostic_grade"]
-        assessment["grade"] = legacy.grade(score)
+        assessment["grade"] = items.grade(score)
         assessment["dimension_reliability_credit"] = assignment["combined_credit"]
         assessment["locator_utility"] = deepcopy(assignment)
         assessment["locator_explanation"] = explanation
@@ -292,11 +292,11 @@ def build_v7_assessments(
                 page_factor["score"] = None
                 page_factor["status"] = "locator_level_only"
                 page_factor["explanation"] = page_component["summary"]
-            path_score = legacy.weighted_mean(
+            path_score = items.weighted_mean(
                 (item.get("score"), item.get("weight", 0))
                 for item in path.get("component_results", [])
             )
-            path["grade"] = legacy.grade(path_score)
+            path["grade"] = items.grade(path_score)
             path["popover"]["grade"] = deepcopy(path["grade"])
             path["popover"]["summary"] = (
                 "Complete-path display summary from non-reliability diagnostics only. "
@@ -396,7 +396,7 @@ def build_v7_assessments(
         result["locator_fit_supplement"] = deepcopy(
             calculation["locator_fit_supplement"]
         )
-    legacy.rebuild_summary(result)
+    items.rebuild_summary(result)
     result["summary"]["locator_utility_tiers"] = {
         "treatment": dict(sorted(Counter(item["treatment_category"] for item in assignments.values()).items())),
         "fit": dict(sorted(Counter(item["fit_category"] for item in assignments.values()).items())),
@@ -407,11 +407,11 @@ def build_v7_assessments(
 
 def command_build_assessments(args: argparse.Namespace) -> None:
     try:
-        items_path = Path(args.v6_compatible_items).resolve()
+        items_path = Path(args.base_items).resolve()
         calculation_path = Path(args.calculation).resolve()
         review_path = Path(args.structure_locator_review).resolve()
         output_path = Path(args.output).resolve()
-        items = v5.load_json(items_path, "V6-compatible item assessments")
+        base_items = v5.load_json(items_path, "Base item assessments")
         calculation = v5.load_json(calculation_path, "V7 calculation")
         review = v5.load_json(review_path, "V7 structure-locator review")
         locator_documents = []
@@ -426,7 +426,7 @@ def command_build_assessments(args: argparse.Namespace) -> None:
             v5.validate_schema_document(document, schema_name, f"Locator audit {index}")
             locator_documents.append(document)
         v5.validate_schema_document(
-            items, "item-assessments-v3.schema.json", "V6-compatible item assessments"
+            base_items, "item-assessments-v3.schema.json", "Base item assessments"
         )
         v5.validate_schema_document(
             calculation, "dimension-calculations-v4.schema.json", "V7 calculation"
@@ -455,7 +455,7 @@ def command_build_assessments(args: argparse.Namespace) -> None:
             "Current item projection cannot consume a structure review that removes historical defects.",
         )
         result = build_v7_assessments(
-            items,
+            base_items,
             calculation,
             review,
             locator_documents=locator_documents,
@@ -505,7 +505,7 @@ def build_parser() -> argparse.ArgumentParser:
         "build-assessments",
         help="Project current V7 locator grades from base items and frozen V7 ledgers.",
     )
-    build.add_argument("--base-items", dest="v6_compatible_items", required=True)
+    build.add_argument("--base-items", required=True)
     build.add_argument("--calculation", required=True)
     build.add_argument("--structure-locator-review", required=True)
     build.add_argument(

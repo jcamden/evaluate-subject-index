@@ -15,7 +15,7 @@ SCHEMAS = ROOT / "references" / "schemas"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-import item_grade_cli as items  # noqa: E402
+import item_projection_core as items  # noqa: E402
 from structure_locator_review import (  # noqa: E402
     StructureReviewError,
     canonical_hash,

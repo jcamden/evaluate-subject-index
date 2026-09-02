@@ -63,7 +63,7 @@ Read [candidate-preparation.md](references/candidate-preparation.md) and [parall
 
 Native V7 uses `structure-audit-v5`, `locator-audit-v2`, `subject-index-dimension-calculations-v4`, `subject-index-item-assessments-v5`, result V9, and web report V7. Page treatment and complete-path fit are independent axes combined with `min(T,F)`. Diagnostic item grades are not a seventh dimension and do not replace the dimension calculation.
 
-This repository intentionally exposes no legacy migration commands or compatibility workflow. Schema consolidation is deferred while a TypeScript migration is evaluated; current runtime commands nevertheless accept only current workflow identities.
+This repository intentionally exposes no legacy migration commands or compatibility workflow. Runtime commands and schemas cover the current workflow only.
 
 ## Output contract
 

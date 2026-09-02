@@ -17,7 +17,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
-import dimension_score_cli as v5
+import scoring_core as v5
 from locator_utility import (
     FIT_SCORES,
     LEGACY_FIT_COMPATIBILITY_RULE_ID,
