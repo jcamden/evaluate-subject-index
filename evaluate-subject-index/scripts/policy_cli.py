@@ -12,7 +12,7 @@ from typing import Any
 
 
 POLICY_SCHEMA = "subject-index-evaluation-policy-v3"
-POLICY_PROFILE = "subject-index-standard-policy-v1"
+POLICY_PROFILE = "subject-index-standard-policy-v7"
 
 DEFAULT_INCLUDED = [
     "preparation-approved indexable content",
@@ -35,16 +35,16 @@ DEFAULT_EXCLUDED = [
 ]
 
 POLICY_AREAS = {
-    "scope_compliance": "standard-policy.md#1-scope-compliance",
-    "substantive_coverage": "standard-policy.md#2-substantive-coverage",
-    "editorial_selectivity": "standard-policy.md#3-editorial-selectivity",
-    "conceptual_stance_fidelity": "standard-policy.md#4-conceptual-and-stance-fidelity",
-    "heading_access_architecture": "standard-policy.md#5-heading-and-access-architecture",
-    "locator_quality": "standard-policy.md#6-locator-quality",
-    "compound_heading_scope": "standard-policy.md#7-compound-heading-scope",
-    "cross_references": "standard-policy.md#8-cross-references",
-    "whole_index_coherence": "standard-policy.md#9-whole-index-coherence",
-    "mechanical_validity": "standard-policy.md#10-mechanical-validity",
+    "scope_compliance": "standard-policy-v7.md#locator-utility",
+    "substantive_coverage": "standard-policy-v7.md#locator-utility",
+    "editorial_selectivity": "standard-policy-v7.md#locator-utility",
+    "conceptual_stance_fidelity": "standard-policy-v7.md#locator-utility",
+    "heading_access_architecture": "standard-policy-v7.md#locator-strings-and-ranges",
+    "locator_quality": "standard-policy-v7.md#locator-utility",
+    "compound_heading_scope": "standard-policy-v7.md#locator-utility",
+    "cross_references": "standard-policy-v7.md#locator-utility",
+    "whole_index_coherence": "standard-policy-v7.md#locator-strings-and-ranges",
+    "mechanical_validity": "standard-policy-v7.md#locator-strings-and-ranges",
 }
 
 STAGE_APPLICATION = {
@@ -105,7 +105,7 @@ DENSITY_METRICS = [
         "ideal_max": 10.0,
         "acceptable_min": 4.0,
         "acceptable_max": 12.0,
-        "provenance": "subject-index-standard-policy-v1",
+        "provenance": POLICY_PROFILE,
     },
     {
         "metric_id": "locator_occurrences_per_1000_source_words",
@@ -117,7 +117,7 @@ DENSITY_METRICS = [
         "ideal_max": 25.0,
         "acceptable_min": 10.0,
         "acceptable_max": 30.0,
-        "provenance": "subject-index-standard-policy-v1",
+        "provenance": POLICY_PROFILE,
     },
 ]
 
@@ -267,7 +267,7 @@ def build_policy(source: dict[str, Any], standard_path: Path) -> dict[str, Any]:
 def command_build(args: argparse.Namespace) -> None:
     input_path = Path(args.input)
     output_path = Path(args.output)
-    standard_path = Path(args.standard_policy) if args.standard_policy else Path(__file__).resolve().parents[1] / "references" / "standard-policy.md"
+    standard_path = Path(args.standard_policy) if args.standard_policy else Path(__file__).resolve().parents[1] / "references" / "standard-policy-v7.md"
     try:
         source = read_input(input_path)
         policy = build_policy(source, standard_path)

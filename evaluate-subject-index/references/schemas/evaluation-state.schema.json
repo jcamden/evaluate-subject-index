@@ -3,11 +3,10 @@
   "$id": "evaluation-state.schema.json",
   "title": "Subject index evaluation state",
   "type": "object",
-  "required": ["schema_version", "evaluation_id", "artifact_manifest_path", "source", "configuration", "stages", "artifacts", "blockers"],
+  "required": ["schema_version", "evaluation_id", "source", "configuration", "stages", "artifacts", "blockers"],
   "properties": {
-    "schema_version": {"const": "subject-index-evaluation-state-v4"},
+    "schema_version": {"const": "subject-index-evaluation-state-v5"},
     "evaluation_id": {"type": "string", "minLength": 1},
-    "artifact_manifest_path": {"const": "artifact-manifest.json"},
     "created_at": {"type": "string"},
     "updated_at": {"type": "string"},
     "source": {
@@ -43,15 +42,10 @@
         "candidate_id": {"type": "string", "minLength": 1},
         "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
         "schema_version": {"const": "candidate-index-v2"},
-        "candidate_ref_path": {"$ref": "#/$defs/relativePath"},
-        "layout_profile_path": {"$ref": "#/$defs/relativePath"},
         "normalized_path": {"$ref": "#/$defs/relativePath"},
         "item_inventory_path": {"$ref": "#/$defs/relativePath"},
-        "normalization_qa_path": {"$ref": "#/$defs/relativePath"},
-        "preparation_receipt_path": {"$ref": "#/$defs/relativePath"},
-        "preparation_receipt_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-        "benchmark_lock_path": {"$ref": "#/$defs/relativePath"},
-        "benchmark_lock_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        "benchmark_path": {"$ref": "#/$defs/relativePath"},
+        "benchmark_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
       },
       "additionalProperties": true
     },
@@ -74,39 +68,18 @@
         },
         "output_format": {"const": "json"},
         "storage_mode": {"enum": ["local", "library", "hybrid"]},
-        "publication_profile": {
-          "enum": ["aggregate_only", "public_evaluation_artifacts"],
-          "default": "aggregate_only"
-        },
-        "policy_profile": {"const": "subject-index-standard-policy-v1"},
-        "rubric_version": {"const": "subject-index-rubric-v4"},
+        "policy_profile": {"const": "subject-index-standard-policy-v7"},
+        "rubric_version": {"const": "subject-index-rubric-v7"},
         "scoring_identity": {
           "type": "object",
           "required": ["rubric_version", "dimension_calculation_profile"],
           "properties": {
-            "rubric_version": {"const": "subject-index-rubric-v5"},
-            "dimension_calculation_profile": {"const": "subject-index-dimension-calculation-v1"}
+            "rubric_version": {"const": "subject-index-rubric-v7"},
+            "dimension_calculation_profile": {"const": "subject-index-dimension-calculation-v3"}
           },
           "additionalProperties": false
         },
-        "score_profile_history": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["changed_at", "previous", "current", "preflight_path", "preflight_sha256", "calculation_input_path", "calculation_input_sha256", "invalidated_stages"],
-            "properties": {
-              "changed_at": {"type": "string"},
-              "previous": {"type": ["object", "null"]},
-              "current": {"type": "object"},
-              "preflight_path": {"$ref": "#/$defs/relativePath"},
-              "preflight_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-              "calculation_input_path": {"$ref": "#/$defs/relativePath"},
-              "calculation_input_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-              "invalidated_stages": {"const": ["scoring", "web_report"]}
-            },
-            "additionalProperties": false
-          }
-        }
+        "score_profile_history": false
       },
       "additionalProperties": true
     },
@@ -128,7 +101,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["artifact_id", "stage", "artifact_type", "path", "sha256", "visibility", "retention", "frozen", "recorded_at"],
+        "required": ["artifact_id", "stage", "artifact_type", "path", "sha256", "media_type", "visibility", "retention", "frozen", "recorded_at"],
         "properties": {
           "stage": {"type": "string"},
           "artifact_type": {"type": "string"},
@@ -138,16 +111,14 @@
             "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
           },
           "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "media_type": {"type": "string", "minLength": 1},
+          "schema_version": {"type": "string", "minLength": 1},
           "artifact_id": {"type": "string", "pattern": "^ART-[A-F0-9]{12}$"},
           "visibility": {"enum": ["public", "private", "restricted"]},
           "retention": {"enum": ["required", "cache"]},
           "frozen": {"type": "boolean"},
           "recorded_at": {"type": "string"},
-          "active_for_scoring_identity": {"type": "boolean"},
-          "scoring_identity": {"type": ["object", "null"]},
-          "stage_completion_eligible": {"type": "boolean"},
-          "invalidated_at": {"type": "string"},
-          "invalidation_reason": {"const": "score_calculation_profile_changed"}
+          "input_sha256": {"type": "array", "items": {"type": "string", "pattern": "^[a-f0-9]{64}$"}}
         },
         "additionalProperties": true
       }

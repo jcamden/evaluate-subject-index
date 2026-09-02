@@ -417,14 +417,11 @@ def command_build_assessments(args: argparse.Namespace) -> None:
         locator_documents = []
         for index, stored in enumerate(args.locator_audit or []):
             document = v5.load_json(Path(stored).resolve(), f"Locator audit {index}")
-            schema_name = {
-                "locator-audit-v1": "locator-audit.schema.json",
-                "locator-audit-v2": "locator-audit-v2.schema.json",
-            }.get(document.get("schema_version"))
+            schema_name = {"locator-audit-v2": "locator-audit-v2.schema.json"}.get(document.get("schema_version"))
             v5.require(
                 schema_name is not None,
                 "unsupported_locator_audit_schema",
-                "V7 item projection accepts historical locator-audit-v1 or current locator-audit-v2.",
+                "V7 item projection accepts current locator-audit-v2 only.",
             )
             v5.validate_schema_document(document, schema_name, f"Locator audit {index}")
             locator_documents.append(document)
@@ -455,7 +452,7 @@ def command_build_assessments(args: argparse.Namespace) -> None:
         v5.require(
             not review.get("summary", {}).get("removed_historical_defect_ids"),
             "score_only_migration_item_projection_required",
-            "A structure-count correction must rebuild item diagnostics through migrate-v6-to-v7, not from an uncorrected compatibility artifact.",
+            "Current item projection cannot consume a structure review that removes historical defects.",
         )
         result = build_v7_assessments(
             items,
@@ -506,9 +503,9 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     build = subparsers.add_parser(
         "build-assessments",
-        help="Project V7 locator grades from V6-compatible items and the frozen V7 ledgers.",
+        help="Project current V7 locator grades from base items and frozen V7 ledgers.",
     )
-    build.add_argument("--v6-compatible-items", required=True)
+    build.add_argument("--base-items", dest="v6_compatible_items", required=True)
     build.add_argument("--calculation", required=True)
     build.add_argument("--structure-locator-review", required=True)
     build.add_argument(

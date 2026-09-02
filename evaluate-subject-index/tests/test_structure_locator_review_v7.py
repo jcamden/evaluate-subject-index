@@ -18,7 +18,6 @@ if str(SCRIPTS) not in sys.path:
 import item_grade_cli as items  # noqa: E402
 from structure_locator_review import (  # noqa: E402
     StructureReviewError,
-    apply_deterministic_structure_corrections,
     canonical_hash,
     derive_structure_locator_review,
     validate_structure_locator_review_semantics,
@@ -95,7 +94,7 @@ def candidate_from_specs(specs: list[tuple[str, int]]) -> dict:
 def structure_for(candidate: dict, inventory: dict, defects: list[dict] | None = None, decisions: list[dict] | None = None) -> dict:
     node_id = inventory["paths"][0]["node_ids"][-1]
     result = {
-        "schema_version": "structure-audit-v4",
+        "schema_version": "structure-audit-v5",
         "evaluation_id": "EVAL-V7-STRUCTURE",
         "candidate_sha256": candidate["candidate_sha256"],
         "v5_scoring_context": {"defects": defects or []},
@@ -105,7 +104,7 @@ def structure_for(candidate: dict, inventory: dict, defects: list[dict] | None =
                 "component_judgments": {
                     "heading_access_architecture": {
                         "status": "minor_issues" if defects else "passes",
-                        "summary": "Historical text is not a mapping input.",
+                        "summary": "Explanation text is not a mapping input.",
                         "evidence_ids": [],
                     }
                 },
@@ -203,15 +202,6 @@ class StructureLocatorDerivationTests(unittest.TestCase):
         path = self.path(review)
         self.assertEqual("structured_defect_confirmed", path["final_architecture_disposition"])
         self.assertEqual(["DEFECT-STRUCT-1"], path["retained_structured_defect_ids"])
-        basis = path["historical_defect_dispositions"][0]
-        self.assertEqual("independent_architecture", basis["basis_classification"])
-        self.assertEqual(
-            "retained_in_active_projection", basis["active_v7_defect_disposition"]
-        )
-        self.assertEqual(
-            path["deterministic_mapping_rule_id"],
-            basis["deterministic_mapping_rule_id"],
-        )
         facts = path["independent_architecture_evidence"]
         self.assertTrue(facts["conceptually_distinguishable_treatments"])
         self.assertTrue(facts["material_scanning_or_retrieval_impairment"])
@@ -220,7 +210,6 @@ class StructureLocatorDerivationTests(unittest.TestCase):
         review, *_ = derive([("range", 11)])
         path = self.path(review)
         self.assertEqual("review_required", path["final_architecture_disposition"])
-        self.assertFalse(review["migration_ready"])
         self.assertEqual(["PATH-0001"], review["summary"]["review_required_path_ids"])
 
     def test_triggered_heading_can_pass_only_after_structured_review(self) -> None:
@@ -239,61 +228,6 @@ class StructureLocatorDerivationTests(unittest.TestCase):
         path = self.path(review)
         self.assertTrue(path["long_displayed_locator_string_review_trigger"])
         self.assertEqual("reviewed_no_defect", path["final_architecture_disposition"])
-        self.assertTrue(review["migration_ready"])
-
-    def test_false_positive_defect_is_removed_only_from_active_copy(self) -> None:
-        candidate = candidate_from_specs([("range", 8), ("range", 3), ("singleton", 1)])
-        inventory = items.build_inventory(candidate)
-        historical_defect = defect(inventory, "long_locator_string_atomic_assignment_threshold_only")
-        structure = structure_for(candidate, inventory, [historical_defect])
-        review = derive_structure_locator_review(
-            candidate,
-            inventory,
-            structure,
-            candidate_file_sha256="c" * 64,
-            inventory_file_sha256="d" * 64,
-            structure_file_sha256="e" * 64,
-            audit_mode="full",
-        )
-        path = self.path(review)
-        self.assertEqual("historical_false_positive_removed", path["final_architecture_disposition"])
-        basis = path["historical_defect_dispositions"][0]
-        self.assertEqual(
-            historical_defect, basis["historical_structured_basis"]
-        )
-        self.assertEqual(
-            "atomic_assignment_threshold_only", basis["basis_classification"]
-        )
-        self.assertEqual(
-            "removed_from_active_projection", basis["active_v7_defect_disposition"]
-        )
-        self.assertEqual(
-            {
-                "displayed_locator_count": 3,
-                "maximum_range_span": 8,
-                "atomic_assignment_count": 12,
-                "long_displayed_locator_string_review_trigger": False,
-                "long_continuous_range_review_trigger": False,
-            },
-            basis["corrected_metrics"],
-        )
-        self.assertFalse(basis["prose_used_for_mapping"])
-        frozen_ledgers = {
-            "defects": [copy.deepcopy(historical_defect)],
-            "context": {"defects": [copy.deepcopy(historical_defect)]},
-            "nodes": copy.deepcopy(structure["node_judgments"]),
-        }
-        frozen_bytes = json.dumps(frozen_ledgers, sort_keys=True)
-        active = apply_deterministic_structure_corrections(frozen_ledgers, review, audit_mode="full")
-        self.assertEqual(frozen_bytes, json.dumps(frozen_ledgers, sort_keys=True))
-        self.assertEqual([], active["defects"])
-        self.assertEqual("passes", active["nodes"][0]["component_judgments"]["heading_access_architecture"]["status"])
-        self.assertEqual(["DEFECT-STRUCT-1"], active["v7_structure_correction"]["removed_defect_ids"])
-
-    def test_newly_exposed_review_case_refuses_to_invent_judgment(self) -> None:
-        review, *_ = derive([("singleton", 1)] * 7)
-        with self.assertRaisesRegex(StructureReviewError, "supplemental_architecture_review_required"):
-            apply_deterministic_structure_corrections({"defects": [], "context": {"defects": []}, "nodes": []}, review, audit_mode="full")
 
     def test_range_binding_loss_fails_closed_instead_of_parsing_display_text(self) -> None:
         candidate = candidate_from_specs([("range", 8)])
@@ -337,28 +271,6 @@ class StructureLocatorDerivationTests(unittest.TestCase):
         schema = json.loads((SCHEMAS / "structure-locator-review-v1.schema.json").read_text())
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(tampered, schema)
-
-    def test_hash_bound_historical_defect_basis_cannot_be_silently_rewritten(self) -> None:
-        candidate = candidate_from_specs(
-            [("range", 8), ("range", 3), ("singleton", 1)]
-        )
-        inventory = items.build_inventory(candidate)
-        historical_defect = defect(
-            inventory, "long_locator_string_atomic_assignment_threshold_only"
-        )
-        review, *_ = derive(
-            [("range", 8), ("range", 3), ("singleton", 1)],
-            defects=[historical_defect],
-        )
-        tampered = copy.deepcopy(review)
-        record = tampered["path_reviews"][0]["historical_defect_dispositions"][0]
-        record["historical_structured_basis"]["severity"] = "major"
-        tampered["review_sha256"] = canonical_hash(tampered, "review_sha256")
-        with self.assertRaisesRegex(
-            StructureReviewError, "historical_defect_basis_binding_mismatch"
-        ):
-            validate_structure_locator_review_semantics(tampered)
-
 
 if __name__ == "__main__":
     unittest.main()

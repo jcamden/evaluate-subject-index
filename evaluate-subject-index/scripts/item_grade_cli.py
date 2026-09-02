@@ -1273,8 +1273,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    args = build_parser().parse_args()
-    args.func(args)
+    emit({
+        "ok": False,
+        "error": {
+            "code": "unsupported_legacy_cli",
+            "message": "This module is retained only as an internal projection dependency. Use item_grade_v7_cli.py.",
+        },
+    }, 2)
 
 
 if __name__ == "__main__":

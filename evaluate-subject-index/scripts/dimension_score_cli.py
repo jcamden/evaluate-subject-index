@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 import jsonschema
-from referencing import Registry, Resource
 
 
 RUBRIC_VERSION = "subject-index-rubric-v5"
@@ -312,24 +311,29 @@ def load_json(path: Path, label: str) -> dict[str, Any]:
     return value
 
 
-def schema_registry() -> Registry:
-    registry = Registry()
+def schema_store() -> dict[str, dict[str, Any]]:
+    store: dict[str, dict[str, Any]] = {}
     for path in SCHEMA_ROOT.glob("*.json"):
         # Ledger instances are loaded with Decimal so schema numeric keywords
         # (notably historical ``multipleOf: 0.5``) must use the same numeric
         # type.  Mixing Decimal instances with binary-float schema constants
         # raises inside jsonschema before it can return a validation error.
         document = json.loads(path.read_text(encoding="utf-8"), parse_float=Decimal)
-        resource = Resource.from_contents(document)
-        registry = registry.with_resource(path.resolve().as_uri(), resource).with_resource(path.name, resource)
-    return registry
+        store[path.resolve().as_uri()] = document
+        store[path.name] = document
+    return store
 
 
 def validate_schema_document(document: dict[str, Any], schema_name: str, label: str) -> None:
     schema_path = SCHEMA_ROOT / schema_name
     schema = json.loads(schema_path.read_text(encoding="utf-8"), parse_float=Decimal)
+    resolver = jsonschema.RefResolver(
+        base_uri=schema_path.resolve().as_uri(),
+        referrer=schema,
+        store=schema_store(),
+    )
     errors = sorted(
-        jsonschema.Draft202012Validator(schema, registry=schema_registry()).iter_errors(document),
+        jsonschema.Draft202012Validator(schema, resolver=resolver).iter_errors(document),
         key=lambda item: list(item.absolute_path),
     )
     if errors:
@@ -3529,8 +3533,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    args = build_parser().parse_args()
-    args.func(args)
+    emit({
+        "ok": False,
+        "error": {
+            "code": "unsupported_legacy_cli",
+            "message": "This module is retained only as an internal arithmetic dependency. Use dimension_score_v7_cli.py.",
+        },
+    }, 2)
 
 
 if __name__ == "__main__":

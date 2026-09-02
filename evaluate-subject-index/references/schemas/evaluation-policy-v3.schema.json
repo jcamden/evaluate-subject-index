@@ -7,7 +7,7 @@
   "properties": {
     "schema_version": {"const": "subject-index-evaluation-policy-v3"},
     "policy_id": {"type": "string", "minLength": 1},
-    "policy_profile": {"type": "object", "required": ["id", "standard_policy_sha256"], "properties": {"id": {"const": "subject-index-standard-policy-v1"}, "standard_policy_sha256": {"$ref": "#/$defs/sha256"}}, "additionalProperties": true},
+    "policy_profile": {"type": "object", "required": ["id", "standard_policy_sha256"], "properties": {"id": {"const": "subject-index-standard-policy-v7"}, "standard_policy_sha256": {"$ref": "#/$defs/sha256"}}, "additionalProperties": true},
     "source_scope": {
       "type": "object",
       "required": ["source_sha256", "document_page_span", "page_map_sha256", "chunk_manifest_sha256", "included", "excluded", "availability", "mixed_page_rule", "word_count_basis"],

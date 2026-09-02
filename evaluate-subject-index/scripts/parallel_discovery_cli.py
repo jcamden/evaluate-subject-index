@@ -1,43 +1,24 @@
 #!/usr/bin/env python3
-"""Validate parallel source-discovery workers and integrate their artifacts."""
+"""Validate and register parallel source-discovery artifacts locally."""
 
 from __future__ import annotations
 
 import argparse
-import fcntl
 import hashlib
 import json
 import mimetypes
 import shutil
 from copy import deepcopy
-from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from state_cli import STATE_SCHEMA_VERSION, evaluation_mutation_lock, save_state
 
-STATE_SCHEMA_VERSION = "subject-index-evaluation-state-v4"
-MANIFEST_SCHEMA_VERSION = "subject-index-artifact-manifest-v1"
+
 CHUNK_SCHEMA_VERSION = "source-subject-chunk-v1"
-RECEIPT_SCHEMA_VERSION = "parallel-source-discovery-receipt-v1"
 VALID_PRIORITIES = {"essential", "major", "optional", "exclude_by_default"}
 VALID_LOCATOR_CLASSES = {"principal", "supporting", "synthesis_or_conclusion", "incidental"}
-
-
-@contextmanager
-def evaluation_mutation_lock(state_path: Path):
-    """Share the canonical evaluation lock with every state/manifest writer."""
-    lock_path = state_path.resolve().parent / ".candidate-preparation-integration.lock"
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open("a+b") as handle:
-        try:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            fail("evaluation_lock_busy", "Another process owns the canonical evaluation lock.")
-        try:
-            yield
-        finally:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def now() -> str:
@@ -68,11 +49,6 @@ def load_json(path: Path, label: str) -> dict[str, Any]:
     return value
 
 
-def save_json(path: Path, value: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-
-
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -93,19 +69,13 @@ def safe_relative_path(value: str) -> str:
     return str(path)
 
 
-def load_run(state_path: Path) -> tuple[dict[str, Any], dict[str, Any], Path, Path]:
+def load_run(state_path: Path) -> tuple[dict[str, Any], Path]:
     state_path = state_path.resolve()
     state = load_json(state_path, "Evaluation state")
     if state.get("schema_version") != STATE_SCHEMA_VERSION:
         fail("unsupported_state", f"Expected {STATE_SCHEMA_VERSION}.")
     root = state_path.parent
-    manifest_path = root / safe_relative_path(str(state.get("artifact_manifest_path", "artifact-manifest.json")))
-    manifest = load_json(manifest_path, "Artifact manifest")
-    if manifest.get("schema_version") != MANIFEST_SCHEMA_VERSION:
-        fail("unsupported_manifest", f"Expected {MANIFEST_SCHEMA_VERSION}.")
-    if manifest.get("evaluation_id") != state.get("evaluation_id"):
-        fail("identity_mismatch", "State and artifact manifest evaluation IDs differ.")
-    return state, manifest, root, manifest_path
+    return state, root
 
 
 def chunk_records(chunk_manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -146,27 +116,10 @@ def expected_chunk_pages(record: dict[str, Any]) -> tuple[list[int], list[int]]:
     )
 
 
-def active_policy_hash(state: dict[str, Any], manifest: dict[str, Any]) -> str | None:
-    records = [
-        item for item in manifest.get("artifacts", [])
-        if isinstance(item, dict) and item.get("artifact_type") == "evaluation_policy"
-    ]
-    if not records:
-        return None
-    path = records[-1].get("path")
-    if not isinstance(path, str):
-        return None
-    root = Path(state["_state_path"]).resolve().parent
-    policy = load_json(root / safe_relative_path(path), "Evaluation policy")
-    value = policy.get("policy_sha256")
-    return value if isinstance(value, str) else None
-
-
 def validate_subject_artifact(
     artifact: dict[str, Any],
     artifact_path: Path,
     state: dict[str, Any],
-    manifest: dict[str, Any],
     chunk_manifest: dict[str, Any],
     require_blindness: bool,
 ) -> dict[str, Any]:
@@ -218,16 +171,6 @@ def validate_subject_artifact(
     if not isinstance(provenance, dict):
         errors.append("provenance must be an object for parallel discovery.")
         provenance = {}
-    expected_hashes = {
-        "source_sha256": state.get("source", {}).get("sha256"),
-        "page_map_sha256": chunk_manifest.get("page_map_sha256"),
-        "chunk_manifest_sha256": chunk_manifest.get("chunk_manifest_sha256"),
-        "policy_sha256": active_policy_hash(state, manifest),
-    }
-    for key, value in expected_hashes.items():
-        if value and provenance.get(key) != value:
-            errors.append(f"provenance.{key} does not match the canonical run.")
-
     subjects = artifact.get("subjects")
     if not isinstance(subjects, list):
         errors.append("subjects must be an array.")
@@ -315,85 +258,16 @@ def validate_subject_artifact(
     }
 
 
-def default_branch(chunk_id: str) -> str:
-    return f"source-discovery/{chunk_id.lower()}"
-
-
-def command_worker_receipt(args: argparse.Namespace) -> None:
-    state_path = Path(args.state).resolve()
-    state, manifest, _, _ = load_run(state_path)
-    state["_state_path"] = str(state_path)
-    chunk_manifest = load_json(Path(args.chunk_manifest).resolve(), "Chunk manifest")
-    artifact_path = Path(args.artifact).resolve()
-    artifact = load_json(artifact_path, "Source-subject artifact")
-    summary = validate_subject_artifact(
-        artifact, artifact_path, state, manifest, chunk_manifest, require_blindness=True
-    )
-    chunk_id = summary["chunk_id"]
-    if args.chunk_id and args.chunk_id != chunk_id:
-        fail("chunk_id_mismatch", f"Requested {args.chunk_id}, but artifact contains {chunk_id}.")
-    if not (len(args.base_commit) == 40 and all(ch in "0123456789abcdefABCDEF" for ch in args.base_commit)):
-        fail("invalid_base_commit", "base-commit must be a 40-character hexadecimal Git commit SHA.")
-    receipt = {
-        "schema_version": RECEIPT_SCHEMA_VERSION,
-        "evaluation_id": state["evaluation_id"],
-        "created_at": now(),
-        "status": "ready_for_pull_request",
-        "chunk_id": chunk_id,
-        "project": {
-            "repository": args.project,
-            "base_commit": args.base_commit.lower(),
-            "base_branch": args.base_branch,
-            "worker_branch": args.branch or default_branch(chunk_id),
-            "mergeable_path": f"source/source-subject-chunk.{chunk_id}.json",
-        },
-        "source_sha256": state.get("source", {}).get("sha256"),
-        "validation": {"ok": True, **summary},
-        "publication_scope": {
-            "allowed_paths": [f"source/source-subject-chunk.{chunk_id}.json"],
-            "forbidden_content": [
-                "source PDFs",
-                "chunk PDFs",
-                "PDF sidecars",
-                "portable checkpoints",
-                "canonical control files",
-                "raw extracted source text",
-                "verbatim source-text fields",
-                "credentials or secrets",
-            ],
-        },
-    }
-    output = Path(args.output).resolve()
-    if output.exists() and not args.force:
-        fail("output_exists", f"Refusing to overwrite existing receipt: {output}")
-    save_json(output, receipt)
-    emit({
-        "command": "worker-discovery",
-        "ok": True,
-        "evaluation_id": state["evaluation_id"],
-        "chunk_id": chunk_id,
-        "worker_branch": receipt["project"]["worker_branch"],
-        "mergeable_path": receipt["project"]["mergeable_path"],
-        "artifacts_written": [
-            {"path": str(output), "sha256": sha256_file(output)},
-            {"path": str(artifact_path), "sha256": summary["artifact_sha256"]},
-        ],
-        "validation": summary,
-        "next_actions": ["create_branch", "commit_worker_artifact", "open_pull_request"],
-        "warnings": [],
-    })
-
-
-def active_discovery_chunk_ids(manifest: dict[str, Any], root: Path) -> set[str]:
+def active_discovery_chunk_ids(state: dict[str, Any], root: Path) -> set[str]:
     active: set[str] = set()
-    for item in manifest.get("artifacts", []):
+    for item in state.get("artifacts", []):
         if not isinstance(item, dict) or item.get("artifact_type") != "source_subject_chunk":
             continue
         path = item.get("path")
         if not isinstance(path, str):
             continue
         local = root / safe_relative_path(path)
-        if not local.is_file() or sha256_file(local) != item.get("sha256"):
+        if not local.is_file():
             continue
         artifact = load_json(local, "Registered source-subject artifact")
         chunk_id = artifact.get("chunk", {}).get("chunk_id")
@@ -402,29 +276,47 @@ def active_discovery_chunk_ids(manifest: dict[str, Any], root: Path) -> set[str]
     return active
 
 
-def command_integrate(args: argparse.Namespace) -> None:
+def validated_inputs(args: argparse.Namespace) -> tuple[dict[str, Any], Path, dict[str, Any], list[tuple[Path, dict[str, Any], dict[str, Any]]]]:
     state_path = Path(args.state).resolve()
-    state, manifest, root, manifest_path = load_run(state_path)
+    state, root = load_run(state_path)
     state["_state_path"] = str(state_path)
     chunk_manifest = load_json(Path(args.chunk_manifest).resolve(), "Chunk manifest")
-    expected_ids = set(chunk_records(chunk_manifest))
+    chunk_records(chunk_manifest)
     supplied: list[tuple[Path, dict[str, Any], dict[str, Any]]] = []
     seen: set[str] = set()
     for value in args.artifact:
         source = Path(value).resolve()
         artifact = load_json(source, "Source-subject artifact")
         summary = validate_subject_artifact(
-            artifact, source, state, manifest, chunk_manifest, require_blindness=not args.allow_compromised
+            artifact, source, state, chunk_manifest, require_blindness=not args.allow_compromised
         )
         chunk_id = summary["chunk_id"]
         if chunk_id in seen:
             fail("duplicate_integration_chunk", f"Chunk supplied more than once: {chunk_id}")
         seen.add(chunk_id)
         supplied.append((source, artifact, summary))
+    return state, root, chunk_manifest, supplied
+
+
+def command_validate_discoveries(args: argparse.Namespace) -> None:
+    state, _, _, supplied = validated_inputs(args)
+    emit({
+        "command": "validate-discoveries",
+        "ok": True,
+        "evaluation_id": state["evaluation_id"],
+        "validation": [summary for _, _, summary in supplied],
+        "artifacts_written": [],
+        "warnings": [],
+    })
+
+
+def command_register_discoveries(args: argparse.Namespace) -> None:
+    state_path = Path(args.state).resolve()
+    state, root, chunk_manifest, supplied = validated_inputs(args)
+    expected_ids = set(chunk_records(chunk_manifest))
 
     new_state = deepcopy(state)
     new_state.pop("_state_path", None)
-    new_manifest = deepcopy(manifest)
     stamp = now()
     planned_copies: list[tuple[Path, Path]] = []
     integrated: list[dict[str, Any]] = []
@@ -434,22 +326,10 @@ def command_integrate(args: argparse.Namespace) -> None:
         destination = root / PurePosixPath(relative)
         digest = summary["artifact_sha256"]
         existing = next(
-            (item for item in new_manifest.get("artifacts", []) if item.get("path") == relative),
+            (item for item in new_state.get("artifacts", []) if item.get("path") == relative),
             None,
         )
-        if existing and existing.get("sha256") != digest:
-            fail(
-                "frozen_artifact_conflict",
-                f"A different artifact is already registered at {relative}; use adjudication and a versioned path.",
-                {"recorded": existing.get("sha256"), "incoming": digest},
-            )
-        if destination.exists() and sha256_file(destination) != digest:
-            fail(
-                "destination_conflict",
-                f"A different file already exists at {relative}.",
-                {"existing": sha256_file(destination), "incoming": digest},
-            )
-        if not destination.exists():
+        if source != destination:
             planned_copies.append((source, destination))
         record = {
             "artifact_id": artifact_id(relative, digest),
@@ -463,46 +343,38 @@ def command_integrate(args: argparse.Namespace) -> None:
             "frozen": True,
             "recorded_at": existing.get("recorded_at", stamp) if existing else stamp,
         }
-        state_record = {key: record[key] for key in (
-            "artifact_id", "stage", "artifact_type", "path", "sha256",
-            "visibility", "retention", "frozen", "recorded_at"
-        )}
-        new_manifest["artifacts"] = [item for item in new_manifest.get("artifacts", []) if item.get("path") != relative]
-        new_manifest["artifacts"].append(record)
         new_state["artifacts"] = [item for item in new_state.get("artifacts", []) if item.get("path") != relative]
-        new_state["artifacts"].append(state_record)
+        new_state["artifacts"].append(record)
         integrated.append({"chunk_id": chunk_id, "path": relative, "sha256": digest})
 
     for source, destination in planned_copies:
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, destination)
 
-    new_manifest["artifacts"].sort(key=lambda item: item.get("path", ""))
     new_state["artifacts"].sort(key=lambda item: item.get("path", ""))
-    active_ids = active_discovery_chunk_ids(new_manifest, root)
+    active_ids = active_discovery_chunk_ids(new_state, root)
     missing = sorted(expected_ids - active_ids)
     stage = new_state["stages"]["source_subject_discovery"]
     stage["status"] = "completed" if not missing else "in_progress"
     stage["updated_at"] = stamp
-    note = f"Integrated parallel source discoveries: {', '.join(sorted(seen))}."
+    registered_ids = {summary["chunk_id"] for _, _, summary in supplied}
+    note = f"Registered parallel source discoveries: {', '.join(sorted(registered_ids))}."
     if note not in stage.setdefault("notes", []):
         stage["notes"].append(note)
-    new_manifest["updated_at"] = stamp
     new_state["updated_at"] = stamp
-    save_json(manifest_path, new_manifest)
-    save_json(state_path, new_state)
+    save_state(state_path, new_state)
 
     emit({
-        "command": "integrate-discoveries",
+        "command": "register-discoveries",
         "ok": True,
         "evaluation_id": new_state["evaluation_id"],
-        "integrated": sorted(integrated, key=lambda item: item["chunk_id"]),
+        "registered": sorted(integrated, key=lambda item: item["chunk_id"]),
         "source_subject_discovery_status": stage["status"],
         "active_chunk_count": len(active_ids),
         "expected_chunk_count": len(expected_ids),
         "missing_chunks": missing,
-        "artifacts_written": [str(manifest_path), str(state_path)] + [item["path"] for item in integrated],
-        "next_actions": ["checkpoint"] if not missing else ["review_more_worker_pull_requests"],
+        "artifacts_written": [str(state_path)] + [item["path"] for item in integrated],
+        "next_actions": ["continue_or_checkpoint"] if not missing else ["register_remaining_discoveries"],
         "warnings": [],
     })
 
@@ -511,31 +383,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    worker = subparsers.add_parser("worker-receipt")
-    worker.add_argument("--state", required=True)
-    worker.add_argument("--chunk-manifest", required=True)
-    worker.add_argument("--artifact", required=True)
-    worker.add_argument("--chunk-id")
-    worker.add_argument("--project", required=True)
-    worker.add_argument("--base-commit", required=True)
-    worker.add_argument("--base-branch", default="main")
-    worker.add_argument("--branch")
-    worker.add_argument("--output", required=True)
-    worker.add_argument("--force", action="store_true")
-    worker.set_defaults(func=command_worker_receipt)
-
-    integrate = subparsers.add_parser("integrate")
-    integrate.add_argument("--state", required=True)
-    integrate.add_argument("--chunk-manifest", required=True)
-    integrate.add_argument("--artifact", action="append", required=True)
-    integrate.add_argument("--allow-compromised", action="store_true")
-    integrate.set_defaults(func=command_integrate)
+    for command, handler in (
+        ("validate-discoveries", command_validate_discoveries),
+        ("register-discoveries", command_register_discoveries),
+    ):
+        subparser = subparsers.add_parser(command)
+        subparser.add_argument("--state", required=True)
+        subparser.add_argument("--chunk-manifest", required=True)
+        subparser.add_argument("--artifact", action="append", required=True)
+        subparser.add_argument("--allow-compromised", action="store_true")
+        subparser.set_defaults(func=handler)
     return parser
 
 
 def main() -> None:
     args = build_parser().parse_args()
-    if args.command == "integrate":
+    if args.command == "register-discoveries":
         with evaluation_mutation_lock(Path(args.state)):
             args.func(args)
     else:
