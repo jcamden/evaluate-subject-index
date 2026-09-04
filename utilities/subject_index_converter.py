@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
-"""Geometry-aware candidate-index PDF extraction adapters.
+"""Convert common subject-index exports to the evaluator's layout contract.
 
-The adapters stop at layout evidence.  They do not parse index semantics, repair
-editorial content, or inspect a source benchmark.  PyMuPDF is imported only when
-a PDF path, rather than synthetic geometry, is supplied.
+This standalone utility stops at layout evidence. It does not repair editorial
+content, inspect a source benchmark, or belong to the evaluation skill. PyMuPDF
+is imported only for PDF input.
 """
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import math
 import re
 import statistics
+import sys
 import unicodedata
+import urllib.request
 from collections import Counter, defaultdict
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -24,6 +28,9 @@ ADAPTER_VERSIONS = {
     "auto": "1.0.0",
     "generic-pdf-layout": "1.0.0",
     "indexerlabs-two-column": "1.0.0",
+    "indexia-html": "1.0.0",
+    "markdown-list": "1.0.0",
+    "plain-text": "1.0.0",
 }
 ADAPTER_IDS = tuple(ADAPTER_VERSIONS)
 
@@ -128,7 +135,7 @@ def _coalesce_pdf_fragments(lines: list[dict[str, Any]], page_width: float) -> l
 
 def _extract_pdf_geometry(path: Path) -> dict[str, Any]:
     try:
-        import fitz  # type: ignore[import-not-found]  # lazy by design
+        import pymupdf as fitz  # type: ignore[import-not-found]  # lazy by design
     except ImportError as exc:  # pragma: no cover - depends on runtime packaging
         raise RuntimeError("PyMuPDF is required to extract candidate PDF geometry") from exc
 
@@ -198,6 +205,263 @@ def _extract_pdf_geometry(path: Path) -> dict[str, Any]:
         }
     finally:
         document.close()
+
+
+def _read_text(path: Path) -> str:
+    if not path.is_file():
+        raise FileNotFoundError(f"Candidate index does not exist: {path}")
+    try:
+        return path.read_text(encoding="utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"Candidate index is not valid UTF-8: {path.name}") from exc
+
+
+def _text_raw(path: Path, adapter_id: str, entries: list[tuple[int, str]]) -> dict[str, Any]:
+    if not entries:
+        raise ValueError(f"No index entries were found in {path.name}")
+    lines: list[dict[str, Any]] = []
+    for source_order, (indent, displayed) in enumerate(entries, 1):
+        x0 = 50.0 + indent * 18.0
+        y0 = 50.0 + len(lines) * 14.0
+        lines.append(
+            {
+                "bbox": [x0, y0, min(600.0, x0 + max(20.0, len(displayed) * 5.0)), y0 + 10.0],
+                "spans": [],
+                "font_size": 10.0,
+                "original_displayed_form": displayed,
+                "source_order": source_order,
+                "extraction_warnings": [],
+            }
+        )
+    format_names = {
+        "indexia-html": "Indexia HTML",
+        "markdown-list": "Markdown",
+        "plain-text": "Plain text",
+    }
+    limitations = ["Non-PDF inputs use one logical candidate page for provenance."]
+    if adapter_id == "plain-text":
+        limitations.append("Plain text preserves only hierarchy expressed with leading whitespace.")
+    return {
+        "metadata": {"format": format_names[adapter_id]},
+        "pages": [{
+            "candidate_pdf_page": 1,
+            "width": 612.0,
+            "height": max(792.0, 72.0 + len(lines) * 14.0),
+            "lines": lines,
+        }],
+        "file_name": path.name,
+        "sha256": _sha256_file(path),
+        "byte_length": path.stat().st_size,
+        "is_pdf": False,
+        "is_encrypted": False,
+        "text_adapter": adapter_id,
+        "limitations": limitations,
+    }
+
+
+def _extract_markdown_geometry(path: Path) -> dict[str, Any]:
+    entries: list[tuple[int, str]] = []
+    for original in _read_text(path).splitlines():
+        if not original.strip() or re.match(r"^\s{0,3}#{1,6}\s+", original):
+            continue
+        match = re.match(r"^(\s*)[-+*]\s+(.*)$", original)
+        if not match:
+            continue
+        leading, displayed = match.groups()
+        displayed = re.sub(r"(?i)\*(see(?:\s+also)?(?:\s+under)?)\*", r"\1", displayed).strip()
+        if displayed:
+            entries.append((len(leading.expandtabs(4)) // 4, displayed))
+    return _text_raw(path, "markdown-list", entries)
+
+
+def _extract_plain_text_geometry(path: Path) -> dict[str, Any]:
+    entries: list[tuple[int, str]] = []
+    first_content = True
+    for original in _read_text(path).splitlines():
+        if not original.strip():
+            continue
+        displayed = original.strip()
+        if first_content and displayed.casefold() in {"index", "subject index"}:
+            first_content = False
+            continue
+        first_content = False
+        leading = len(original.expandtabs(4)) - len(original.expandtabs(4).lstrip())
+        entries.append((leading // 4, displayed))
+    return _text_raw(path, "plain-text", entries)
+
+
+class _ScriptCollector(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.in_script = False
+        self.scripts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.casefold() == "script":
+            self.in_script = True
+            self.scripts.append("")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.casefold() == "script":
+            self.in_script = False
+
+    def handle_data(self, data: str) -> None:
+        if self.in_script:
+            self.scripts[-1] += data
+
+
+def _find_initial_data(value: Any) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        initial = value.get("initialData")
+        if isinstance(initial, dict) and isinstance(initial.get("terms"), list):
+            return initial
+        for child in value.values():
+            found = _find_initial_data(child)
+            if found is not None:
+                return found
+    elif isinstance(value, list):
+        for child in value:
+            found = _find_initial_data(child)
+            if found is not None:
+                return found
+    return None
+
+
+def _indexia_initial_data(html: str) -> dict[str, Any]:
+    parser = _ScriptCollector()
+    parser.feed(html)
+    for script in parser.scripts:
+        match = re.fullmatch(r"\s*self\.__next_f\.push\((.*)\)\s*", script, re.S)
+        if not match:
+            continue
+        try:
+            wrapper = json.loads(match.group(1))
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(wrapper, list) or len(wrapper) < 2 or not isinstance(wrapper[1], str):
+            continue
+        payload = wrapper[1]
+        separator = payload.find(":")
+        if separator < 0 or "initialData" not in payload:
+            continue
+        try:
+            decoded = json.loads(payload[separator + 1:].strip())
+        except json.JSONDecodeError:
+            continue
+        initial = _find_initial_data(decoded)
+        if initial is not None:
+            return initial
+    raise ValueError("Indexia initialData.terms was not found in the HTML snapshot")
+
+
+def _extract_indexia_html_geometry(path: Path) -> dict[str, Any]:
+    terms = _indexia_initial_data(_read_text(path))["terms"]
+    terms = [term for term in terms if isinstance(term, dict)]
+    by_id = {term.get("termId"): term for term in terms if isinstance(term.get("termId"), str)}
+    children: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    mains: list[dict[str, Any]] = []
+    orphans: list[dict[str, Any]] = []
+    for term in terms:
+        parent_id = term.get("parentTermId")
+        if term.get("isSubentry") is True and isinstance(parent_id, str) and parent_id in by_id:
+            children[parent_id].append(term)
+        elif term.get("isSubentry") is True:
+            orphans.append(term)
+        else:
+            mains.append(term)
+
+    def printable(term: dict[str, Any]) -> bool:
+        return bool(term.get("pages") or term.get("crossReferences") or children.get(str(term.get("termId"))))
+
+    def compact_pages(values: list[Any]) -> list[str]:
+        result: list[str] = []
+        index = 0
+        while index < len(values):
+            value = values[index]
+            if not isinstance(value, int) or isinstance(value, bool):
+                result.append(str(value))
+                index += 1
+                continue
+            end = index
+            while end + 1 < len(values) and isinstance(values[end + 1], int) and values[end + 1] == values[end] + 1:
+                end += 1
+            if end == index:
+                result.append(str(value))
+            else:
+                last = values[end]
+                end_display = f"{last % 100:02d}" if value >= 100 and value // 100 == last // 100 else str(last)
+                result.append(f"{value}–{end_display}")
+            index = end + 1
+        return result
+
+    def displayed(term: dict[str, Any], include_pages: bool = True) -> str:
+        heading = str(term.get("termName", "")).strip()
+        pages = term.get("pages") if include_pages and isinstance(term.get("pages"), list) else []
+        locators = compact_pages([page for page in pages if isinstance(page, (str, int)) and not isinstance(page, bool)])
+        references: list[str] = []
+        for reference in term.get("crossReferences", []) if isinstance(term.get("crossReferences"), list) else []:
+            if not isinstance(reference, dict) or reference.get("source_id") != term.get("termId"):
+                continue
+            target = by_id.get(reference.get("target_id"))
+            target_name = str(target.get("termName", "")).strip() if target else ""
+            if target_name:
+                label = "see also" if reference.get("reference_type") == "see_also" else "see"
+                references.append(f"{label} {target_name}")
+        payload = ", ".join(locators)
+        if references:
+            payload = "; ".join(filter(None, [payload, *references]))
+        return ", ".join(filter(None, [heading, payload]))
+
+    entries: list[tuple[int, str]] = []
+    for main in mains:
+        if not printable(main):
+            continue
+        main_children = children.get(str(main.get("termId")), [])
+        child_pages = {
+            page
+            for child in main_children
+            for page in (child.get("pages") if isinstance(child.get("pages"), list) else [])
+            if isinstance(page, (str, int)) and not isinstance(page, bool)
+        }
+        main_pages = {
+            page
+            for page in (main.get("pages") if isinstance(main.get("pages"), list) else [])
+            if isinstance(page, (str, int)) and not isinstance(page, bool)
+        }
+        text = displayed(main, include_pages=not child_pages or main_pages != child_pages)
+        if text:
+            entries.append((0, text))
+        for child in main_children:
+            if not printable(child):
+                continue
+            text = displayed(child)
+            if text:
+                entries.append((1, text))
+    for orphan in orphans:
+        if not printable(orphan):
+            continue
+        text = displayed(orphan)
+        if text:
+            entries.append((0, text))
+    raw = _text_raw(path, "indexia-html", entries)
+    if orphans:
+        raw["limitations"].append(f"{len(orphans)} orphaned Indexia subentries were retained at top level.")
+    return raw
+
+
+def _input_adapter(path: Path, requested: str) -> str:
+    if requested != "auto":
+        return requested
+    suffix = path.suffix.casefold()
+    if suffix in {".html", ".htm"}:
+        return "indexia-html"
+    if suffix in {".md", ".markdown"}:
+        return "markdown-list"
+    if suffix == ".txt":
+        return "plain-text"
+    if path.is_file() and path.read_bytes()[:5] == b"%PDF-":
+        return "generic-pdf-layout"
+    raise ValueError("Could not detect candidate format; use PDF, .html/.htm, .md/.markdown, or .txt")
 
 
 def _raw_line_from_geometry(value: dict[str, Any], source_order: int) -> dict[str, Any]:
@@ -374,6 +638,13 @@ def _column_split(page: dict[str, Any], profile: str) -> tuple[bool, float, floa
 def _select_adapter(requested: str, raw: dict[str, Any]) -> tuple[str, str, dict[str, Any]]:
     if requested not in ADAPTER_VERSIONS:
         raise ValueError(f"Unknown adapter {requested!r}; expected one of {', '.join(ADAPTER_IDS)}")
+    text_adapter = raw.get("text_adapter")
+    if text_adapter:
+        return str(text_adapter), "explicit_adapter" if requested != "auto" else "file_extension", {
+            "input_format": raw.get("metadata", {}).get("format"),
+            "file_extension": Path(str(raw.get("file_name", ""))).suffix.casefold(),
+            "content_vocabulary_used": False,
+        }
     producer = str(raw.get("metadata", {}).get("producer", ""))
     detected_pages = 0
     nonempty_pages = 0
@@ -723,7 +994,7 @@ def _build_document(
         },
         "pdf_metadata": pdf_metadata,
         "pages": nested_pages,
-        "limitations": [],
+        "limitations": list(raw.get("limitations", [])),
     }
 
 
@@ -733,17 +1004,28 @@ def extract_candidate_layout(
     adapter_id: str = "auto",
     geometry: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Extract a candidate PDF into the vendor-neutral layout-line contract.
+    """Extract a candidate index into the vendor-neutral layout-line contract.
 
-    ``geometry`` is intended for deterministic tests and future non-PDF adapters.
+    ``geometry`` is intended for deterministic PDF-layout tests.
     When present, ``candidate_path`` is used only for its safe basename.
     """
 
     if not isinstance(candidate_id, str) or not candidate_id.strip():
         raise ValueError("candidate_id must be a nonempty string")
     candidate_path = Path(candidate_path)
-    raw = _normalize_geometry(geometry, candidate_path) if geometry is not None else _extract_pdf_geometry(candidate_path)
-    excluded = _exclude_headers_and_footers(raw["pages"], candidate_id)
+    if geometry is not None:
+        raw = _normalize_geometry(geometry, candidate_path)
+    else:
+        input_adapter = _input_adapter(candidate_path, adapter_id)
+        if input_adapter == "indexia-html":
+            raw = _extract_indexia_html_geometry(candidate_path)
+        elif input_adapter == "markdown-list":
+            raw = _extract_markdown_geometry(candidate_path)
+        elif input_adapter == "plain-text":
+            raw = _extract_plain_text_geometry(candidate_path)
+        else:
+            raw = _extract_pdf_geometry(candidate_path)
+    excluded = _exclude_headers_and_footers(raw["pages"], candidate_id) if raw.get("is_pdf", True) else []
     selected, reason, evidence = _select_adapter(adapter_id, raw)
     document = _build_document(raw, candidate_id, adapter_id, selected, reason, evidence, excluded)
     document["excluded_lines"] = excluded
@@ -998,6 +1280,85 @@ def validate_layout_contract(document: dict[str, Any]) -> list[str]:
     return errors
 
 
+def _write_bytes(path: Path, payload: bytes, force: bool) -> None:
+    if path.exists() and not force:
+        raise ValueError(f"Refusing to overwrite {path}; pass --force to replace it")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(payload)
+
+
+def _download_html(url: str, snapshot: Path, force: bool) -> Path:
+    if not url.startswith("https://"):
+        raise ValueError("--url must use HTTPS")
+    request = urllib.request.Request(url, headers={"User-Agent": "subject-index-converter/1.0"})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        payload = response.read(50 * 1024 * 1024 + 1)
+    if len(payload) > 50 * 1024 * 1024:
+        raise ValueError("Downloaded HTML exceeds 50 MiB")
+    if b"<html" not in payload[:4096].lower():
+        raise ValueError("URL did not return HTML")
+    _write_bytes(snapshot, payload, force)
+    return snapshot
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--candidate-id", required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--input", type=Path)
+    source.add_argument("--url")
+    parser.add_argument("--snapshot", type=Path, help="Required with --url; preserves the exact downloaded HTML")
+    parser.add_argument("--adapter", choices=list_adapter_ids(), default="auto")
+    parser.add_argument("--source-sha256", help="Optional frozen source-document SHA-256")
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--force", action="store_true")
+    return parser
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+    try:
+        output = args.output.resolve()
+        if output.exists() and not args.force:
+            raise ValueError(f"Refusing to overwrite {output}; pass --force to replace it")
+        if args.source_sha256 and not re.fullmatch(r"[a-f0-9]{64}", args.source_sha256):
+            raise ValueError("--source-sha256 must be a lowercase SHA-256 digest")
+        if args.url:
+            if args.snapshot is None:
+                raise ValueError("--snapshot is required with --url")
+            snapshot = args.snapshot.resolve()
+            if snapshot == output:
+                raise ValueError("--snapshot and --output must be different files")
+            candidate_path = _download_html(args.url, snapshot, args.force)
+            adapter = "indexia-html" if args.adapter == "auto" else args.adapter
+        else:
+            if args.snapshot is not None:
+                raise ValueError("--snapshot is only valid with --url")
+            candidate_path = args.input.resolve()
+            adapter = args.adapter
+        if candidate_path.resolve() == output:
+            raise ValueError("--input and --output must be different files")
+        document = extract_candidate_layout(candidate_path, args.candidate_id, adapter)
+        if args.source_sha256:
+            document["source_sha256"] = args.source_sha256
+        errors = validate_layout_contract(document)
+        if errors:
+            raise ValueError("Generated layout violates its contract: " + "; ".join(errors))
+        _write_bytes(output, (json.dumps(document, indent=2, ensure_ascii=False) + "\n").encode(), args.force)
+        print(json.dumps({
+            "ok": True,
+            "candidate_id": args.candidate_id,
+            "candidate_sha256": document["candidate_sha256"],
+            "adapter": document["adapter_id"],
+            "artifact_written": str(output),
+            "snapshot_written": str(args.snapshot.resolve()) if args.url else None,
+            "warnings": document["limitations"],
+        }, indent=2, ensure_ascii=False))
+    except (OSError, ValueError) as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
+        raise SystemExit(1) from exc
+
+
 __all__ = [
     "ADAPTER_IDS",
     "ADAPTER_VERSIONS",
@@ -1006,3 +1367,7 @@ __all__ = [
     "list_adapter_ids",
     "validate_layout_contract",
 ]
+
+
+if __name__ == "__main__":
+    main()

@@ -12,7 +12,7 @@ Evaluate one finished subject index against its source and a frozen policy. Use 
 1. Map one-based document pages to source page labels. Store labels as strings and require the user to approve chunk boundaries.
 2. Freeze the standard V7 policy, then discover source subjects before exposing the candidate index to the discovery context.
 3. Synthesize, independently review, and freeze the candidate-blind benchmark.
-4. Preserve the delivered candidate while mechanically extracting and normalizing its complete hierarchy and locator assignments.
+4. Preserve the delivered candidate while mechanically normalizing its complete hierarchy and locator assignments from the published layout contract.
 5. Audit locator support by complete heading path, then audit missing access against the frozen benchmark.
 6. Judge global structure only after the locator and missing-access ledgers are complete.
 7. Calculate the six V7 dimensions from validated ledgers. Do not ask a model to maintain arithmetic or workflow state.
@@ -27,7 +27,7 @@ Use [standard-policy-v7.md](references/standard-policy-v7.md), [judgment-policy-
 - `scripts/policy_cli.py`: instantiate the standard policy.
 - `scripts/parallel_discovery_cli.py`: validate and register source-discovery chunks.
 - `scripts/benchmark_review_cli.py`: benchmark screening, independent review, and freeze validation.
-- `scripts/candidate_preparation_cli.py`: extract, normalize, validate, and locally register candidate preparation.
+- `scripts/candidate_preparation_cli.py`: validate the published candidate-layout contract, then normalize and locally register candidate preparation.
 - `scripts/parallel_candidate_audit_cli.py`: validate or register locator and missing-access chunks created in separate chats.
 - `scripts/dimension_score_v7_cli.py` and `scripts/item_grade_v7_cli.py`: current deterministic V7 calculation and projection.
 - `scripts/bundle_cli.py`: optional checkpoints, exports, artifact listing, and resume imports.
@@ -55,7 +55,7 @@ Parallel work is divided by deterministic chunk ownership. Workers return comple
 
 Branches, pull requests, and chat attachments may be used for transport or review, but GitHub receipts, blob proofs, merge evidence, recovery receipts, and matching checkpoint hashes are not prerequisites for canonical registration. Registration completes an audit stage only when every frozen chunk denominator is covered exactly once.
 
-Candidate preparation is mechanical and benchmark-blind. Run `extract`, `normalize`, `validate-private`, then `register`. It does not require a publication workflow.
+Candidate preparation is mechanical and benchmark-blind. Candidate input must match [candidate-layout-extraction.schema.json](references/schemas/candidate-layout-extraction.schema.json); convert it before invoking the skill if necessary. Then run `normalize`, `validate-private`, and `register`. It does not require a publication workflow.
 
 Read [candidate-preparation.md](references/candidate-preparation.md) and [parallel-candidate-audits.md](references/parallel-candidate-audits.md).
 

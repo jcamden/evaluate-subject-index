@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Extract, normalize, validate, and register a current candidate index."""
+"""Normalize, validate, and register a current candidate index."""
 
 from __future__ import annotations
 
@@ -15,7 +15,6 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
-from candidate_layout_adapters import extract_candidate_layout
 from benchmark_review_cli import final_benchmark_structure_errors
 from item_projection_core import build_inventory
 from state_cli import (
@@ -580,12 +579,15 @@ def normalize_layout(layout: dict[str, Any], page_map: dict[str, Any]) -> tuple[
         text = group["displayed_line_text"]
         heading, payload = split_heading_and_payload(text, lookup)
         indent = max(0, int(group.get("indentation_level", 0)))
-        if not heading:
+        reference_only = not heading and bool(payload) and bool(heading_stack)
+        if not heading and not reference_only:
             exception_id = stable_id("EXC", candidate_sha, {"record_index": record_index, "type": "missing_heading", "text": text})
             exceptions.append({"exception_id": exception_id, "type": "missing_heading", "status": "unresolved", "related_ids": group["line_ids"], "displayed_form": text, "detail": "No entry or subentry heading could be identified."})
             continue
         indentation_gap = indent > len(heading_stack)
-        if indent == 0:
+        if reference_only:
+            heading_path = heading_stack[:max(1, min(indent, len(heading_stack)))]
+        elif indent == 0:
             heading_path = [heading]
             heading_stack = [heading]
         else:
@@ -818,10 +820,15 @@ def build_qa_template(
     }
 
 
-def default_provenance() -> dict[str, Any]:
+def default_provenance(is_pdf: bool = True) -> dict[str, Any]:
     return {
         "candidate_bytes": {"status": "verified", "rationale": "The candidate bytes were hashed directly."},
-        "internal_pdf_completeness": {"status": "not_independently_verified", "rationale": "PDF page presence does not prove the delivered index is complete."},
+        "internal_pdf_completeness": {
+            "status": "not_independently_verified" if is_pdf else "not_applicable",
+            "rationale": "PDF page presence does not prove the delivered index is complete."
+            if is_pdf
+            else "The delivered candidate is not a PDF.",
+        },
         "structural_continuity": {"status": "not_independently_verified", "rationale": "Alphabetical and structural continuity require an explicit preparation review."},
         "source_edition_compatibility": {"status": "not_independently_verified", "rationale": "Edition compatibility requires provenance evidence beyond matching filenames."},
         "locator_page_map_compatibility": {"status": "not_independently_verified", "rationale": "Locator compatibility requires complete normalization QA."},
@@ -836,8 +843,8 @@ def build_candidate_ref(
     file_origin: str,
     provenance: dict[str, Any],
 ) -> dict[str, Any]:
-    if file_origin in {"reconstructed_pdf", "transcription"} and provenance.get("authoritative_copy_fidelity", {}).get("claimed_original_publisher_pdf"):
-        require(False, "invalid_provenance", "A reconstructed PDF or transcription cannot claim to be an original publisher PDF.")
+    if file_origin in {"reconstructed_pdf", "delivered_text", "transcription"} and provenance.get("authoritative_copy_fidelity", {}).get("claimed_original_publisher_pdf"):
+        require(False, "invalid_provenance", "A reconstructed PDF or text candidate cannot claim to be an original publisher PDF.")
     candidate_sha = sha256_file(candidate_path)
     require(candidate_sha == layout.get("candidate_sha256"), "candidate_hash_mismatch", "Candidate bytes do not match the layout extraction hash.")
     require(provenance.get("candidate_bytes", {}).get("status") == "verified", "candidate_bytes_unverified", "Candidate preparation requires verified candidate bytes.")
@@ -909,27 +916,6 @@ def paths_for_normalization_output(root: Path, candidate_id: str) -> dict[str, P
     }
 
 
-def command_extract(args: argparse.Namespace) -> None:
-    candidate_path = Path(args.candidate_file).resolve()
-    source_sha = require_sha256(args.source_sha256, "source_sha256")
-    geometry = load_json(Path(args.geometry_input), "Synthetic geometry input") if args.geometry_input else None
-    result = extract_candidate_layout(candidate_path, args.candidate_id, args.adapter, geometry)
-    result["source_sha256"] = source_sha
-    require_schema(result, "candidate-layout-extraction.schema.json", "Candidate layout extraction")
-    output = Path(args.output).resolve()
-    require(not output.exists() or args.force, "output_exists", f"Refusing to overwrite {output}")
-    save_json(output, result)
-    emit({
-        "command": "extract-candidate-layout",
-        "ok": True,
-        "candidate_id": args.candidate_id,
-        "candidate_sha256": result.get("candidate_sha256"),
-        "adapter": result.get("adapter"),
-        "artifact_written": str(output),
-        "warnings": result.get("limitations", []),
-    })
-
-
 def command_normalize(args: argparse.Namespace) -> None:
     state_path = Path(args.state).resolve()
     page_map_path = Path(args.page_map).resolve()
@@ -945,8 +931,11 @@ def command_normalize(args: argparse.Namespace) -> None:
     layout["source_sha256"] = identities["source_sha256"]
     page_map = identities["page_map"]
     candidate, inventory, exceptions, report = normalize_layout(layout, page_map)
-    provenance = load_json(Path(args.provenance), "Candidate provenance") if args.provenance else default_provenance()
-    candidate_ref = build_candidate_ref(candidate_path, layout, identities, args.file_origin, provenance)
+    provenance = load_json(Path(args.provenance), "Candidate provenance") if args.provenance else default_provenance(layout.get("pdf_metadata", {}).get("is_pdf", True))
+    file_origin = args.file_origin
+    if file_origin == "auto":
+        file_origin = "delivered_pdf" if layout.get("pdf_metadata", {}).get("is_pdf", True) else "delivered_text"
+    candidate_ref = build_candidate_ref(candidate_path, layout, identities, file_origin, provenance)
     layout_profile = build_layout_profile(layout)
     output_root = Path(args.output_dir).resolve()
     paths = paths_for_normalization_output(output_root, args.candidate_id)
@@ -1139,8 +1128,8 @@ def validate_private_preparation(
         errors.append("Layout extraction source identity differs from the frozen state")
     if report.get("source_sha256") != identities["source_sha256"]:
         errors.append("Normalization report source identity differs from the frozen state")
-    if candidate_ref["file_origin"] in {"reconstructed_pdf", "transcription"} and candidate_ref["provenance"]["authoritative_copy_fidelity"].get("claimed_original_publisher_pdf"):
-        errors.append("A reconstructed PDF or transcription cannot claim to be an original publisher PDF")
+    if candidate_ref["file_origin"] in {"reconstructed_pdf", "delivered_text", "transcription"} and candidate_ref["provenance"]["authoritative_copy_fidelity"].get("claimed_original_publisher_pdf"):
+        errors.append("A reconstructed PDF or text candidate cannot claim to be an original publisher PDF")
 
     if candidate.get("page_map_sha256") != identities["page_map_sha256"]:
         errors.append("Normalized candidate does not identify the frozen page map")
@@ -1428,23 +1417,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    extract = subparsers.add_parser("extract", help="Extract candidate PDF layout without using benchmark content")
-    extract.add_argument("--candidate-id", required=True)
-    extract.add_argument("--candidate-file", required=True)
-    extract.add_argument("--source-sha256", required=True)
-    extract.add_argument("--adapter", choices=["auto", "generic-pdf-layout", "indexerlabs-two-column"], default="auto")
-    extract.add_argument("--geometry-input", help="Deterministic synthetic geometry for tests")
-    extract.add_argument("--output", required=True)
-    extract.add_argument("--force", action="store_true")
-    extract.set_defaults(func=command_extract)
-
-    normalize = subparsers.add_parser("normalize", help="Normalize extracted layout into current candidate v2 artifacts")
+    normalize = subparsers.add_parser("normalize", help="Normalize a contract-valid layout into current candidate v2 artifacts")
     normalize.add_argument("--candidate-id", required=True)
     normalize.add_argument("--candidate-file", required=True)
     _add_frozen_inputs(normalize)
     normalize.add_argument("--layout", required=True)
     normalize.add_argument("--output-dir", required=True)
-    normalize.add_argument("--file-origin", choices=["delivered_pdf", "reconstructed_pdf", "transcription"], default="delivered_pdf")
+    normalize.add_argument("--file-origin", choices=["auto", "delivered_pdf", "delivered_text", "reconstructed_pdf", "transcription"], default="auto")
     normalize.add_argument("--provenance")
     normalize.add_argument("--force", action="store_true")
     normalize.set_defaults(func=command_normalize)

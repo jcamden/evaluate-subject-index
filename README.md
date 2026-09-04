@@ -33,12 +33,33 @@ Important helpers:
 
 - `state_cli.py` — initialize, validate, inspect, and advance state.
 - `bundle_cli.py` — optional recovery checkpoints and imports.
-- `candidate_preparation_cli.py` — extract, normalize, validate, and register a candidate.
+- `candidate_preparation_cli.py` — normalize, validate, and register a contract-valid candidate.
 - `parallel_candidate_audit_cli.py` — validate/register audit chunks returned by separate chats.
 - `dimension_score_v7_cli.py` — current V7 preflight, structure review, and calculation.
 - `item_grade_v7_cli.py` — current V7 item projection.
 
 See [SKILL.md](evaluate-subject-index/SKILL.md) and [workflow.md](evaluate-subject-index/references/workflow.md) for the operating contract.
+
+## Optional input converter
+
+The evaluation skill is format-agnostic. Its input boundary is the published [`candidate-layout-extraction-v1` schema](evaluate-subject-index/references/schemas/candidate-layout-extraction.schema.json).
+
+[`subject_index_converter.py`](utilities/subject_index_converter.py) is a separate convenience utility for the PDF, Markdown, plain-text, and Indexia HTML exports currently in use. It emits that contract without making those formats part of the skill:
+
+```bash
+python utilities/subject_index_converter.py \
+  --candidate-id example \
+  --input /path/to/index.pdf \
+  --output /path/to/candidate-layout-extraction.v1.json
+
+python utilities/subject_index_converter.py \
+  --candidate-id example \
+  --url https://www.indexia.tech/public/example \
+  --snapshot /path/to/indexia-snapshot.html \
+  --output /path/to/candidate-layout-extraction.v1.json
+```
+
+The converter snapshots URL input so the JSON hash remains tied to exact bytes. It performs mechanical extraction only; evaluation and editorial judgment remain in the skill.
 
 ## Checkpoints
 
@@ -68,6 +89,7 @@ Only the current V7 workflow is exposed. Historical V4–V6 migration commands a
 
 ```bash
 python -m unittest discover -s evaluate-subject-index/tests -p 'test_*.py' -v
+python -m unittest discover -s utilities/tests -p 'test_*.py' -v
 ```
 
 The GitHub workflow parses schemas and fixtures, compiles helpers, and runs the unit suite without duplicating those tests in long inline shell scripts.

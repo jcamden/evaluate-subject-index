@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Synthetic tests for vendor-neutral candidate layout adapters."""
+"""Tests for the standalone subject-index converter."""
 
 from __future__ import annotations
 
 import copy
 import hashlib
+import json
 import re
 import sys
 import tempfile
@@ -13,15 +14,17 @@ from unittest import mock
 from pathlib import Path
 
 
-SKILL_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(SKILL_ROOT / "scripts"))
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "utilities"))
+sys.path.insert(0, str(REPO_ROOT / "evaluate-subject-index" / "scripts"))
 
-from candidate_layout_adapters import (  # noqa: E402
+from subject_index_converter import (  # noqa: E402
     ADAPTER_IDS,
     extract_candidate_layout,
     list_adapter_ids,
     validate_layout_contract,
 )
+from candidate_preparation_cli import normalize_layout  # noqa: E402
 
 
 def layout_regions(layout: dict) -> list[dict]:
@@ -73,7 +76,14 @@ def synthetic_two_page_geometry(producer: str = "ReportLab PDF Library - synthet
 class GeometryAdapterTests(unittest.TestCase):
     def test_adapter_ids_are_exposed(self) -> None:
         self.assertEqual(
-            ("auto", "generic-pdf-layout", "indexerlabs-two-column"),
+            (
+                "auto",
+                "generic-pdf-layout",
+                "indexerlabs-two-column",
+                "indexia-html",
+                "markdown-list",
+                "plain-text",
+            ),
             ADAPTER_IDS,
         )
         self.assertEqual(ADAPTER_IDS, list_adapter_ids())
@@ -163,7 +173,7 @@ class GeometryAdapterTests(unittest.TestCase):
         real_import = __import__
 
         def guarded_import(name: str, *args, **kwargs):
-            if name == "fitz":
+            if name in {"fitz", "pymupdf"}:
                 raise AssertionError("geometry extraction must not import PyMuPDF")
             return real_import(name, *args, **kwargs)
 
@@ -220,7 +230,7 @@ class GeometryAdapterTests(unittest.TestCase):
 class PdfRuntimeTests(unittest.TestCase):
     def test_two_page_pdf_is_generated_and_extracted_at_runtime(self) -> None:
         try:
-            import fitz
+            import pymupdf as fitz
         except ImportError:  # pragma: no cover - runtime dependency is expected
             self.skipTest("PyMuPDF is unavailable")
         with tempfile.TemporaryDirectory() as directory:
@@ -253,6 +263,108 @@ class PdfRuntimeTests(unittest.TestCase):
             page_one = [line for line in layout_lines(layout, include_excluded=False) if line["candidate_pdf_page"] == 1]
             self.assertEqual([1, 1, 2, 2], [line["column"] for line in page_one])
             self.assertEqual(["Alpha, 10-12", "Beta, 13", "and more, 14", "Gamma, 15"], [line["displayed_line_text"] for line in page_one])
+
+
+class TextRuntimeTests(unittest.TestCase):
+    def test_markdown_list_preserves_hierarchy_and_visible_text(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "candidate.md"
+            path.write_text(
+                "# Subject Index\n\n- Alpha\n    - first use, 10–12\n    - *See also* Beta\n- Beta, 13\n",
+                encoding="utf-8",
+            )
+            layout = extract_candidate_layout(path, "markdown-candidate")
+        lines = layout_lines(layout, include_excluded=False)
+        self.assertEqual("markdown-list", layout["adapter_id"])
+        self.assertFalse(layout["pdf_metadata"]["is_pdf"])
+        self.assertEqual(
+            ["Alpha", "first use, 10–12", "See also Beta", "Beta, 13"],
+            [line["displayed_line_text"] for line in lines],
+        )
+        self.assertEqual([0, 1, 1, 0], [line["indentation_level"] for line in lines])
+        self.assertEqual([], validate_layout_contract(layout))
+
+        pages = [
+            {
+                "document_page": number,
+                "source_page_label": str(number),
+                "normalized_locator_key": str(number),
+                "label_style": "arabic",
+                "mapping_id": "body",
+                "in_evaluation_scope": True,
+                "accepts_index_locators": True,
+            }
+            for number in range(1, 21)
+        ]
+        page_map = {
+            "schema_version": "page-map-v1",
+            "source_sha256": "0" * 64,
+            "document_page_count": len(pages),
+            "document_page_basis": "one_based_inclusive",
+            "pages": pages,
+            "validation": {"all_document_pages_covered": True, "unique_indexable_locator_keys": True},
+            "page_map_sha256": "1" * 64,
+        }
+        candidate, _, exceptions, _ = normalize_layout(layout, page_map)
+        reference = next(record for record in candidate["records"] if record["cross_references"])
+        self.assertEqual(["Alpha"], reference["heading_path"])
+        self.assertEqual("Beta", reference["cross_references"][0]["target"])
+        self.assertFalse(any(item["type"] == "missing_heading" for item in exceptions["exceptions"]))
+
+    def test_plain_text_does_not_invent_unexpressed_hierarchy(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "candidate.txt"
+            path.write_text("Index\nadministration\nas government, 28, 36\n    explicit child, 40\n", encoding="utf-8")
+            layout = extract_candidate_layout(path, "text-candidate")
+        lines = layout_lines(layout, include_excluded=False)
+        self.assertEqual("plain-text", layout["adapter_id"])
+        self.assertEqual([0, 0, 1], [line["indentation_level"] for line in lines])
+        self.assertIn("Plain text preserves only hierarchy expressed with leading whitespace.", layout["limitations"])
+
+    def test_indexia_html_uses_parent_ids_and_cross_references(self) -> None:
+        terms = [
+            {
+                "termId": "alpha",
+                "termName": "Alpha",
+                "pages": [10, 11, 12],
+                "isSubentry": False,
+                "crossReferences": [
+                    {"source_id": "alpha", "target_id": "beta", "reference_type": "see_also"}
+                ],
+            },
+            {"termId": "beta", "termName": "Beta", "pages": [20], "isSubentry": False, "crossReferences": []},
+            {
+                "termId": "alpha-child",
+                "parentTermId": "alpha",
+                "termName": "early period",
+                "pages": [13],
+                "isSubentry": True,
+                "crossReferences": [],
+            },
+            {"termId": "admin", "termName": "Admin", "pages": [30, 31], "isSubentry": False, "crossReferences": []},
+            {
+                "termId": "admin-child",
+                "parentTermId": "admin",
+                "termName": "local",
+                "pages": [30, 31],
+                "isSubentry": True,
+                "crossReferences": [],
+            },
+        ]
+        flight = "f:" + json.dumps([["$", "component", None, {"initialData": {"terms": terms}}]])
+        html = f"<html><body><script>self.__next_f.push({json.dumps([1, flight])})</script></body></html>"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "candidate.html"
+            path.write_text(html, encoding="utf-8")
+            layout = extract_candidate_layout(path, "indexia-candidate")
+        lines = layout_lines(layout, include_excluded=False)
+        self.assertEqual("indexia-html", layout["adapter_id"])
+        self.assertEqual(
+            ["Alpha, 10–12; see also Beta", "early period, 13", "Beta, 20", "Admin", "local, 30–31"],
+            [line["displayed_line_text"] for line in lines],
+        )
+        self.assertEqual([0, 1, 0, 0, 1], [line["indentation_level"] for line in lines])
+        self.assertEqual([], validate_layout_contract(layout))
 
 
 class ContractValidationTests(unittest.TestCase):

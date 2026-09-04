@@ -33,6 +33,7 @@ class CurrentCommandSurfaceTests(unittest.TestCase):
     def test_candidate_preparation_is_local(self) -> None:
         text = help_text("candidate_preparation_cli.py")
         self.assertIn("register", text)
+        self.assertNotIn("extract", text)
         self.assertNotIn("bind-publication", text)
         self.assertNotIn("integrate", text)
 

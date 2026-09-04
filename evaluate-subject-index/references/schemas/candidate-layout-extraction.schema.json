@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "candidate-layout-extraction.schema.json",
-  "title": "Private adapter-neutral candidate layout extraction",
+  "title": "Adapter-neutral candidate layout exchange contract",
   "type": "object",
   "required": ["schema_version", "candidate_id", "candidate_sha256", "adapter_id", "adapter_version", "adapter", "pdf", "pdf_metadata", "pages", "excluded_lines", "counts"],
   "properties": {
